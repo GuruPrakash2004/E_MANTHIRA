@@ -61,7 +61,7 @@ export default function GlobalSettingsTab() {
             <Accordion.Control>
               <Group gap="xs">
                 <Text fw={600}>{group}</Text>
-                <Badge size="sm" variant="light" color="gold" c="kumkum.8">
+                <Badge size="sm" variant="light" color="gold" c="var(--vt-badge-ink)">
                   {settings.length}
                 </Badge>
               </Group>

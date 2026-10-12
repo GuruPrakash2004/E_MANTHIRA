@@ -70,7 +70,7 @@ export default function WelcomeVideoCard() {
       <Stack gap="sm">
         <Group justify="space-between" wrap="nowrap" align="flex-start">
           <Group gap="sm" wrap="nowrap" align="flex-start">
-            <Clapperboard size={22} color="var(--mantine-color-kumkum-6)" aria-hidden style={{ marginTop: 2 }} />
+            <Clapperboard size={22} color="var(--vt-accent)" aria-hidden style={{ marginTop: 2 }} />
             <div>
               <Text fw={700}>Welcome video</Text>
               <Text size="sm" c="dimmed">

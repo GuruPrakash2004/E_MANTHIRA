@@ -1,11 +1,15 @@
-import { useState } from 'react'
+import DevotionalBackdrop from '../../components/DevotionalBackdrop'
+import ThemeToggle from '../../components/ThemeToggle'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Checkbox, Modal, Paper, PasswordInput, Stack, Text, TextInput, Title, Alert, Group } from '@mantine/core'
 import { AlertCircle, FlaskConical, Lock, Settings, User } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import DatabaseSettingsPanel from '../../components/DatabaseSettingsPanel'
+import ShineLogo from '../../components/ShineLogo'
 import HeroVisual from '../../components/HeroVisual'
 import { enterDemoMode } from '../../lib/demoAuth'
+import { cachedWelcome, getWelcome, welcomeVideoUrl } from '../../api/endpoints/welcome'
 
 // Original artwork (see vTemple_Analysis/08_UI_UX_Design_System.md §4 "Ornament kit"):
 // hand-built SVG gopuram + kolam pattern, drawn for this project — not stock icons.
@@ -14,6 +18,18 @@ const KOLAM_PATTERN = '/illustrations/kolam.svg'
 export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  // Warm the welcome video while the user types, so it starts the moment they sign in.
+  useEffect(() => {
+    getWelcome().catch(() => {})
+    const cfg = cachedWelcome()
+    if (cfg?.enabled === false) return undefined
+    const v = document.createElement('video')
+    v.preload = 'auto'
+    v.muted = true
+    v.src = cfg?.custom ? welcomeVideoUrl(cfg.version) : '/welcome/temple-awakening.mp4'
+    v.load()
+    return () => v.removeAttribute('src')
+  }, [])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
@@ -28,10 +44,12 @@ export default function LoginPage() {
     if (!password) return setError('Password Empty')
     setBusy(true)
     try {
-      await login(username.trim(), password)
+      // flag first: login() flips the app to the signed-in layout, which reads it on mount
       sessionStorage.setItem('vt-welcome', '1')
+      await login(username.trim(), password)
       navigate('/')
     } catch (err) {
+      sessionStorage.removeItem('vt-welcome')
       setError(err?.response?.data?.detail || 'UserName / Password is incorrect')
     } finally {
       setBusy(false)
@@ -45,7 +63,7 @@ export default function LoginPage() {
         <div aria-hidden className="vt-login-kolam" style={{ backgroundImage: `url(${KOLAM_PATTERN})` }} />
         <div style={{ position: 'relative', padding: '2rem 2.5rem 0', flex: '0 0 auto' }}>
           {/* Light-text variant of the official logo (public/brand), legible on the maroon panel. */}
-          <img src="/brand/lockup-horizontal-light.png" alt="e-Mandira Pranali" style={{ height: 'clamp(72px, 11vh, 104px)', width: 'auto', display: 'block' }} />
+          <ShineLogo src="/brand/lockup-horizontal-light.png" alt="e-Mandira Pranali" imgStyle={{ height: 'clamp(72px, 11vh, 104px)', width: 'auto' }} />
           <Text size="md" c="#F4E1A6" mt={10} fw={500}>
             Temple management for seva, donation and hall counters
           </Text>
@@ -59,16 +77,17 @@ export default function LoginPage() {
       </div>
 
       {/* Right: sign-in. */}
-      <main className="vt-login-form">
+      <main className="vt-login-form" data-vt-stage>
+        <DevotionalBackdrop />
         <div aria-hidden className="vt-login-glow vt-login-glow-a" />
         <div aria-hidden className="vt-login-glow vt-login-glow-b" />
 
         <Stack w="100%" maw={400} gap="md" style={{ position: 'relative' }} className="vt-rise">
-          <img className="vt-login-mobile-brand" src="/brand/lockup-horizontal.png" alt="e-Mandira Pranali" />
+          <ShineLogo wrapClassName="vt-login-mobile-brand vt-logo-on-light" imgClassName="vt-login-mobile-img" src="/brand/lockup-horizontal.png" alt="e-Mandira Pranali" />
 
           <Paper w="100%" p="xl" withBorder shadow="md" component="form" onSubmit={onSubmit} noValidate>
             <Stack gap={4} mb="lg">
-              <Title order={2} style={{ fontSize: 28 }}>
+              <Title order={2} style={{ fontSize: '1.75rem' }}>
                 Sign in
               </Title>
               <Text size="sm" c="dimmed">
@@ -120,6 +139,7 @@ export default function LoginPage() {
               }}>
               Continue with demo data
             </Button>
+            <ThemeToggle size={36} />
           </Group>
 
           {/* Dark credit badge: gold + silver Softvent mark (public/softvent-logo-dark.png, recoloured from the original). */}
@@ -129,13 +149,15 @@ export default function LoginPage() {
             mt={4}
             py="md"
             px="lg"
-            style={{ background: 'linear-gradient(180deg, #5A1414 0%, #2B0909 100%)', border: '1px solid rgba(244,225,166,0.3)', borderRadius: 16 }}
+            style={{ background: 'linear-gradient(180deg, var(--vt-g2) 0%, var(--vt-g3) 100%)', border: '1px solid rgba(244,225,166,0.3)', borderRadius: 16 }}
           >
             {/* One line, logo centred beneath. */}
             <Text size="xs" fw={600} c="#D9B9A3" tt="uppercase" ta="center" style={{ letterSpacing: 2, whiteSpace: 'nowrap' }}>
               Designed &amp; developed by
             </Text>
-            <img src="/softvent-logo-dark.png" alt="Softvent" style={{ height: 44, width: 'auto', objectFit: 'contain', display: 'block' }} />
+            <a className="vt-softvent-link" href="https://softvent.com" target="_blank" rel="noopener noreferrer" aria-label="Softvent website, opens in a new tab" style={{ display: 'block' }}>
+              <img src="/softvent-logo-dark.png" alt="Softvent" style={{ height: '2.75rem', width: 'auto', objectFit: 'contain', display: 'block' }} />
+            </a>
           </Stack>
         </Stack>
 
@@ -145,17 +167,18 @@ export default function LoginPage() {
       </main>
 
       <style>{`
-        .vt-login { display: flex; min-height: 100dvh; background: #FBF6EC; }
+        .vt-login { display: flex; min-height: 100dvh; background: var(--vt-sandal); }
         .vt-login-art {
           flex: 1.15; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; position: sticky; top: 0;
-          background: linear-gradient(180deg, #2B0909 0%, #5A1414 28%, #7A1F1F 60%, #2B0909 100%);
+          background: linear-gradient(180deg, var(--vt-g3) 0%, var(--vt-g2) 28%, var(--vt-g1) 60%, var(--vt-g3) 100%);
         }
         .vt-login-kolam { position: absolute; inset: 0; background-size: 120px 120px; opacity: 0.05; }
         .vt-login-form { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; justify-content: center; padding: 2rem 1.25rem; overflow: hidden; }
         .vt-login-glow { position: absolute; border-radius: 50%; pointer-events: none; }
         .vt-login-glow-a { top: -120px; right: -120px; width: 340px; height: 340px; background: radial-gradient(circle, rgba(224,123,22,0.14) 0%, rgba(224,123,22,0) 70%); }
         .vt-login-glow-b { bottom: -140px; left: -100px; width: 320px; height: 320px; background: radial-gradient(circle, rgba(122,31,31,0.08) 0%, rgba(122,31,31,0) 70%); }
-        .vt-login-mobile-brand { display: none; height: 64px; width: auto; align-self: center; filter: drop-shadow(0 2px 6px rgba(90,20,20,0.15)); }
+        .vt-login-mobile-brand { display: none; align-self: center; filter: drop-shadow(0 2px 6px rgba(90,20,20,0.15)); }
+        .vt-login-mobile-img { height: 64px; width: auto; }
         @media (max-width: 860px) {
           .vt-login-art { display: none; }
           .vt-login-mobile-brand { display: block; }

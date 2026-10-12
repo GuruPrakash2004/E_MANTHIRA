@@ -1,6 +1,7 @@
 // Transactions for the demo database: sevas, donations, hall bookings (+ payments), hall booking entries, vouchers,
 // inventory documents, the Panchanga calendar and the audit trail. Generated deterministically from the masters so
 // names, ledgers and amounts agree across every screen and report.
+import { specialDayOf } from '../../utils/tithi'
 import dayjs from 'dayjs'
 import { FY_PREFIX, iso, isoFuture, oleColor, pad, pick, rng, stamp } from './util'
 
@@ -104,17 +105,17 @@ export function buildTransactions(masters) {
   ;[[900 + 1, 'Sri Lakshmi Traders', 30], [900 + 2, 'Mysore Agarbathi Works', 15]].forEach((s, i) => db.pv.push({ PURVCHID: 950 + i + 1, PURVCHNO: i + 1, PrintPURVCHNO: `${FY_PREFIX}PUV${pad(i + 1, 3)}`, VCHDate: iso(i * 4), CRPERIOD: s[2], PBID: s[0], PartyName: s[1] }))
   ;[['Prasadam Laddu Mix', 4], ['Pongal Pack', 3], ['Pooja Kit', 3]].forEach((s, i) => db.bom.push({ BOMID: 400 + i + 1, BOMNO: i + 1, PrintBOMNO: `${FY_PREFIX}BOM${pad(i + 1, 3)}`, EffFrom: iso(60 - i * 10), FinishedItem: s[0], ITEMID: 4 + i }))
 
-  // ---- Panchanga calendar for the previous, current and next month
-  const EV = [['Amavasya', null], ['Ekadashi', '#C0392B'], ['Poornima', null], ['Sankashti Chaturthi', '#D4A63F'], ['Rathotsava', '#7A1F1F'], ['Raghavendra Aradhane', '#7A1F1F'], ['Hanuma Jayanti', '#E07B16'], ['Krishna Janmashtami Jayanti', '#2F6B3A'], ['Ugadi', '#3AA05A'], ['Deepavali', '#E07B16']]
-  ;[-1, 0, 1].forEach((mo, mi) => {
+  // ---- Panchanga calendar for the previous, current and next month: the real tithi days (Amavasya, Poornima,
+  // Ekadashi, Sankashti Chaturthi) worked out from the actual calendar dates (utils/tithi.js, approximate).
+  const TITHI_COLOR = { Ekadashi: '#C0392B', 'Sankashti Chaturthi': '#D4A63F' }
+  ;[-1, 0, 1].forEach((mo) => {
     const base = dayjs().add(mo, 'month').startOf('month')
-    ;[[2, 0], [5, 1], [9, 4], [12, 5], [16, 2], [20, 1], [23, 7], [27, 3], [28, 9]].forEach(([dd, ei], k) => {
-      const e = EV[(ei + mi) % EV.length]
-      db.panchanga.push({ date: base.date(Math.min(dd, base.daysInMonth())).format('YYYY-MM-DD'), name: e[0], color: e[1] ? oleColor(e[1]) : null })
-    })
+    for (let i = 0; i < base.daysInMonth(); i++) {
+      const d = base.add(i, 'day')
+      const name = specialDayOf(d.toDate())
+      if (name) db.panchanga.push({ date: d.format('YYYY-MM-DD'), name, color: TITHI_COLOR[name] ? oleColor(TITHI_COLOR[name]) : null })
+    }
   })
-  const seen = new Set()
-  db.panchanga = db.panchanga.filter((p) => (seen.has(p.date) ? false : seen.add(p.date)))
 
   // ---- Audit trail
   const ENT = ['Seva', 'Donation', 'Hall Booking', 'Payment Voucher', 'Receipt Voucher', 'Seva Master', 'User', 'Role']

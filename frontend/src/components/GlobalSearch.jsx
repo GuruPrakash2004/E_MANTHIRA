@@ -18,9 +18,24 @@ export default function GlobalSearch({ items, inputRef, autoFocus = false, onDon
   const [activeIdx, setActiveIdx] = useState(0)
 
   const results = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const list = q ? items.filter((it) => it.caption.toLowerCase().includes(q)) : items
-    return list.slice(0, q ? 20 : 8)
+    const norm = (t) => (t || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+    const q = norm(query)
+    if (!q) return items.slice(0, 8)
+    const tokens = q.split(' ')
+    // every typed word must appear in the name, group or keywords; name matches rank first
+    const scored = []
+    items.forEach((it, idx) => {
+      const cap = norm(it.caption)
+      const hay = `${cap} ${norm(it.group)} ${norm(it.keywords)}`
+      if (!tokens.every((t) => hay.includes(t))) return
+      let score = 3
+      if (cap.startsWith(q)) score = 0
+      else if (tokens.every((t) => cap.split(' ').some((w) => w.startsWith(t)))) score = 1
+      else if (tokens.every((t) => cap.includes(t))) score = 2
+      scored.push({ it, score, idx })
+    })
+    scored.sort((a, b) => a.score - b.score || a.idx - b.idx)
+    return scored.slice(0, 30).map((x) => x.it)
   }, [query, items])
 
   useEffect(() => setActiveIdx(0), [query])
@@ -64,14 +79,14 @@ export default function GlobalSearch({ items, inputRef, autoFocus = false, onDon
           gap: 8,
           height: 42,
           padding: '0 12px 0 14px',
-          background: '#fff',
+          background: 'var(--vt-surface)',
           border: `1px solid ${open ? 'var(--mantine-color-kumkum-5)' : 'var(--vt-line)'}`,
           borderRadius: 999,
           boxShadow: open ? '0 0 0 3px rgba(122,31,31,0.12)' : 'none',
           transition: 'border-color .15s, box-shadow .15s',
         }}
       >
-        <Search size={16} color="var(--mantine-color-kumkum-6)" aria-hidden />
+        <Search size={16} color="var(--vt-accent)" aria-hidden />
         <input
           ref={inputRef}
           type="text"
@@ -83,7 +98,7 @@ export default function GlobalSearch({ items, inputRef, autoFocus = false, onDon
           aria-activedescendant={open && results[activeIdx] ? `${listId}-${activeIdx}` : undefined}
           autoComplete="off"
           autoFocus={autoFocus}
-          placeholder="Search screens"
+          placeholder="Search screens, reports, settings"
           value={query}
           onChange={(e) => {
             setQuery(e.currentTarget.value)
@@ -127,7 +142,7 @@ export default function GlobalSearch({ items, inputRef, autoFocus = false, onDon
             zIndex: 400,
             maxHeight: 'min(60dvh, 380px)',
             overflowY: 'auto',
-            background: '#fff',
+            background: 'var(--vt-surface)',
             border: '1px solid var(--vt-line)',
             borderRadius: 16,
             boxShadow: '0 16px 40px rgba(43,9,9,0.18)',
@@ -161,7 +176,7 @@ export default function GlobalSearch({ items, inputRef, autoFocus = false, onDon
                 padding: '6px 12px',
                 borderRadius: 10,
                 cursor: 'pointer',
-                background: i === activeIdx ? 'var(--mantine-color-gold-0)' : undefined,
+                background: i === activeIdx ? 'var(--vt-gold-chip)' : undefined,
               }}
             >
               <div style={{ minWidth: 0 }}>
@@ -174,7 +189,7 @@ export default function GlobalSearch({ items, inputRef, autoFocus = false, onDon
                   </Text>
                 )}
               </div>
-              {i === activeIdx && <CornerDownLeft size={14} color="var(--mantine-color-kumkum-7)" aria-hidden />}
+              {i === activeIdx && <CornerDownLeft size={14} color="var(--vt-accent)" aria-hidden />}
             </div>
           ))}
         </div>

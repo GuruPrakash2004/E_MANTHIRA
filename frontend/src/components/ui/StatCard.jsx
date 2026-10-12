@@ -9,7 +9,7 @@ export default function StatCard({ label, value, icon: Icon, footer, tone = 'lig
       withBorder={!dark}
       p="lg"
       style={{
-        background: dark ? 'linear-gradient(160deg, #5A1414 0%, #2B0909 100%)' : '#fff',
+        background: dark ? 'linear-gradient(160deg, var(--vt-g2) 0%, var(--vt-g3) 100%)' : 'var(--vt-surface)',
         color: dark ? '#FBF6EC' : undefined,
         border: dark ? '1px solid rgba(244,225,166,0.25)' : undefined,
         minHeight: 138,
@@ -32,8 +32,8 @@ export default function StatCard({ label, value, icon: Icon, footer, tone = 'lig
               display: 'grid',
               placeItems: 'center',
               flexShrink: 0,
-              background: dark ? 'rgba(244,225,166,0.16)' : 'var(--mantine-color-gold-0)',
-              color: dark ? '#F4E1A6' : 'var(--mantine-color-kumkum-7)',
+              background: dark ? 'rgba(244,225,166,0.16)' : 'var(--vt-gold-chip)',
+              color: dark ? '#F4E1A6' : 'var(--vt-accent)',
             }}
           >
             <Icon size={18} />

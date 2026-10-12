@@ -154,7 +154,7 @@ export default function CompanyMasterTab() {
                 <Table.Td>{dayjs(y.yrTdate).format('DD/MM/YYYY')}</Table.Td>
                 <Table.Td>
                   {y.Active === 'Y' ? (
-                    <Badge color="gold" variant="light" c="kumkum.8">
+                    <Badge color="gold" variant="light" c="var(--vt-badge-ink)">
                       Active
                     </Badge>
                   ) : (

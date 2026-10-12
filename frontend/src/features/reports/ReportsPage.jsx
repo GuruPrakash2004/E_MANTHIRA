@@ -51,7 +51,7 @@ function SubsidiaryReportsCatalog({ onOpenTab }) {
         {(catalog || []).map((r) => {
           const tab = CATALOG_FORM_TAB[r.form_name]
           return (
-            <Group key={r.rpt_id} justify="space-between" wrap="nowrap" p="sm" style={{ border: '1px solid var(--vt-line)', borderRadius: 12, background: '#fff' }}>
+            <Group key={r.rpt_id} justify="space-between" wrap="nowrap" p="sm" style={{ border: '1px solid var(--vt-line)', borderRadius: 12, background: 'var(--vt-surface)' }}>
               <div style={{ minWidth: 0 }}>
                 <Text size="sm" fw={600} truncate>
                   {r.name}
@@ -125,7 +125,7 @@ function DateRange({ from, to, onFrom, onTo }) {
               size="compact-sm"
               variant="light"
               color="gold"
-              c="kumkum.8"
+              c="var(--vt-badge-ink)"
               onClick={() => {
                 const [a, b] = p.range()
                 onFrom(a.toDate())
@@ -499,7 +499,7 @@ function GeneralLedgerPanel() {
             <Group justify="space-between" align="center" mb="sm" wrap="wrap" gap="sm">
               <Title order={4}>{c.name}</Title>
               <Group gap="sm">
-                <Badge size="lg" variant="light" color="gold" c="kumkum.8" tt="none" className="vt-num">
+                <Badge size="lg" variant="light" color="gold" c="var(--vt-badge-ink)" tt="none" className="vt-num">
                   Opening {money(c.opening)}
                 </Badge>
                 <Badge size="lg" variant="filled" color="kumkum" tt="none" className="vt-num">

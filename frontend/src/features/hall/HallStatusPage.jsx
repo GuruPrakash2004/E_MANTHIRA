@@ -107,7 +107,7 @@ export default function HallStatusPage() {
               <Text size="xs">Booked</Text>
             </Group>
             <Group gap={6}>
-              <span aria-hidden style={{ width: 14, height: 14, borderRadius: 4, background: '#fff', border: '1px solid var(--vt-line)', display: 'inline-block' }} />
+              <span aria-hidden style={{ width: 14, height: 14, borderRadius: 4, background: 'var(--vt-surface)', border: '1px solid var(--vt-line)', display: 'inline-block' }} />
               <Text size="xs">Free</Text>
             </Group>
             <Group gap={6}>
@@ -130,7 +130,7 @@ export default function HallStatusPage() {
             <Table withColumnBorders style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th style={{ position: 'sticky', left: 0, zIndex: 2, background: 'var(--mantine-color-gold-0)', minWidth: 150 }}>Hall</Table.Th>
+                  <Table.Th style={{ position: 'sticky', left: 0, zIndex: 2, background: 'var(--vt-gold-chip)', minWidth: 150 }}>Hall</Table.Th>
                   {days.map((d) => {
                     const isToday = d.format('YYYY-MM-DD') === today
                     const weekend = d.day() === 0 || d.day() === 6
@@ -142,7 +142,7 @@ export default function HallStatusPage() {
                           minWidth: 32,
                           padding: '4px 2px',
                           background: isToday ? 'var(--mantine-color-gold-3)' : undefined,
-                          color: weekend && !isToday ? 'var(--mantine-color-kumkum-7)' : undefined,
+                          color: weekend && !isToday ? 'var(--vt-accent)' : undefined,
                         }}
                       >
                         <div className="vt-num">{d.format('D')}</div>
@@ -155,7 +155,7 @@ export default function HallStatusPage() {
               <Table.Tbody>
                 {rows.map(({ hall, byDay }) => (
                   <Table.Tr key={hall.HALLID}>
-                    <Table.Td style={{ position: 'sticky', left: 0, zIndex: 1, background: '#fff', fontWeight: 600, whiteSpace: 'nowrap' }}>{hall.HALLNAME}</Table.Td>
+                    <Table.Td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--vt-surface)', fontWeight: 600, whiteSpace: 'nowrap' }}>{hall.HALLNAME}</Table.Td>
                     {days.map((d) => {
                       const iso = d.format('YYYY-MM-DD')
                       const booking = byDay[iso]
@@ -168,7 +168,7 @@ export default function HallStatusPage() {
                             textAlign: 'center',
                             padding: 0,
                             height: 36,
-                            background: booking ? BOOKED : isToday ? 'var(--mantine-color-gold-0)' : undefined,
+                            background: booking ? BOOKED : isToday ? 'var(--vt-gold-chip)' : undefined,
                             color: booking ? '#FBF6EC' : undefined,
                           }}
                         >

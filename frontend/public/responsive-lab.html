@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>e-Mandira responsive lab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #1C0A0A; color: #F3E7D6; }
+  header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 10px 16px; background: #2A1111; border-bottom: 1px solid #5A3030; }
+  h1 { font-size: 16px; margin: 0 8px 0 0; }
+  button, select { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid #C79A3D; background: transparent; color: #F4E1A6; cursor: pointer; }
+  button[aria-pressed="true"] { background: #C79A3D; color: #2B0909; font-weight: 700; }
+  label { font-size: 13px; display: inline-flex; gap: 8px; align-items: center; }
+  main { display: flex; flex-wrap: wrap; gap: 28px; padding: 20px 16px 60px; align-items: flex-start; }
+  figure { margin: 0; }
+  figcaption { font-size: 13px; margin-bottom: 6px; color: #E9D2B8; }
+  figcaption b { color: #F4E1A6; }
+  .box { overflow: hidden; border-radius: 10px; border: 2px solid #5A3030; background: #000; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  iframe { border: 0; transform-origin: 0 0; display: block; background: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Responsive lab</h1>
+  <span id="routes"></span>
+  <label>Zoom <input id="zoom" type="range" min="40" max="140" value="100" /> <span id="zv">100%</span></label>
+  <button id="theme" aria-pressed="false">Dark theme</button>
+</header>
+<main id="grid"></main>
+<script>
+  // Demo-data session so every frame opens signed in (same browser storage as the app, nothing is saved anywhere).
+  localStorage.setItem('vtemple_demo_mode', '1');
+  localStorage.setItem('vtemple_access_token', 'demo-mode-token');
+  localStorage.setItem('vtemple_refresh_token', 'demo-mode-refresh');
+  sessionStorage.setItem('vt-welcome', '0');
+
+  const DEVICES = [
+    ['Small phone', 360, 740], ['Phone', 390, 844], ['Tablet portrait', 820, 1180],
+    ['Tablet landscape', 1180, 820], ['Laptop', 1366, 768], ['Desktop Full HD', 1920, 1080], ['4K display', 3840, 2160],
+  ];
+  const ROUTES = [['Dashboard', '/'], ['Seva Entry', '/sevas'], ['Hall Status', '/halls/status'], ['Reports', '/reports'], ['Masters', '/masters/1255'], ['Panchanga', '/panchanga'], ['Admin', '/admin']];
+  let route = '/', zoom = 1;
+  const grid = document.getElementById('grid');
+  const BASE_H = 560; // each frame is scaled to about this tall at 100% zoom
+
+  function build() {
+    grid.innerHTML = '';
+    DEVICES.forEach(([name, w, h]) => {
+      const s = Math.min(1, BASE_H / h) * zoom;
+      const fig = document.createElement('figure');
+      fig.innerHTML = `<figcaption><b>${name}</b> ${w} x ${h}</figcaption>`;
+      const box = document.createElement('div');
+      box.className = 'box';
+      box.style.width = w * s + 'px';
+      box.style.height = h * s + 'px';
+      const f = document.createElement('iframe');
+      f.width = w; f.height = h; f.title = name + ' preview';
+      f.style.transform = `scale(${s})`;
+      f.src = route;
+      box.appendChild(f); fig.appendChild(box); grid.appendChild(fig);
+    });
+  }
+  const rb = document.getElementById('routes');
+  ROUTES.forEach(([label, r]) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.setAttribute('aria-pressed', r === route);
+    b.onclick = () => { route = r; [...rb.children].forEach((x) => x.setAttribute('aria-pressed', x === b)); build(); };
+    rb.appendChild(b);
+  });
+  document.getElementById('zoom').oninput = (e) => { zoom = e.target.value / 100; document.getElementById('zv').textContent = e.target.value + '%'; build(); };
+  const tb = document.getElementById('theme');
+  tb.onclick = () => {
+    const dark = tb.getAttribute('aria-pressed') !== 'true';
+    tb.setAttribute('aria-pressed', dark);
+    localStorage.setItem('mantine-color-scheme-value', dark ? 'dark' : 'light');
+    build();
+  };
+  localStorage.setItem('mantine-color-scheme-value', 'light');
+  build();
+</script>
+</body>
+</html>

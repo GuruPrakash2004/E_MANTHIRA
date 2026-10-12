@@ -3,6 +3,30 @@
   --vt-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --vt-line: #eadfd3;
   --vt-sandal: #fbf6ec;
+  --vt-header: #fffdf8;
+  --vt-surface: #ffffff;
+  --vt-gold-chip: var(--mantine-color-gold-0);
+  --vt-accent: var(--mantine-color-kumkum-7);
+  --vt-badge-ink: var(--mantine-color-kumkum-8);
+  --vt-ink: #2a211c;
+  --vt-has-bg: linear-gradient(160deg, #fffdf6 0%, #fbf0d2 100%);
+}
+
+/* Dark theme: the same logo palette inverted (maroon-brown surfaces, ivory text, gold accents). Never neutral black. */
+:root[data-mantine-color-scheme='dark'] {
+  color-scheme: dark;
+  --vt-line: #4a2626;
+  --vt-sandal: #1c0a0a;
+  --vt-header: #240e0e;
+  --vt-surface: #2a1111;
+  --vt-gold-chip: rgba(244, 225, 166, 0.1);
+  --vt-accent: #f4e1a6;
+  --vt-badge-ink: #f4e1a6;
+  --vt-ink: #f3e7d6;
+  --vt-has-bg: linear-gradient(160deg, #3a1a14 0%, #4a2a18 100%);
+  --mantine-color-gold-0: rgba(244, 225, 166, 0.1);
+  --mantine-color-gold-1: rgba(244, 225, 166, 0.18);
+  --mantine-color-gold-4: #a97f32;
 }
 
 body {
@@ -61,3 +85,109 @@ body {
     transform: none;
   }
 }
+
+:root[data-mantine-color-scheme='dark'] :where(a, button, [role='button'], input, select, textarea, summary):focus-visible {
+  outline-color: #f4e1a6;
+}
+:root[data-mantine-color-scheme='dark'] .vt-lift:hover {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Logo swaps: dark-text lockup on light, light-text lockup on dark. */
+.vt-logo-on-dark { display: none !important; }
+:root[data-mantine-color-scheme='dark'] .vt-logo-on-dark { display: block !important; }
+:root[data-mantine-color-scheme='dark'] .vt-logo-on-light { display: none !important; }
+
+/* Panchanga: today's day badge reads as a gold chip in the dark theme. */
+:root[data-mantine-color-scheme='dark'] .vt-pg-today .vt-pg-day { background: #f4e1a6; color: #2b0909; }
+
+/* Tabs: active tab is gold in the dark theme (kumkum is too dim on maroon-black). */
+:root[data-mantine-color-scheme='dark'] .mantine-Tabs-tab[data-active] { color: #f4e1a6; border-color: #f4e1a6; }
+:root[data-mantine-color-scheme='dark'] .mantine-Tabs-tab:hover { background: rgba(244, 225, 166, 0.08); }
+
+/* Devotional motion backdrop (components/DevotionalBackdrop.jsx). Stage = any positioned, isolated container. */
+[data-vt-stage] { position: relative; isolation: isolate; }
+[data-vt-stage] .mantine-Card-root:not(.vt-pg-banner) { background: color-mix(in srgb, var(--vt-surface) 86%, transparent); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.vt-dvbg { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; color: #7A1F1F; --pg-spark: #C79A3D; }
+:root[data-mantine-color-scheme='dark'] .vt-dvbg { color: #F4E1A6; --pg-spark: #F4E1A6; }
+.vt-dvbg-halo { position: absolute; left: 50%; top: 18%; width: min(900px, 120vw); aspect-ratio: 1; margin-left: calc(min(900px, 120vw) / -2); border-radius: 50%;
+  background: radial-gradient(circle, rgba(199,154,61,.22) 0%, rgba(199,154,61,.08) 38%, transparent 68%); animation: vt-dvbg-breathe 9s ease-in-out infinite; }
+:root[data-mantine-color-scheme='dark'] .vt-dvbg-halo { background: radial-gradient(circle, rgba(244,225,166,.14) 0%, rgba(244,225,166,.05) 38%, transparent 68%); }
+.vt-dvbg-m { position: absolute; opacity: .17; }
+:root[data-mantine-color-scheme='dark'] .vt-dvbg-m { opacity: .2; }
+.vt-dvbg-m svg { width: 100%; height: 100%; display: block; }
+.vt-dvbg-m1 { width: 620px; height: 620px; right: -170px; top: -120px; animation: vt-dvbg-turn 140s linear infinite; }
+.vt-dvbg-m2 { width: 460px; height: 460px; left: -150px; bottom: 6%; animation: vt-dvbg-turn 110s linear infinite reverse; }
+.vt-dvbg-spark { position: absolute; bottom: -12px; border-radius: 50%; background: var(--pg-spark); box-shadow: 0 0 8px 2px var(--pg-spark); opacity: 0; animation: vt-dvbg-rise linear infinite; }
+@keyframes vt-dvbg-turn { to { transform: rotate(360deg); } }
+@keyframes vt-dvbg-breathe { 0%, 100% { opacity: .7; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+@keyframes vt-dvbg-rise { 0% { transform: translate(0, 0); opacity: 0; } 10% { opacity: .7; } 50% { transform: translate(14px, -50vh); } 90% { opacity: .35; } 100% { transform: translate(-10px, -105vh); opacity: 0; } }
+@media (max-width: 700px) { .vt-dvbg-m1 { width: 360px; height: 360px; right: -140px; } .vt-dvbg-m2 { width: 280px; height: 280px; left: -120px; } }
+@media (prefers-reduced-motion: reduce) { .vt-dvbg-m, .vt-dvbg-halo { animation: none; } .vt-dvbg-spark { display: none; } }
+
+/* ---- Palettes ("F-mood" button in the header). Default = the logo maroon; P1 Burgundy; P2 Blush Beige. ---- */
+:root { --vt-g1: #6b1a1a; --vt-g2: #5a1414; --vt-g2d: #3e0e0e; --vt-g3: #2b0909; }
+
+/* P1 Burgundy: rich and dramatic. */
+:root[data-vt-palette='p1'] {
+  --vt-g1: #7a0f2b; --vt-g2: #5c0a20; --vt-g2d: #3d0614; --vt-g3: #260209;
+  --mantine-color-kumkum-0: #fbeaee; --mantine-color-kumkum-1: #f3cbd4; --mantine-color-kumkum-2: #e49cad; --mantine-color-kumkum-3: #cf6b84; --mantine-color-kumkum-4: #b54463;
+  --mantine-color-kumkum-5: #962947; --mantine-color-kumkum-6: #800020; --mantine-color-kumkum-7: #66001a; --mantine-color-kumkum-8: #4d0014; --mantine-color-kumkum-9: #33000d;
+  --mantine-color-kumkum-filled: #800020; --mantine-color-kumkum-filled-hover: #66001a; --mantine-color-kumkum-light: rgba(128, 0, 32, 0.1); --mantine-color-kumkum-light-hover: rgba(128, 0, 32, 0.16);
+  --mantine-color-kumkum-light-color: #800020; --mantine-color-kumkum-outline: #800020; --mantine-color-kumkum-outline-hover: rgba(128, 0, 32, 0.05);
+  --vt-sandal: #faf1ee; --vt-header: #fff8f6; --vt-line: #ecd6d4;
+}
+/* P2 Blush Beige: warm and elegant. Dark panels become a soft mauve-burgundy so the page still reads as blush. */
+:root[data-vt-palette='p2'] {
+  --vt-g1: #8f3b4c; --vt-g2: #6e2a39; --vt-g2d: #55202c; --vt-g3: #3f1620;
+  --mantine-color-kumkum-0: #fbeff0; --mantine-color-kumkum-1: #f2d8dc; --mantine-color-kumkum-2: #e5b4bc; --mantine-color-kumkum-3: #d38d99; --mantine-color-kumkum-4: #bd6676;
+  --mantine-color-kumkum-5: #a84e60; --mantine-color-kumkum-6: #913a4c; --mantine-color-kumkum-7: #7a2e3f; --mantine-color-kumkum-8: #5f2230; --mantine-color-kumkum-9: #451823;
+  --mantine-color-kumkum-filled: #913a4c; --mantine-color-kumkum-filled-hover: #7a2e3f; --mantine-color-kumkum-light: rgba(145, 58, 76, 0.1); --mantine-color-kumkum-light-hover: rgba(145, 58, 76, 0.16);
+  --mantine-color-kumkum-light-color: #7a2e3f; --mantine-color-kumkum-outline: #913a4c; --mantine-color-kumkum-outline-hover: rgba(145, 58, 76, 0.05);
+  --vt-sandal: #f4e4dd; --vt-header: #faefea; --vt-surface: #fff9f6; --vt-line: #e6cfc5;
+  --vt-has-bg: linear-gradient(160deg, #fff9f6 0%, #f6e0d6 100%);
+}
+/* Dark scheme under each palette keeps the surfaces tinted to the palette. */
+:root[data-vt-palette='p1'][data-mantine-color-scheme='dark'] { --vt-sandal: #1a0a0e; --vt-header: #220c13; --vt-surface: #2a1018; --vt-line: #4a2230; --vt-has-bg: linear-gradient(160deg, #3a1420 0%, #4a1a28 100%); }
+:root[data-vt-palette='p2'][data-mantine-color-scheme='dark'] { --vt-sandal: #211417; --vt-header: #2a191d; --vt-surface: #2f1d21; --vt-line: #503339; --vt-has-bg: linear-gradient(160deg, #3b2429 0%, #4a2d32 100%); }
+
+/* P3 Temple Gold: the logo's gold forward on ivory (buttons in antique bronze-gold, dark panels in deep gold-brown). */
+:root[data-vt-palette='p3'] {
+  --vt-g1: #7a5a1c; --vt-g2: #5a4012; --vt-g2d: #3e2b0c; --vt-g3: #2a1c07;
+  --mantine-color-kumkum-0: #fbf4e2; --mantine-color-kumkum-1: #f4e3b4; --mantine-color-kumkum-2: #ead085; --mantine-color-kumkum-3: #ddba57; --mantine-color-kumkum-4: #c99f3d;
+  --mantine-color-kumkum-5: #a97f32; --mantine-color-kumkum-6: #8a6420; --mantine-color-kumkum-7: #6e4f18; --mantine-color-kumkum-8: #523b12; --mantine-color-kumkum-9: #3a290c;
+  --mantine-color-kumkum-filled: #8a6420; --mantine-color-kumkum-filled-hover: #6e4f18; --mantine-color-kumkum-light: rgba(138, 100, 32, 0.12); --mantine-color-kumkum-light-hover: rgba(138, 100, 32, 0.18);
+  --mantine-color-kumkum-light-color: #6e4f18; --mantine-color-kumkum-outline: #8a6420; --mantine-color-kumkum-outline-hover: rgba(138, 100, 32, 0.06);
+  --vt-sandal: #fbf6ec; --vt-header: #fffdf6; --vt-line: #eadab0;
+}
+:root[data-vt-palette='p3'][data-mantine-color-scheme='dark'] { --vt-sandal: #191208; --vt-header: #21170b; --vt-surface: #281d0f; --vt-line: #4a3a1c; --vt-has-bg: linear-gradient(160deg, #33250f 0%, #42301a 100%); }
+/* Mantine dark scale (inputs, menus, modals) follows the palette in the dark theme. */
+:root[data-vt-palette='p3'][data-mantine-color-scheme='dark'] { --mantine-color-dark-4: #5a4520; --mantine-color-dark-5: #46361a; --mantine-color-dark-6: #33270f; --mantine-color-dark-7: #281d0f; --mantine-color-dark-8: #1c1409; --mantine-color-dark-9: #130d05; }
+:root[data-vt-palette='p1'][data-mantine-color-scheme='dark'] { --mantine-color-dark-4: #5c2a3a; --mantine-color-dark-5: #4a2230; --mantine-color-dark-6: #381824; --mantine-color-dark-7: #2a1018; --mantine-color-dark-8: #1c0a10; --mantine-color-dark-9: #12060a; }
+:root[data-vt-palette='p2'][data-mantine-color-scheme='dark'] { --mantine-color-dark-4: #644045; --mantine-color-dark-5: #503339; --mantine-color-dark-6: #3f2a2f; --mantine-color-dark-7: #2f1d21; --mantine-color-dark-8: #22151a; --mantine-color-dark-9: #160d10; }
+
+/* ShineLogo: sweep clipped to the logo artwork only. */
+.vt-shine { position: relative; display: block; width: fit-content; line-height: 0; }
+.vt-shine > img { display: block; }
+.vt-shine-sweep {
+  position: absolute; inset: 0; pointer-events: none;
+  -webkit-mask-image: var(--vt-shine-src); mask-image: var(--vt-shine-src);
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 244, 205, 0.75) 50%, transparent 60%);
+  background-size: 250% 100%; background-position: 150% 0;
+  animation: vt-logo-sweep 6s ease-in-out infinite;
+}
+@keyframes vt-logo-sweep { 0%, 55% { background-position: 150% 0; } 100% { background-position: -50% 0; } }
+@media (prefers-reduced-motion: reduce) { .vt-shine-sweep { animation: none; opacity: 0; } }
+
+/* Very large screens (full-HD and up, 2K, 4K): grow the root size smoothly so text, controls and spacing
+   (all rem-based in Mantine) scale with the display instead of looking tiny. 1920px = 16px, 3840px = ~26px. */
+@media (min-width: 1921px) {
+  html { font-size: clamp(16px, calc(16px + (100vw - 1920px) * 0.0052), 27px); }
+}
+
+/* Softvent credit logo links to softvent.com: gentle lift on hover, visible focus ring. */
+.vt-softvent-link { border-radius: 8px; transition: transform .2s ease, filter .2s ease; }
+.vt-softvent-link:hover { transform: translateY(-2px) scale(1.04); filter: brightness(1.15); }
+.vt-softvent-link:focus-visible { outline: 2px solid #f4e1a6; outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) { .vt-softvent-link { transition: none; } .vt-softvent-link:hover { transform: none; } }

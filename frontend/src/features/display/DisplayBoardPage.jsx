@@ -31,7 +31,7 @@ export default function DisplayBoardPage() {
   }, [])
 
   return (
-    <div style={{ minHeight: '100vh', background: '#1a0e0e', color: '#F4E1A6', padding: '2rem' }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg, var(--vt-g2d) 0%, #1C0A0A 70%)', color: '#F4E1A6', padding: '2rem' }}>
       <Stack align="center" gap={4} mb="xl">
         <img src={GOPURAM_MARK} alt="" style={{ height: 64, width: 64 }} />
         <Title order={1} style={{ fontFamily: 'Marcellus, Georgia, serif', color: '#F4E1A6' }}>

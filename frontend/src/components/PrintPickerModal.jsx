@@ -134,8 +134,8 @@ export default function PrintPickerModal({ opened, onClose, docId, recordId, tit
   return (
     <Modal opened={opened} onClose={onClose} size="90%" radius="lg" title={null} padding={0}>
       <div style={{ display: 'flex', minHeight: 560, maxHeight: '80vh' }}>
-        <div style={{ width: 340, borderRight: '1px solid var(--mantine-color-gray-2)', display: 'flex', flexDirection: 'column' }}>
-          <Group gap="sm" p="md" style={{ borderBottom: '1px solid var(--mantine-color-gray-2)' }}>
+        <div style={{ width: 340, borderRight: '1px solid var(--vt-line)', display: 'flex', flexDirection: 'column' }}>
+          <Group gap="sm" p="md" style={{ borderBottom: '1px solid var(--vt-line)' }}>
             <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg,#E07B16,#D4A437)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Printer size={20} color="white" />
             </div>
@@ -234,8 +234,8 @@ export default function PrintPickerModal({ opened, onClose, docId, recordId, tit
           </div>
         </div>
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F4F0E8' }}>
-          <Group justify="space-between" p="md" style={{ borderBottom: '1px solid var(--mantine-color-gray-2)', background: 'white' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--vt-sandal)' }}>
+          <Group justify="space-between" p="md" style={{ borderBottom: '1px solid var(--vt-line)', background: 'var(--vt-surface)' }}>
             <Group gap={6}>
               <FileText size={16} color="#7A1F1F" />
               <Text size="sm" c="dimmed">
@@ -246,7 +246,7 @@ export default function PrintPickerModal({ opened, onClose, docId, recordId, tit
           <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '1.5rem' }}>
             {loadingPreview && <Loader mt="xl" color="kumkum" />}
             {!loadingPreview && previewUrl && (
-              <iframe title="Print preview" src={previewUrl} style={{ width: '100%', height: '100%', minHeight: 500, border: 'none', background: 'white', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }} />
+              <iframe title="Print preview" src={previewUrl} style={{ width: '100%', height: '100%', minHeight: 500, border: 'none', background: 'var(--vt-surface)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }} />
             )}
             {!loadingPreview && !previewUrl && (
               <Text c="dimmed" mt="xl">
@@ -254,7 +254,7 @@ export default function PrintPickerModal({ opened, onClose, docId, recordId, tit
               </Text>
             )}
           </div>
-          <Group justify="flex-end" p="md" style={{ borderTop: '1px solid var(--mantine-color-gray-2)', background: 'white' }}>
+          <Group justify="flex-end" p="md" style={{ borderTop: '1px solid var(--vt-line)', background: 'var(--vt-surface)' }}>
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>

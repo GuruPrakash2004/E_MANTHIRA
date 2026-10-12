@@ -171,9 +171,9 @@ export default function RolesRightsTab() {
                       borderRadius: 999,
                       fontSize: 14,
                       fontWeight: on ? 700 : 500,
-                      border: `1px solid ${on ? 'var(--mantine-color-kumkum-7)' : 'var(--mantine-color-gray-4)'}`,
-                      background: on ? 'var(--mantine-color-kumkum-7)' : '#fff',
-                      color: on ? '#FBF6EC' : 'inherit',
+                      border: `1px solid ${on ? 'var(--mantine-color-kumkum-7)' : 'var(--vt-line)'}`,
+                      background: on ? 'var(--mantine-color-kumkum-7)' : 'var(--vt-surface)',
+                      color: on ? '#FBF6EC' : 'var(--vt-ink)',
                     }}
                   >
                     {r.ROLENAME}
@@ -212,27 +212,27 @@ export default function RolesRightsTab() {
             </Group>
           </Group>
 
-          <Group gap="xl" p="sm" style={{ background: 'var(--mantine-color-gold-0)', borderRadius: 8 }}>
+          <Group gap="xl" p="sm" style={{ background: 'var(--vt-gold-chip)', borderRadius: 8 }}>
             <Group gap={6}>
-              <Eye size={16} color="var(--mantine-color-kumkum-7)" />
+              <Eye size={16} color="var(--vt-accent)" />
               <Text size="xs">
                 <b>Open</b>: see the screen in the sidebar and look at its data
               </Text>
             </Group>
             <Group gap={6}>
-              <Plus size={16} color="var(--mantine-color-kumkum-7)" />
+              <Plus size={16} color="var(--vt-accent)" />
               <Text size="xs">
                 <b>Add / Save</b>: create new records or save bills and entries
               </Text>
             </Group>
             <Group gap={6}>
-              <Pencil size={16} color="var(--mantine-color-kumkum-7)" />
+              <Pencil size={16} color="var(--vt-accent)" />
               <Text size="xs">
                 <b>Edit</b>: change existing records
               </Text>
             </Group>
             <Group gap={6}>
-              <Trash2 size={16} color="var(--mantine-color-kumkum-7)" />
+              <Trash2 size={16} color="var(--vt-accent)" />
               <Text size="xs">
                 <b>Delete / Cancel</b>: remove records or cancel saved bills
               </Text>
@@ -242,7 +242,7 @@ export default function RolesRightsTab() {
           <Card withBorder p={0} style={{ overflow: 'hidden' }}>
           <Table.ScrollContainer minWidth={560} mah="70dvh">
           <Table highlightOnHover stickyHeader>
-            <Table.Thead style={{ background: '#fff', zIndex: 2 }}>
+            <Table.Thead style={{ background: 'var(--vt-surface)', zIndex: 2 }}>
               <Table.Tr>
                 <Table.Th>Screen</Table.Th>
                 {COLUMNS.map((c) => (
@@ -255,7 +255,7 @@ export default function RolesRightsTab() {
             <Table.Tbody>
               {groups.map((g) => (
                 <Fragment key={g.type}>
-                  <Table.Tr style={{ background: 'var(--mantine-color-gold-0)' }}>
+                  <Table.Tr style={{ background: 'var(--vt-gold-chip)' }}>
                     <Table.Td>
                       <Text fw={700} size="sm">
                         {g.type.toUpperCase()}{' '}

@@ -1,5 +1,6 @@
 import { ActionIcon, Button, Card, Divider, Group, Kbd, Skeleton, Stack, Text, Title } from '@mantine/core'
 import { Printer } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
 import EmptyState from './EmptyState'
 import amountInWords from '../../utils/amountInWords'
 
@@ -59,7 +60,7 @@ export function EntryLayout({ main, side }) {
 
 export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, onSave }) {
   return (
-    <Card p="lg" style={{ background: 'linear-gradient(160deg, #6B1A1A 0%, #2B0909 100%)', border: '1px solid rgba(244,225,166,0.3)', color: '#FBF6EC' }}>
+    <Card p="lg" style={{ background: 'linear-gradient(160deg, var(--vt-g1) 0%, var(--vt-g3) 100%)', border: '1px solid rgba(244,225,166,0.3)', color: '#FBF6EC' }}>
       <Text size="xs" fw={700} tt="uppercase" c="#F4E1A6" style={{ letterSpacing: 1 }}>
         Summary
       </Text>
@@ -107,7 +108,7 @@ export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, war
 
 export function SavedPanel({ lines, onPrint, printLabel = 'Print receipt' }) {
   return (
-    <Card withBorder p="md" style={{ borderColor: 'var(--mantine-color-gold-4)', background: 'var(--mantine-color-gold-0)' }} role="status">
+    <Card withBorder p="md" style={{ borderColor: 'var(--mantine-color-gold-4)', background: 'var(--vt-gold-chip)' }} role="status">
       <Group gap={8} wrap="nowrap" align="flex-start">
         <Diya />
         <div style={{ minWidth: 0 }}>
@@ -135,7 +136,7 @@ export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyT
   return (
     <Card withBorder p="md" className="vt-recent-card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <Group gap={8} mb="xs" style={{ flex: '0 0 auto' }}>
-        <Icon size={18} color="var(--mantine-color-kumkum-7)" aria-hidden />
+        <Icon size={18} color="var(--vt-accent)" aria-hidden />
         <Title order={5}>{title}</Title>
       </Group>
       {loading ? (
@@ -148,10 +149,11 @@ export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyT
         <EmptyState icon={Icon} title={emptyTitle} hint={emptyHint} />
       ) : (
         <Stack gap={0} className="vt-recent-list" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
+          <AnimatePresence initial={false}>
           {rows.map((row, i) => {
             const r = renderRow(row)
             return (
-              <div key={r.key}>
+              <motion.div key={r.key} layout="position" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
                 {i > 0 && <Divider my={6} />}
                 <Group justify="space-between" wrap="nowrap" gap="xs">
                   <div style={{ minWidth: 0 }}>
@@ -171,9 +173,10 @@ export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyT
                     )}
                   </Group>
                 </Group>
-              </div>
+              </motion.div>
             )
           })}
+          </AnimatePresence>
         </Stack>
       )}
     </Card>

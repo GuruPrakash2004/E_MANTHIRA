@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Volume2, VolumeX } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { cachedWelcome, getWelcome, welcomeVideoUrl } from '../api/endpoints/welcome'
 
 /**
@@ -14,24 +15,25 @@ import { cachedWelcome, getWelcome, welcomeVideoUrl } from '../api/endpoints/wel
  * muted (the button shows "Sound off"); if the first clip cannot load the welcome is skipped silently. The sound
  * choice is remembered in localStorage.
  */
-const CLIPS = ['/welcome/temple-awakening.mp4', '/welcome/temple-aarati.mp4']
+export const CLIPS = ['/welcome/temple-awakening.mp4', '/welcome/temple-aarati.mp4']
 const POSTER = '/welcome/temple-sunrise.jpg'
 const SOUND_KEY = 'vt-welcome-sound'
 const CLIP2_SECONDS = 2.3 // only the opening aerial shot of the Aarati clip is used
-const HOLD_MS = 2400 // stay on the last frame so the greeting can be read
+const HOLD_MS = 2800 // stay on the last frame so the greeting can be read
 
 const GREETING_LEAD_S = 3.2 // custom video: greeting appears this long before the clip ends
 
 // Looks up the admin's welcome settings first (max 1.5s, any failure = last known settings or built-in clips), then plays.
 export default function WelcomeSplash({ name, onDone }) {
-  const [cfg, setCfg] = useState(null)
+  // last known settings let the video start at once; the lookup below only refreshes them for next time
+  const [cfg, setCfg] = useState(() => cachedWelcome())
   useEffect(() => {
     let alive = true
     // slow or failed lookup: fall back to the last settings we saw (cached by getWelcome), else the built-in clips
-    const t = setTimeout(() => alive && setCfg((c) => c || cachedWelcome() || {}), 1500)
+    const t = setTimeout(() => alive && setCfg((c) => c || {}), 1500)
     getWelcome()
-      .then((c) => alive && setCfg(c && typeof c === 'object' && !Array.isArray(c) ? c : {}))
-      .catch(() => alive && setCfg(cachedWelcome() || {}))
+      .then((c) => alive && setCfg((cur) => cur || (c && typeof c === 'object' && !Array.isArray(c) ? c : {})))
+      .catch(() => alive && setCfg((cur) => cur || {}))
     return () => {
       alive = false
       clearTimeout(t)
@@ -41,7 +43,7 @@ export default function WelcomeSplash({ name, onDone }) {
   useEffect(() => {
     if (off) onDone()
   }, [off, onDone])
-  if (!cfg || off) return <div className="vt-ws" style={{ background: '#050101' }} aria-hidden />
+  if (!cfg || off) return <motion.div className="vt-ws" style={{ background: '#050101' }} aria-hidden exit={{ opacity: 0 }} />
   return <WelcomePlayer name={name} onDone={onDone} custom={cfg.custom ? welcomeVideoUrl(cfg.version) : null} />
 }
 
@@ -64,12 +66,12 @@ function WelcomePlayer({ name, onDone, custom }) {
       // fade the soundtrack out with the picture
       let vol = v.volume
       const fade = setInterval(() => {
-        vol = Math.max(0, vol - 0.1)
+        vol = Math.max(0, vol - 0.07)
         v.volume = vol
         if (vol === 0) clearInterval(fade)
       }, 70)
     })
-    setTimeout(onDone, 800)
+    onDone() // AnimatePresence keeps this mounted while it dissolves
   }, [onDone])
 
   // Start clip 1: with sound if the browser allows it, otherwise muted.
@@ -130,9 +132,21 @@ function WelcomePlayer({ name, onDone, custom }) {
     })
   }
 
+  const ending = custom ? greet : clip === 1
+
   return (
-    <div className={`vt-ws ${leaving ? 'vt-ws-out' : ''}`} role="status" aria-label={`Namaskara ${name || ''}. Welcome to e-Mandira Pranali.`} onClick={finish}>
-      <div className="vt-ws-stage" aria-hidden>
+    <motion.div
+      className={`vt-ws ${leaving ? 'vt-ws-out' : ''}`}
+      role="status"
+      aria-label={`Namaskara ${name || ''}. Welcome to e-Mandira Pranali.`}
+      onClick={finish}
+      exit={{ opacity: 0, scale: 1.04, filter: 'blur(6px)' }}
+      transition={{ duration: 1, ease: [0.4, 0, 0.2, 1] }}
+    >
+      {/* the picture fades up out of black once it is really playing */}
+      <motion.div className="vt-ws-stage" aria-hidden initial={{ opacity: 0 }} animate={{ opacity: playing ? 1 : 0 }} transition={{ duration: 1.1, ease: 'easeOut' }}>
+        {/* the last shot never freezes: a slow push-in keeps it alive while the greeting settles */}
+        <motion.div style={{ position: 'absolute', inset: 0 }} animate={{ scale: ending ? 1.1 : 1 }} transition={{ duration: 6, ease: 'linear' }}>
         <video ref={v0} className={`vt-ws-video ${custom ? 'vt-ws-video-own' : ''}`} src={custom || CLIPS[0]} poster={custom ? undefined : POSTER} playsInline preload="auto" onEnded={custom ? () => setTimeout(finish, HOLD_MS) : nextClip} onTimeUpdate={custom ? onCustomTime : undefined} onError={finish} />
         {/* second clip is preloaded underneath and revealed the instant the first ends */}
         {!custom && (
@@ -142,15 +156,18 @@ function WelcomePlayer({ name, onDone, custom }) {
           src={CLIPS[1]}
           playsInline
           preload="auto"
-          style={{ opacity: clip === 1 ? 1 : 0 }}
+          style={{ opacity: clip === 1 ? 1 : 0, transition: 'opacity .8s ease' }}
           onError={finish}
         />
         )}
-      </div>
+        </motion.div>
+      </motion.div>
 
+      {/* warm light blooms over the final shot */}
+      <motion.div aria-hidden style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse at 50% 42%, rgba(255,205,120,.38), transparent 62%)' }} initial={{ opacity: 0 }} animate={{ opacity: ending ? 1 : 0 }} transition={{ duration: 2.2, ease: 'easeOut' }} />
       <div className="vt-ws-vignette" aria-hidden />
 
-      {(custom ? greet : clip === 1) && (
+      {ending && (
         <>
           <div className="vt-ws-scrim" aria-hidden />
           <div className="vt-ws-text">
@@ -180,13 +197,13 @@ function WelcomePlayer({ name, onDone, custom }) {
         </div>
       )}
       <style>{CSS}</style>
-    </div>
+    </motion.div>
   )
 }
 
 const CSS = `
-.vt-ws { position: fixed; inset: 0; z-index: 3000; overflow: hidden; background: #050101; cursor: pointer; animation: vt-ws-in .5s ease-out both; }
-.vt-ws-out { animation: vt-ws-fade .8s ease-in forwards; }
+.vt-ws { position: fixed; inset: 0; z-index: 3000; overflow: hidden; background: #050101; cursor: pointer;  }
+.vt-ws-out { pointer-events: none; }
 @keyframes vt-ws-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes vt-ws-fade { to { opacity: 0; } }
 

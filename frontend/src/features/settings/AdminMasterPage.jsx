@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { Card, Stack, Tabs, Text } from '@mantine/core'
 import { SlidersHorizontal, University, Database, Printer, Monitor, Settings, ShieldLock, Import, Users } from 'lucide-react'
 import BulkUpdateTab from './BulkUpdateTab'
@@ -22,12 +23,18 @@ import { PageHeader } from '../../components/ui/EntryParts'
  * MasterPage.jsx's extra designer fields), just never exposed here as an
  * editable screen.
  */
+const TAB_IDS = ['users', 'roles', 'menu', 'global-settings', 'company', 'bulk-update', 'database', 'print-options', 'print-settings']
+
 export default function AdminMasterPage() {
+  // ?tab=<id> deep-links to one tab (used by the header search); no param = Users.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requested = searchParams.get('tab')
+  const tab = TAB_IDS.includes(requested) ? requested : 'users'
   return (
     <Stack gap="lg" className="vt-rise">
       <PageHeader title="Admin Master" subtitle="Users, roles and permissions, menu, global settings, company, printing and database." shortcuts={[]} />
 
-      <Tabs defaultValue="users" color="kumkum" keepMounted={false}>
+      <Tabs value={tab} onChange={(v) => setSearchParams(v === 'users' ? {} : { tab: v }, { replace: true })} color="kumkum" keepMounted={false}>
         <Tabs.List className="vt-admin-tabs" aria-label="Administration sections">
           <Tabs.Tab value="users" leftSection={<Users size={16} />}>
             Users

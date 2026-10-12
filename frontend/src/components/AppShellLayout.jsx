@@ -7,10 +7,14 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import { getMenu } from '../api/endpoints/meta'
 import { useAuth } from '../hooks/useAuth'
 import useAutoFocusFirstField from '../hooks/useAutoFocusFirstField'
+import DevotionalBackdrop from './DevotionalBackdrop'
+import PaletteSwitch from './PaletteSwitch'
+import ShineLogo from './ShineLogo'
+import ThemeToggle from './ThemeToggle'
 import GlobalSearch from './GlobalSearch'
-import { TOKENS } from '../theme/theme'
 import { isDemoMode } from '../lib/demoMode'
 import { useConfirm } from './ui/ConfirmProvider'
+import { AnimatePresence, motion } from 'framer-motion'
 import WelcomeSplash from './WelcomeSplash'
 import { enterDemoMode, exitDemoMode } from '../lib/demoAuth'
 
@@ -56,9 +60,9 @@ const CAPTION_ROUTE = {
   // confirmed against the live DB (MenuItemID 1, 809, 1287, 1728, 1405).
   'Display in Browser': '/display',
   'Import from Excel': '/settings/import-excel',
-  'Global Settings...': '/settings/admin-master',
-  'Security': '/settings/admin-master', // DocID 18 = Role (CLAUDE.md §6) -> Roles & Rights tab
-  'Bulk Master Update': '/settings/admin-master',
+  'Global Settings...': '/settings/admin-master?tab=global-settings',
+  'Security': '/settings/admin-master?tab=roles', // DocID 18 = Role (CLAUDE.md §6) -> Roles & Rights tab
+  'Bulk Master Update': '/settings/admin-master?tab=bulk-update',
   'General Ledger': '/reports?tab=general-ledger',
 }
 
@@ -72,13 +76,51 @@ function routeFor(item) {
 // Destinations AppShellLayout itself adds outside the metadata-driven menu
 // tree (Reports launcher, Admin Master, the 4 hidden/zero-usage Inventory
 // screens) — included in the universal search alongside the real menu.
+// Everything the header search can open, on top of the metadata menu: report tabs, every Admin Master tab, the
+// inventory screens and the utility pages. `keywords` lets people find a screen by what it does, not only its name.
+// Entries whose route the menu already provides are skipped (see searchItems).
 const EXTRA_SEARCH_LINKS = [
-  { caption: 'Reports', to: '/reports', group: 'Reports' },
-  { caption: 'Admin Master', to: '/settings/admin-master', group: 'Administration', adminOnly: true },
-  { caption: 'Stock Adjustment Entry', to: '/inventory/stock-adjustment', group: 'Inventory', adminOnly: true },
-  { caption: 'Store Issue Note', to: '/inventory/store-issue', group: 'Inventory', adminOnly: true },
-  { caption: 'Purchase Bill', to: '/inventory/purchase-bill', group: 'Inventory', adminOnly: true },
-  { caption: 'Bill of Material', to: '/inventory/bom', group: 'Inventory', adminOnly: true },
+  { caption: 'Dashboard', to: '/', group: 'Home', keywords: 'home overview today summary' },
+  { caption: 'Seva Entry', to: '/sevas', group: 'Transactions', keywords: 'book seva devotee receipt' },
+  { caption: 'Donation Receipt Entry', to: '/donations', group: 'Transactions', keywords: 'kanike donor' },
+  { caption: 'Hall Booking', to: '/halls', group: 'Transactions', keywords: 'kalyana mantapa reserve' },
+  { caption: 'Hall Booking Entry', to: '/halls/entry', group: 'Transactions', keywords: 'hall bill advance' },
+  { caption: 'Hall Status', to: '/halls/status', group: 'Transactions', keywords: 'availability calendar occupancy' },
+  { caption: 'Payment Voucher', to: '/vouchers/payment', group: 'Vouchers', keywords: 'expense pay' },
+  { caption: 'Receipt Voucher', to: '/vouchers/receipt', group: 'Vouchers', keywords: 'income receive' },
+  { caption: 'Panchanga', to: '/panchanga', group: 'Utilities', keywords: 'calendar tithi festival amavasya ekadashi' },
+  { alias: true, caption: 'Display Board', to: '/display', group: 'Utilities', keywords: 'display in browser screen tv' },
+  { caption: 'Reports', to: '/reports', group: 'Reports', keywords: 'report launcher' },
+  { alias: true, caption: 'Complete Day Report', to: '/reports', group: 'Reports', keywords: 'daily day collection' },
+  { caption: 'Detailed Collection Report', to: '/reports?tab=collection', group: 'Reports', keywords: 'collection' },
+  { caption: 'Seva Issue / Schedule Report', to: '/reports?tab=seva-issue', group: 'Reports', keywords: 'seva schedule issue' },
+  { caption: 'Kanike / Donation Report', to: '/reports?tab=donations', group: 'Reports', keywords: 'kanike donation' },
+  { caption: 'General Ledger', to: '/reports?tab=general-ledger', group: 'Reports', keywords: 'ledger account statement' },
+  { caption: 'Customised Reports', to: '/reports?tab=custom', group: 'Reports', keywords: 'custom report builder' },
+  { caption: 'Hall Booking with Voucher Detail Report', to: '/reports?tab=hall-voucher', group: 'Reports', keywords: 'hall voucher' },
+  { caption: 'Subsidiary Reports', to: '/reports?tab=catalog', group: 'Reports', keywords: 'catalog subsidiary' },
+  { caption: 'PDF Generator', to: '/reports/pdf-generator', group: 'Reports', keywords: 'pdf bulk receipts print' },
+  { caption: 'Audit Trail', to: '/audit-trail', group: 'Administration', adminOnly: true, keywords: 'log history who changed' },
+  { caption: 'Import from Excel', to: '/settings/import-excel', group: 'Administration', adminOnly: true, keywords: 'upload xlsx bulk import' },
+  { alias: true, caption: 'Admin Master', to: '/settings/admin-master', group: 'Administration', adminOnly: true, keywords: 'settings administration' },
+  { alias: true, caption: 'Users', to: '/settings/admin-master', group: 'Admin Master', adminOnly: true, keywords: 'user accounts password reset add staff' },
+  { caption: 'Roles & Rights', to: '/settings/admin-master?tab=roles', group: 'Admin Master', adminOnly: true, keywords: 'permissions security access role' },
+  { caption: 'Customise Menu', to: '/settings/admin-master?tab=menu', group: 'Admin Master', adminOnly: true, keywords: 'menu show hide sidebar' },
+  { caption: 'Global Settings', to: '/settings/admin-master?tab=global-settings', group: 'Admin Master', adminOnly: true, keywords: 'welcome video options configuration' },
+  { caption: 'Company Master', to: '/settings/admin-master?tab=company', group: 'Admin Master', adminOnly: true, keywords: 'trust company financial year address' },
+  { caption: 'Bulk Master Update', to: '/settings/admin-master?tab=bulk-update', group: 'Admin Master', adminOnly: true, keywords: 'bulk update masters' },
+  { caption: 'Database Settings', to: '/settings/admin-master?tab=database', group: 'Admin Master', adminOnly: true, keywords: 'server connection sql' },
+  { caption: 'Print Options', to: '/settings/admin-master?tab=print-options', group: 'Admin Master', adminOnly: true, keywords: 'receipt format printer' },
+  { caption: 'Print Settings', to: '/settings/admin-master?tab=print-settings', group: 'Admin Master', adminOnly: true, keywords: 'local printer print agent' },
+  { caption: 'Stock Adjustment Entry', to: '/inventory/stock-adjustment', group: 'Inventory', adminOnly: true, keywords: 'stock' },
+  { caption: 'Store Issue Note', to: '/inventory/store-issue', group: 'Inventory', adminOnly: true, keywords: 'store issue' },
+  { caption: 'Purchase Bill', to: '/inventory/purchase-bill', group: 'Inventory', adminOnly: true, keywords: 'purchase supplier' },
+  { caption: 'Purchase Voucher', to: '/inventory/purchase-voucher', group: 'Inventory', adminOnly: true, keywords: 'purchase supplier' },
+  { caption: 'Bill of Material', to: '/inventory/bom', group: 'Inventory', adminOnly: true, keywords: 'bom components' },
+  { caption: 'Current Stock Balance', to: '/inventory/stock-balance', group: 'Inventory', adminOnly: true, keywords: 'stock balance' },
+  { caption: 'Stock Balance Report', to: '/inventory/stock-balance-report', group: 'Inventory', adminOnly: true, keywords: 'stock report' },
+  { caption: 'Stock Ledger Report', to: '/inventory/stock-ledger-report', group: 'Inventory', adminOnly: true, keywords: 'stock ledger' },
+  { caption: 'Item Referencer', to: '/inventory/item-referencer', group: 'Inventory', adminOnly: true, keywords: 'item lookup where used' },
 ]
 
 export default function AppShellLayout() {
@@ -87,10 +129,15 @@ export default function AppShellLayout() {
   const [opened, { toggle, close }] = useDisclosure(!isNarrow())
   // Desktop: the burger shrinks the sidebar to an icon rail (remembered in this browser). Phones: it opens/closes the drawer.
   const narrow = useMediaQuery('(max-width: 767px)', false, { getInitialValueInEffect: false })
+  // Tablets / small laptops (768-1199px): the sidebar rests as an icon rail so the page keeps its width; the burger
+  // opens the full menu as an overlay on top of the page (backdrop, Esc or navigating closes it).
+  const medium = useMediaQuery('(min-width: 768px) and (max-width: 1199px)', false, { getInitialValueInEffect: false })
+  const [overlay, setOverlay] = useState(false)
   const [railPref, setRailPref] = useState(() => localStorage.getItem('vt-rail') === '1')
-  const rail = railPref && !narrow
+  const rail = !narrow && (medium ? !overlay : railPref)
   function toggleNav() {
     if (narrow) return toggle()
+    if (medium) return setOverlay((v) => !v)
     setRailPref((v) => {
       localStorage.setItem('vt-rail', v ? '0' : '1')
       return !v
@@ -124,8 +171,22 @@ export default function AppShellLayout() {
 
   useEffect(() => {
     if (isNarrow()) close()
+    setOverlay(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname])
+  useEffect(() => {
+    if (!overlay && !(narrow && opened)) return undefined
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return
+      setOverlay(false)
+      if (narrow) close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [overlay, narrow, opened, close])
+  useEffect(() => {
+    if (!medium) setOverlay(false)
+  }, [medium])
 
   useEffect(() => {
     getMenu()
@@ -177,11 +238,22 @@ export default function AppShellLayout() {
     setOpenGroups((prev) => (prev.has(type) ? new Set() : new Set([type])))
   }
 
+  const extraKeywords = {}
+  EXTRA_SEARCH_LINKS.forEach((l) => {
+    extraKeywords[l.to] = `${extraKeywords[l.to] || ''} ${l.caption} ${l.keywords || ''}`
+  })
+  const menuItems = menu
+    .map((item) => {
+      const to = routeFor(item)
+      return { caption: item.caption, to, group: item.type, keywords: extraKeywords[to] }
+    })
+    .filter((it) => it.to)
+  const haveRoute = new Set(menuItems.map((it) => it.to))
   const searchItems = [
-    ...menu
-      .map((item) => ({ caption: item.caption, to: routeFor(item), group: item.type }))
-      .filter((it) => it.to),
-    ...EXTRA_SEARCH_LINKS.filter((l) => !l.adminOnly || isAdmin),
+    ...menuItems,
+    // extras add what the menu lacks: tabs, hidden screens and keywords. A screen the menu already opens is skipped,
+    // unless the extra is an `alias` (another name for the same place, e.g. "Users" for Admin Master)
+    ...EXTRA_SEARCH_LINKS.filter((l) => (!l.adminOnly || isAdmin) && (l.alias || !haveRoute.has(l.to))),
   ]
 
   const { favs, isPinned, toggle: togglePin } = useFavourites(user?.user_code)
@@ -208,11 +280,18 @@ export default function AppShellLayout() {
   // A route is current when it matches the path and no other menu route matches more specifically
   // (so /halls/entry lights up only Hall Booking Entry, not Hall Booking too).
   function isCurrentPath(to) {
-    const matches = (r) => r && (location.pathname === r || location.pathname.startsWith(`${r}/`))
+    // a route may carry ?tab=...: the path must match and, if it names a tab, that tab must be the open one
+    const matches = (r) => {
+      if (!r) return false
+      const [path, qs] = r.split('?')
+      if (!(location.pathname === path || location.pathname.startsWith(`${path}/`))) return false
+      return !qs || new URLSearchParams(location.search).get('tab') === new URLSearchParams(qs).get('tab')
+    }
     if (!matches(to)) return false
     return !menu.some((m) => {
       const other = routeFor(m)
-      return other && other !== to && other.length > to.length && matches(other)
+      // Reports tabs have no sidebar row of their own (they fold into "Reports"), so they never take the highlight
+      return other && other !== to && !other.startsWith('/reports?') && other.length > to.length && matches(other)
     })
   }
 
@@ -227,11 +306,11 @@ export default function AppShellLayout() {
   return (
     <AppShell
       header={{ height: 80 }}
-      navbar={{ width: rail ? 72 : 224, breakpoint: 'sm', collapsed: { mobile: !opened, desktop: false } }}
+      navbar={{ width: medium || rail ? 72 : 224, breakpoint: 'sm', collapsed: { mobile: !opened, desktop: false } }}
       padding={{ base: 'sm', sm: 'md' }}
     >
       {/* Header: ivory bar, 80px (was 108px). Brand left, search centre, status + account right. */}
-      <AppShell.Header style={{ background: '#FFFDF8', borderBottom: '1px solid var(--vt-line)', boxShadow: '0 1px 0 rgba(199,154,61,0.25)' }}>
+      <AppShell.Header style={{ background: 'var(--vt-header)', borderBottom: '1px solid var(--vt-line)', boxShadow: '0 1px 0 rgba(199,154,61,0.25)' }}>
         {mobileSearch && (
           <Group h="100%" px="xs" wrap="nowrap" gap="xs" hiddenFrom="sm">
             <GlobalSearch items={searchItems} autoFocus inputRef={searchRef} onDone={() => setMobileSearch(false)} />
@@ -242,9 +321,10 @@ export default function AppShellLayout() {
         )}
         <Group h="100%" px={{ base: 'xs', sm: 'md' }} justify="space-between" wrap="nowrap" gap="sm" display={mobileSearch ? { base: 'none', sm: 'flex' } : undefined}>
           <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-            <Burger opened={narrow ? opened : !rail} onClick={toggleNav} color="var(--mantine-color-kumkum-7)" size="md" aria-label={(narrow ? opened : !rail) ? 'Collapse navigation' : 'Expand navigation'} />
+            <Burger opened={narrow ? opened : !rail} onClick={toggleNav} color="var(--vt-accent)" size="md" aria-label={(narrow ? opened : !rail) ? 'Collapse navigation' : 'Expand navigation'} />
             <Link to="/" aria-label="e-Mandira Pranali, go to dashboard" style={{ display: 'flex' }}>
-              <img className="vt-brand-logo" src={BRAND_LOCKUP} alt="" />
+              <ShineLogo imgClassName="vt-brand-logo" wrapClassName="vt-logo-on-light" src={BRAND_LOCKUP} />
+              <ShineLogo imgClassName="vt-brand-logo" wrapClassName="vt-logo-on-dark" src={BRAND_LOCKUP.replace('horizontal', 'horizontal-light')} />
             </Link>
           </Group>
 
@@ -257,6 +337,8 @@ export default function AppShellLayout() {
             <ActionIcon hiddenFrom="sm" variant="subtle" color="kumkum" size={44} aria-label="Search screens" onClick={() => setMobileSearch(true)}>
               <Search size={20} />
             </ActionIcon>
+            <Group visibleFrom="xs" wrap="nowrap"><PaletteSwitch /></Group>
+            <ThemeToggle />
             {/* Developer-only data-source switch: never saves while on Demo Data (src/lib/demoAuth.js + api.js). */}
             <Menu position="bottom-end" withArrow>
               <Menu.Target>
@@ -272,7 +354,7 @@ export default function AppShellLayout() {
                   style={{ cursor: 'pointer', border: 'none' }}
                   aria-label="Data source"
                 >
-                  {isDemoMode() ? 'Demo Data' : 'Real Data'}
+                  <span className="vt-hide-md">{isDemoMode() ? 'Demo Data' : 'Real Data'}</span>
                 </Badge>
               </Menu.Target>
               <Menu.Dropdown>
@@ -284,11 +366,11 @@ export default function AppShellLayout() {
                 )}
               </Menu.Dropdown>
             </Menu>
-            <Badge color="gold" variant="light" size="lg" c="#876428" visibleFrom="xs">
+            <Badge color="gold" variant="light" size="lg" c="var(--vt-badge-ink)" visibleFrom="lg">
               FY 2026-27
             </Badge>
             <Tooltip label={user?.user_name || user?.user_code} withArrow>
-              <Avatar radius="xl" color="kumkum" variant="filled" size={40} aria-label={`Signed in as ${user?.user_name || user?.user_code}`}>
+              <Avatar visibleFrom="xs" radius="xl" color="kumkum" variant="filled" size={40} aria-label={`Signed in as ${user?.user_name || user?.user_code}`}>
                 {(user?.user_code || '?').slice(0, 2).toUpperCase()}
               </Avatar>
             </Tooltip>
@@ -301,11 +383,33 @@ export default function AppShellLayout() {
         </Group>
       </AppShell.Header>
 
+      {((medium && overlay) || (narrow && opened)) && (
+        <motion.div
+          aria-hidden
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          onClick={() => {
+            setOverlay(false)
+            if (narrow) close()
+          }}
+          style={{ position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(20,6,6,0.55)', WebkitBackdropFilter: 'blur(2px)', backdropFilter: 'blur(2px)' }}
+        />
+      )}
+
       {/* Sidebar: deep maroon (logo colour). Brand lives in the header. Expanded (264px) or icon rail (76px). */}
       <AppShell.Navbar
         className="vt-side"
         aria-label="Main navigation"
-        style={{ background: 'linear-gradient(180deg, #6B1A1A 0%, #3E0E0E 100%)', display: 'flex', flexDirection: 'column', border: 'none' }}
+        style={{
+          background: 'linear-gradient(180deg, var(--vt-g1) 0%, var(--vt-g2d) 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          border: 'none',
+          // overlay menus (tablet expanded, phone drawer) sit above the page and never wider than the screen
+          ...(medium && overlay ? { width: 232, zIndex: 320, boxShadow: '8px 0 32px rgba(0,0,0,0.35)' } : {}),
+          ...(narrow ? { width: 'min(300px, 86vw)', zIndex: 320, boxShadow: opened ? '8px 0 32px rgba(0,0,0,0.35)' : 'none' } : {}),
+        }}
       >
         {rail ? (
           <div className="vt-side-scroll" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.75rem 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
@@ -409,6 +513,12 @@ export default function AppShellLayout() {
           </div>
         )}
 
+        {narrow && (
+          <Group justify="center" mx="xs" mb={6} hiddenFrom="xs">
+            <PaletteSwitch />
+          </Group>
+        )}
+
         {/* Account card: who is signed in. Role names aren't in the session, so ADMIN is the only role shown by name. */}
         <Group
           gap="sm"
@@ -442,14 +552,26 @@ export default function AppShellLayout() {
             <Text fw={600} c="#D9B9A3" tt="uppercase" ta="center" style={{ fontSize: 11, letterSpacing: 0.7, whiteSpace: 'nowrap' }}>
               Designed &amp; developed by
             </Text>
-            <img src="/softvent-logo-dark.png" alt="Softvent" style={{ height: 30, width: 'auto', objectFit: 'contain', display: 'block' }} />
+            <a className="vt-softvent-link" href="https://softvent.com" target="_blank" rel="noopener noreferrer" aria-label="Softvent website, opens in a new tab" style={{ display: 'block' }}>
+              <img src="/softvent-logo-dark.png" alt="Softvent" style={{ height: 30, width: 'auto', objectFit: 'contain', display: 'block' }} />
+            </a>
           </Stack>
         )}
       </AppShell.Navbar>
 
-      {welcome && <WelcomeSplash name={user?.user_name || user?.user_code} onDone={() => setWelcome(false)} />}
-      <AppShell.Main ref={mainRef} style={{ background: TOKENS.sandal }}>
-        <Outlet />
+      <AnimatePresence>{welcome && <WelcomeSplash key="welcome" name={user?.user_name || user?.user_code} onDone={() => setWelcome(false)} />}</AnimatePresence>
+      <AppShell.Main ref={mainRef} className="vt-app-main" data-vt-stage style={{ background: 'var(--vt-sandal)' }}>
+        <DevotionalBackdrop />
+        {/* each screen eases in; while the welcome video is up the page waits, then rises as the video dissolves */}
+        <motion.div
+          key={location.pathname}
+          style={{ maxWidth: '100rem', marginInline: 'auto' }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={welcome ? { opacity: 0, y: 14 } : { opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.22, 0.8, 0.3, 1], delay: welcome ? 0 : 0.15 }}
+        >
+          <Outlet />
+        </motion.div>
       </AppShell.Main>
       <style>{`
         .vt-side .mantine-NavLink-root {
@@ -466,8 +588,11 @@ export default function AppShellLayout() {
         .vt-side .mantine-NavLink-section { color: inherit; }
         .vt-side .mantine-NavLink-root[data-disabled] { color: rgba(251,246,236,0.38); }
         .vt-side :where(a, button):focus-visible { outline: 2px solid #F4E1A6; outline-offset: 2px; }
-        .vt-brand-logo { height: 60px; width: auto; object-fit: contain; display: block; }
-        @media (max-width: 600px) { .vt-brand-logo { height: 44px; } }
+        .vt-brand-logo { height: 3.75rem; width: auto; object-fit: contain; display: block; }
+        @media (max-width: 600px) { .vt-brand-logo { height: 2.75rem; } }
+        @media (max-width: 1199px) { .vt-hide-md { display: none; } }
+        .vt-shine { flex-shrink: 0; }
+        @media (max-width: 480px) { .vt-brand-logo { height: 2.25rem; } }
         .vt-side-scroll { scrollbar-width: thin; scrollbar-color: rgba(244,225,166,0.3) transparent; }
         .vt-side-head { border-radius: 10px; min-height: 40px; transition: background .15s; }
         .vt-side-head[data-active] { background: rgba(244,225,166,0.10); box-shadow: inset 3px 0 0 #F4E1A6; }

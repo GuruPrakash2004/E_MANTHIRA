@@ -51,7 +51,7 @@ export default function DashboardPage() {
       <Card
         p={0}
         style={{
-          background: 'linear-gradient(135deg, #2B0909 0%, #5A1414 55%, #2B0909 100%)',
+          background: 'linear-gradient(135deg, var(--vt-g3) 0%, var(--vt-g2) 55%, var(--vt-g3) 100%)',
           border: '1px solid rgba(244,225,166,0.25)',
           position: 'relative',
           overflow: 'hidden',
@@ -106,11 +106,11 @@ export default function DashboardPage() {
               component={Link}
               to={a.to}
               className="vt-lift"
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', minHeight: 64, background: '#fff', border: '1px solid var(--vt-line)', borderRadius: 16 }}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', minHeight: 64, background: 'var(--vt-surface)', border: '1px solid var(--vt-line)', borderRadius: 16 }}
             >
               <div
                 aria-hidden
-                style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--mantine-color-gold-0)', color: 'var(--mantine-color-kumkum-7)', display: 'grid', placeItems: 'center', flexShrink: 0 }}
+                style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--vt-gold-chip)', color: 'var(--vt-accent)', display: 'grid', placeItems: 'center', flexShrink: 0 }}
               >
                 <a.icon size={18} />
               </div>
@@ -143,7 +143,7 @@ export default function DashboardPage() {
                 <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
                   <div
                     aria-hidden
-                    style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--mantine-color-kumkum-0)', color: 'var(--mantine-color-kumkum-7)', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}
+                    style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--vt-gold-chip)', color: 'var(--vt-accent)', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}
                   >
                     {(s.KNAME || '?').slice(0, 2).toUpperCase()}
                   </div>
@@ -181,7 +181,7 @@ export default function DashboardPage() {
             renderRow={(d) => (
               <Group justify="space-between" px="lg" py="sm" wrap="nowrap">
                 <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-                  <Receipt size={18} color="var(--mantine-color-kumkum-6)" aria-hidden />
+                  <Receipt size={18} color="var(--vt-accent)" aria-hidden />
                   <div style={{ minWidth: 0 }}>
                     <Text size="sm" fw={600} truncate>
                       {d.DONOR}
@@ -191,7 +191,7 @@ export default function DashboardPage() {
                     </Text>
                   </div>
                 </Group>
-                <Text size="sm" fw={700} c="kumkum.7" className="vt-num">
+                <Text size="sm" fw={700} c="var(--vt-accent)" className="vt-num">
                   {formatINR(d.TOTAMT)}
                 </Text>
               </Group>
@@ -201,7 +201,7 @@ export default function DashboardPage() {
       </Grid>
 
       <Text size="xs" c="dimmed" ta="center" pb="md">
-        © {dayjs().year()} vTemple, e-Mandira Pranali
+        © {dayjs().year()} e-Mandira Pranali
       </Text>
     </Stack>
   )

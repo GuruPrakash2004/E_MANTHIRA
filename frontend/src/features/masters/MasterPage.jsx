@@ -132,9 +132,9 @@ function AttachmentsSection({ docId, rowId }) {
           </Text>
         )}
         {(files || []).map((f) => (
-          <Group key={f.AFileName} justify="space-between" wrap="nowrap" px="sm" py={6} style={{ border: '1px solid var(--vt-line)', borderRadius: 10, background: '#fff' }}>
+          <Group key={f.AFileName} justify="space-between" wrap="nowrap" px="sm" py={6} style={{ border: '1px solid var(--vt-line)', borderRadius: 10, background: 'var(--vt-surface)' }}>
             <Group gap={8} wrap="nowrap" style={{ minWidth: 0 }}>
-              <FileText size={16} color="var(--mantine-color-kumkum-6)" aria-hidden />
+              <FileText size={16} color="var(--vt-accent)" aria-hidden />
               <Text size="sm" truncate>
                 {f.AFileName.replace(/^\d+_/, '')}
               </Text>
@@ -160,7 +160,7 @@ function StatusBadge({ row }) {
       Inactive
     </Badge>
   ) : (
-    <Badge color="gold" variant="light" c="kumkum.8">
+    <Badge color="gold" variant="light" c="var(--vt-badge-ink)">
       Active
     </Badge>
   )
@@ -346,7 +346,7 @@ export default function MasterPage() {
     <Stack gap="lg" className="vt-rise">
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <Group gap="sm" wrap="nowrap">
-          <div aria-hidden style={{ width: 48, height: 48, borderRadius: 14, display: 'grid', placeItems: 'center', background: 'linear-gradient(160deg, #6B1A1A, #3E0E0E)', color: '#F4E1A6', boxShadow: '0 4px 12px rgba(122,31,31,0.25)' }}>
+          <div aria-hidden style={{ width: 48, height: 48, borderRadius: 14, display: 'grid', placeItems: 'center', background: 'linear-gradient(160deg, var(--vt-g1), var(--vt-g2d))', color: '#F4E1A6', boxShadow: '0 4px 12px rgba(122,31,31,0.25)' }}>
             <Icon size={24} />
           </div>
           <div>
@@ -370,7 +370,7 @@ export default function MasterPage() {
         <Badge size="lg" variant="light" color="gray" tt="none">
           {counts.total} total
         </Badge>
-        <Badge size="lg" variant="light" color="gold" c="kumkum.8" tt="none">
+        <Badge size="lg" variant="light" color="gold" c="var(--vt-badge-ink)" tt="none">
           {counts.active} active
         </Badge>
         <Badge size="lg" variant="light" color="gray" tt="none">
@@ -499,7 +499,7 @@ export default function MasterPage() {
             {/* phones: one card per record */}
             <Stack gap="xs" hiddenFrom="sm">
               {rows.map((row) => (
-                <Group key={row[meta.id_col]} justify="space-between" wrap="nowrap" p="sm" style={{ border: '1px solid var(--vt-line)', borderRadius: 12, background: '#fff' }}>
+                <Group key={row[meta.id_col]} justify="space-between" wrap="nowrap" p="sm" style={{ border: '1px solid var(--vt-line)', borderRadius: 12, background: 'var(--vt-surface)' }}>
                   <UnstyledButton onClick={() => openEdit(row)} style={{ minWidth: 0, flex: 1, textAlign: 'left' }} aria-label={`Edit ${row[meta.name_col]}`}>
                     <Text fw={600} truncate>
                       {row[meta.name_col]}

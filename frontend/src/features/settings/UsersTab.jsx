@@ -174,14 +174,14 @@ export default function UsersTab() {
     isInactive(row) ? (
       <Badge color="gray" variant="light">Inactive</Badge>
     ) : (
-      <Badge color="gold" variant="light" c="kumkum.8">Active</Badge>
+      <Badge color="gold" variant="light" c="var(--vt-badge-ink)">Active</Badge>
     )
 
   return (
     <Stack gap="lg">
       <Group gap="xs" hiddenFrom="sm">
         <Badge size="lg" variant="light" color="gray" tt="none">{counts.total} total</Badge>
-        <Badge size="lg" variant="light" color="gold" c="kumkum.8" tt="none">{counts.active} active</Badge>
+        <Badge size="lg" variant="light" color="gold" c="var(--vt-badge-ink)" tt="none">{counts.active} active</Badge>
         <Badge size="lg" variant="light" color="gray" tt="none">{counts.inactive} inactive</Badge>
       </Group>
       <div className="vt-users-tiles" style={{ display: 'grid', gap: 'var(--mantine-spacing-md)', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>

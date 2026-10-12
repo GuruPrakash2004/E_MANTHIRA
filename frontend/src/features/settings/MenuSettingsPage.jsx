@@ -39,10 +39,10 @@ export default function MenuSettingsPage() {
             <Card key={g.type} withBorder p="lg">
               <Group justify="space-between" mb="sm" wrap="nowrap">
                 <Group gap={8}>
-                  <SlidersHorizontal size={18} color="var(--mantine-color-kumkum-7)" aria-hidden />
+                  <SlidersHorizontal size={18} color="var(--vt-accent)" aria-hidden />
                   <Title order={4}>{g.type}</Title>
                 </Group>
-                <Badge variant="light" color="gold" c="kumkum.8" tt="none">
+                <Badge variant="light" color="gold" c="var(--vt-badge-ink)" tt="none">
                   {shown} of {g.items.length} shown
                 </Badge>
               </Group>

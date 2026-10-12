@@ -6,7 +6,7 @@ export default function EmptyState({ icon: Icon, title, hint, action }) {
       {Icon && (
         <div
           aria-hidden
-          style={{ width: 44, height: 44, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--mantine-color-gold-0)', color: 'var(--mantine-color-kumkum-6)' }}
+          style={{ width: 44, height: 44, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--vt-gold-chip)', color: 'var(--vt-accent)' }}
         >
           <Icon size={20} />
         </div>
