@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { AppShell, Burger, Collapse, Group, NavLink, Text, Menu, Avatar, Badge, Stack, Kbd, ActionIcon, UnstyledButton } from '@mantine/core'
-import { SlidersHorizontal, BarChart3, ChevronDown, FlaskConical, LayoutDashboard, Search } from 'lucide-react'
-import { useDisclosure } from '@mantine/hooks'
+import { AppShell, Burger, Collapse, Group, NavLink, Text, Menu, Avatar, Badge, Stack, ActionIcon, Tooltip, UnstyledButton } from '@mantine/core'
+import { SlidersHorizontal, Calculator, ChevronDown, Database, FileText, FlaskConical, LayoutDashboard, LogOut, Package, Receipt, Search, Star, Wallet, Wrench, X } from 'lucide-react'
+import { useDisclosure, useMediaQuery } from '@mantine/hooks'
+import useFavourites from '../hooks/useFavourites'
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import { getMenu } from '../api/endpoints/meta'
 import { useAuth } from '../hooks/useAuth'
@@ -9,14 +10,17 @@ import useAutoFocusFirstField from '../hooks/useAutoFocusFirstField'
 import GlobalSearch from './GlobalSearch'
 import { TOKENS } from '../theme/theme'
 import { isDemoMode } from '../lib/demoMode'
+import { useConfirm } from './ui/ConfirmProvider'
+import WelcomeSplash from './WelcomeSplash'
 import { enterDemoMode, exitDemoMode } from '../lib/demoAuth'
 
-// True cutouts (alpha channel, not a cropped/color-matched JPEG) generated
-// from the source brand files in logo/ via Pillow chroma-keying their flat
-// backgrounds out — see public/brand/README for the one-off script. Render
-// on any surface, any color, no box.
-const BRAND_LOCKUP = '/brand/lockup-transparent.png' // icon + "e-Mandira Pranali" wordmark
-const BRAND_MARK = '/brand/mark.png' // icon only, square — for the sidebar's white circle badge
+// Transparent cutouts of the official logo (logo/primary-logo@2x.png), made with Pillow:
+// lockup-horizontal (header), lockup-transparent (vertical), lockup-light (vertical, for dark
+// panels), mark (badge only), plus public/favicon.png.
+const BRAND_LOCKUP = '/brand/lockup-horizontal.png' // badge + "e-Mandira PRANALI" wordmark, side by side
+
+// One icon per sidebar group so the list can be scanned without reading every heading.
+const GROUP_ICON = { Transactions: Receipt, Vouchers: Wallet, Masters: Database, Reports: FileText, 'Ac-Reports': Calculator, Utilities: Wrench, Inventory: Package, Administration: SlidersHorizontal }
 
 const TYPE_ORDER = ['Transactions', 'Vouchers', 'Masters', 'Reports', 'Ac-Reports', 'Utilities']
 // A handful of docs have a dedicated, purpose-built screen; everything else
@@ -59,6 +63,7 @@ const CAPTION_ROUTE = {
 }
 
 function routeFor(item) {
+  if (item._route) return item._route
   if (CAPTION_ROUTE[item.caption]) return CAPTION_ROUTE[item.caption]
   if (item.type === 'Masters' && item.doc_id) return `/masters/${item.doc_id}`
   return null
@@ -77,16 +82,37 @@ const EXTRA_SEARCH_LINKS = [
 ]
 
 export default function AppShellLayout() {
-  const [opened, { toggle }] = useDisclosure(true)
+  // Phones/tablets (< 768px): nav starts closed and closes after every navigation, so it never covers the page.
+  const isNarrow = () => typeof window !== 'undefined' && window.innerWidth < 768
+  const [opened, { toggle, close }] = useDisclosure(!isNarrow())
+  // Desktop: the burger shrinks the sidebar to an icon rail (remembered in this browser). Phones: it opens/closes the drawer.
+  const narrow = useMediaQuery('(max-width: 767px)', false, { getInitialValueInEffect: false })
+  const [railPref, setRailPref] = useState(() => localStorage.getItem('vt-rail') === '1')
+  const rail = railPref && !narrow
+  function toggleNav() {
+    if (narrow) return toggle()
+    setRailPref((v) => {
+      localStorage.setItem('vt-rail', v ? '0' : '1')
+      return !v
+    })
+  }
   const [menu, setMenu] = useState([])
-  const [searchOpen, setSearchOpen] = useState(false)
-  // Each sub-group (Transactions, Vouchers, Masters, ...) collapses on its
-  // own so a long Masters list doesn't push every other group off-screen.
-  // Starts with nothing expanded; the effect below opens whichever group
-  // holds the current route, and the user can open/close others freely —
-  // never force-collapsed on navigation.
+  // Search lives in the header. On phones it is collapsed to an icon and expands over the header bar.
+  const [mobileSearch, setMobileSearch] = useState(false)
+  const searchRef = useRef(null)
+  // Accordion: only one group is open at a time, so a long Masters list never pushes the rest off-screen.
+  // The effect below opens whichever group holds the current route.
   const [openGroups, setOpenGroups] = useState(() => new Set())
   const { user, logout } = useAuth()
+  const confirm = useConfirm()
+  // Cinematic welcome, once per sign-in. LoginPage sets the flag; it is cleared in an effect (not in the
+  // state initialiser, which React StrictMode runs twice). Skipped entirely for reduced-motion users.
+  const [welcome, setWelcome] = useState(
+    () => sessionStorage.getItem('vt-welcome') === '1' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+  useEffect(() => {
+    sessionStorage.removeItem('vt-welcome')
+  }, [])
   const navigate = useNavigate()
   const location = useLocation()
   const mainRef = useRef(null)
@@ -97,47 +123,58 @@ export default function AppShellLayout() {
   const isAdmin = user?.user_code?.toUpperCase() === 'ADMIN'
 
   useEffect(() => {
+    if (isNarrow()) close()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
+
+  useEffect(() => {
     getMenu()
       .then(setMenu)
       .catch(() => setMenu([]))
   }, [])
 
-  // "/" opens universal search, unless the user is actually typing
-  // somewhere (a real input/textarea/contenteditable) — never hijacks
-  // normal form entry.
+  // "/" jumps to the header search, unless the user is actually typing somewhere (a real
+  // input/textarea/contenteditable): never hijacks normal form entry.
   useEffect(() => {
     function onKeyDown(e) {
-      if (e.key !== '/' || searchOpen) return
+      if (e.key !== '/') return
       const tag = document.activeElement?.tagName
       const editable = document.activeElement?.isContentEditable
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || editable) return
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || editable) return
       e.preventDefault()
-      setSearchOpen(true)
+      if (isNarrow()) setMobileSearch(true)
+      else searchRef.current?.focus()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [searchOpen])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  const grouped = TYPE_ORDER.map((type) => ({ type, items: menu.filter((m) => m.type === type) })).filter(
+  // Several legacy Reports menu rows (Subsidiary, Customised, Hall Booking With Voucher Detail) are just tabs of the
+  // Reports page. In the sidebar they collapse into one "Reports" entry; search and the menu data still know them all.
+  const isReportTab = (item) => (routeFor(item) || '').startsWith('/reports?')
+  function sidebarItems(items) {
+    const first = items.findIndex(isReportTab)
+    if (first < 0) return items
+    const out = items.filter((i) => !isReportTab(i))
+    out.splice(first, 0, { menu_item_id: 'reports-all', caption: 'Reports', type: items[0].type, _route: '/reports' })
+    return out
+  }
+  const grouped = TYPE_ORDER.map((type) => ({ type, items: type === 'Reports' ? sidebarItems(menu.filter((m) => m.type === type)) : menu.filter((m) => m.type === type) })).filter(
     (g) => g.items.length
   )
 
-  // Auto-expand whichever group holds the active route (e.g. landing on a
-  // Masters screen via a bookmark/search), without collapsing any group the
-  // user already opened by hand.
+  // Open the group that holds the active route (landing on a screen via bookmark/search/favourite).
   useEffect(() => {
-    const active = grouped.find((g) => g.items.some((item) => isCurrentPath(routeFor(item))))
-    if (active) setOpenGroups((prev) => (prev.has(active.type) ? prev : new Set(prev).add(active.type)))
+    let activeType = grouped.find((g) => g.items.some((item) => isCurrentPath(routeFor(item))))?.type
+    if (!activeType && isCurrentPath('/inventory')) activeType = 'Inventory'
+    if (!activeType && isCurrentPath('/settings')) activeType = 'Administration'
+    if (activeType) setOpenGroups((prev) => (prev.has(activeType) && prev.size === 1 ? prev : new Set([activeType])))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, menu])
 
   function toggleGroup(type) {
-    setOpenGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(type)) next.delete(type)
-      else next.add(type)
-      return next
-    })
+    setOpenGroups((prev) => (prev.has(type) ? new Set() : new Set([type])))
   }
 
   const searchItems = [
@@ -147,76 +184,93 @@ export default function AppShellLayout() {
     ...EXTRA_SEARCH_LINKS.filter((l) => !l.adminOnly || isAdmin),
   ]
 
+  const { favs, isPinned, toggle: togglePin } = useFavourites(user?.user_code)
+  // Drop favourites that are no longer reachable (menu changed, rights changed).
+  const validFavs = favs.filter((f) => searchItems.some((it) => it.to === f.to))
+
+  // Sidebar row: the link plus a star to pin/unpin it as a favourite.
+  function renderItem(to, caption, { pinnable = true } = {}) {
+    return (
+      <SideItem key={`${to || ''}|${caption}`} to={to} caption={caption} active={isActiveItem(to, caption)} pinned={isPinned(to)} canPin={pinnable && Boolean(to)} onPin={() => togglePin({ to, caption })} />
+    )
+  }
+
+  // Signing out asks first; a demo session also drops the demo flag (otherwise a real login right
+  // after would still have every request intercepted as fake).
+  async function onSignOut() {
+    const ok = await confirm({ title: 'Sign out?', message: 'You will need to sign in again to continue.', confirmLabel: 'Sign out' })
+    if (!ok) return
+    if (isDemoMode()) return exitDemoMode()
+    logout()
+    navigate('/login')
+  }
+
+  // A route is current when it matches the path and no other menu route matches more specifically
+  // (so /halls/entry lights up only Hall Booking Entry, not Hall Booking too).
   function isCurrentPath(to) {
-    return to && (location.pathname === to || location.pathname.startsWith(`${to}/`))
+    const matches = (r) => r && (location.pathname === r || location.pathname.startsWith(`${r}/`))
+    if (!matches(to)) return false
+    return !menu.some((m) => {
+      const other = routeFor(m)
+      return other && other !== to && other.length > to.length && matches(other)
+    })
+  }
+
+  // Several menu captions can share one screen (Global Settings, Security and Bulk Master Update all open Admin Master):
+  // light up only the first of them, not all three.
+  function isActiveItem(to, caption) {
+    if (!isCurrentPath(to)) return false
+    const first = menu.find((m) => routeFor(m) === to)
+    return !first || first.caption === caption
   }
 
   return (
     <AppShell
-      header={{ height: 108 }}
-      navbar={{ width: 272, breakpoint: 'sm', collapsed: { mobile: !opened, desktop: !opened } }}
-      padding="md"
+      header={{ height: 80 }}
+      navbar={{ width: rail ? 72 : 224, breakpoint: 'sm', collapsed: { mobile: !opened, desktop: false } }}
+      padding={{ base: 'sm', sm: 'md' }}
     >
-      <AppShell.Header
-        style={{
-          background: 'var(--mantine-color-kumkum-0)',
-          borderBottom: '1px solid var(--mantine-color-kumkum-1)',
-        }}
-      >
-        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Group gap="sm" wrap="nowrap">
-            <Burger opened={opened} onClick={toggle} color="var(--mantine-color-kumkum-7)" size="sm" />
-            <img src={BRAND_LOCKUP} alt="e-Mandira Pranali" style={{ height: 92, width: 'auto', objectFit: 'contain', display: 'block' }} />
-          </Group>
-          {/* Full search pill from tablet up; icon-only trigger below that so the
-              header never forces horizontal scroll on a phone-width viewport
-              (burger + logo + FY badge + avatar already claim most of 375px). */}
-          <Group gap="sm" wrap="nowrap" visibleFrom="sm" style={{ flex: 1, maxWidth: 420, marginInline: 'auto' }}>
-            <Group
-              gap="xs"
-              wrap="nowrap"
-              onClick={() => setSearchOpen(true)}
-              style={{
-                cursor: 'pointer',
-                flex: 1,
-                background: '#fff',
-                border: '1px solid var(--mantine-color-kumkum-1)',
-                borderRadius: 999,
-                padding: '8px 14px',
-              }}
-            >
-              <Search size={15} color="var(--mantine-color-kumkum-6)" />
-              <Text size="sm" c="dimmed">
-                Search screens...
-              </Text>
-              <Kbd size="xs" ml="auto">
-                /
-              </Kbd>
-            </Group>
-          </Group>
-          <Group gap="xs" wrap="nowrap">
-            <ActionIcon
-              hiddenFrom="sm"
-              variant="subtle"
-              color="kumkum"
-              size="lg"
-              aria-label="Search screens"
-              onClick={() => setSearchOpen(true)}
-            >
-              <Search size={18} />
+      {/* Header: ivory bar, 80px (was 108px). Brand left, search centre, status + account right. */}
+      <AppShell.Header style={{ background: '#FFFDF8', borderBottom: '1px solid var(--vt-line)', boxShadow: '0 1px 0 rgba(199,154,61,0.25)' }}>
+        {mobileSearch && (
+          <Group h="100%" px="xs" wrap="nowrap" gap="xs" hiddenFrom="sm">
+            <GlobalSearch items={searchItems} autoFocus inputRef={searchRef} onDone={() => setMobileSearch(false)} />
+            <ActionIcon variant="subtle" color="kumkum" size={44} aria-label="Close search" onClick={() => setMobileSearch(false)}>
+              <X size={20} />
             </ActionIcon>
-            {/* Developer-only data-source switch — never saves anything while
-                on Demo Data, see src/lib/demoAuth.js + api.js. */}
+          </Group>
+        )}
+        <Group h="100%" px={{ base: 'xs', sm: 'md' }} justify="space-between" wrap="nowrap" gap="sm" display={mobileSearch ? { base: 'none', sm: 'flex' } : undefined}>
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+            <Burger opened={narrow ? opened : !rail} onClick={toggleNav} color="var(--mantine-color-kumkum-7)" size="md" aria-label={(narrow ? opened : !rail) ? 'Collapse navigation' : 'Expand navigation'} />
+            <Link to="/" aria-label="e-Mandira Pranali, go to dashboard" style={{ display: 'flex' }}>
+              <img className="vt-brand-logo" src={BRAND_LOCKUP} alt="" />
+            </Link>
+          </Group>
+
+          {/* Inline search from tablet up (type right in the header, results drop down under it). */}
+          <Group visibleFrom="sm" style={{ flex: 1, maxWidth: 460, marginInline: 'auto' }} wrap="nowrap">
+            <GlobalSearch items={searchItems} inputRef={searchRef} />
+          </Group>
+
+          <Group gap="xs" wrap="nowrap">
+            <ActionIcon hiddenFrom="sm" variant="subtle" color="kumkum" size={44} aria-label="Search screens" onClick={() => setMobileSearch(true)}>
+              <Search size={20} />
+            </ActionIcon>
+            {/* Developer-only data-source switch: never saves while on Demo Data (src/lib/demoAuth.js + api.js). */}
             <Menu position="bottom-end" withArrow>
               <Menu.Target>
                 <Badge
-                  color={isDemoMode() ? 'gold' : 'teal'}
+                  component="button"
+                  type="button"
+                  color={isDemoMode() ? 'gold' : 'kumkum'}
                   variant={isDemoMode() ? 'filled' : 'light'}
-                  radius="xl"
+                  size="lg"
                   c={isDemoMode() ? '#3A2A0A' : undefined}
-                  leftSection={<FlaskConical size={11} />}
-                  visibleFrom="xs"
-                  style={{ cursor: 'pointer' }}
+                  leftSection={<FlaskConical size={12} />}
+                  visibleFrom="sm"
+                  style={{ cursor: 'pointer', border: 'none' }}
+                  aria-label="Data source"
                 >
                   {isDemoMode() ? 'Demo Data' : 'Real Data'}
                 </Badge>
@@ -230,207 +284,273 @@ export default function AppShellLayout() {
                 )}
               </Menu.Dropdown>
             </Menu>
-            <Badge color="gold" variant="light" radius="xl" c="#876428" visibleFrom="xs">
+            <Badge color="gold" variant="light" size="lg" c="#876428" visibleFrom="xs">
               FY 2026-27
             </Badge>
-            <Menu position="bottom-end" withArrow>
-              <Menu.Target>
-                <Avatar radius="xl" color="kumkum" style={{ cursor: 'pointer' }}>
-                  {(user?.user_code || '?').slice(0, 2).toUpperCase()}
-                </Avatar>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>{user?.user_name}</Menu.Label>
-                <Menu.Item
-                  onClick={() => {
-                    // Signing out of a demo session must also drop the demo-mode
-                    // flag — otherwise a real login right after would still have
-                    // every request intercepted as fake (api.js checks the flag,
-                    // not which session is active).
-                    if (isDemoMode()) return exitDemoMode()
-                    logout()
-                    navigate('/login')
-                  }}
-                >
-                  Sign out
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+            <Tooltip label={user?.user_name || user?.user_code} withArrow>
+              <Avatar radius="xl" color="kumkum" variant="filled" size={40} aria-label={`Signed in as ${user?.user_name || user?.user_code}`}>
+                {(user?.user_code || '?').slice(0, 2).toUpperCase()}
+              </Avatar>
+            </Tooltip>
+            <Tooltip label="Sign out" withArrow>
+              <ActionIcon variant="light" color="kumkum" size={40} aria-label="Sign out" onClick={onSignOut}>
+                <LogOut size={18} />
+              </ActionIcon>
+            </Tooltip>
           </Group>
         </Group>
       </AppShell.Header>
 
+      {/* Sidebar: deep maroon (logo colour). Brand lives in the header. Expanded (264px) or icon rail (76px). */}
       <AppShell.Navbar
         className="vt-side"
-        style={{
-          background: 'linear-gradient(180deg, #7A1F1F 0%, #6B1A1A 100%)',
-          display: 'flex',
-          flexDirection: 'column',
-          border: 'none',
-        }}
+        aria-label="Main navigation"
+        style={{ background: 'linear-gradient(180deg, #6B1A1A 0%, #3E0E0E 100%)', display: 'flex', flexDirection: 'column', border: 'none' }}
       >
-        <Group px="md" py="md" wrap="nowrap" gap="sm">
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: '50%',
-              background: '#fff',
-              display: 'grid',
-              placeItems: 'center',
-              flexShrink: 0,
-              overflow: 'hidden',
-            }}
-          >
-            <img src={BRAND_MARK} alt="" aria-hidden style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {rail ? (
+          <div className="vt-side-scroll" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0.75rem 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <RailLink to="/" label="Dashboard" icon={LayoutDashboard} active={location.pathname === '/'} />
+            <div className="vt-rail-sep" />
+            <RailGroup label="Favourites" icon={Star} active={validFavs.some((f) => isCurrentPath(f.to))}>
+              {validFavs.length === 0 && <Menu.Label>Pin screens from the full menu</Menu.Label>}
+              {validFavs.map((f) => (
+                <Menu.Item key={f.to} component={Link} to={f.to}>
+                  {f.caption}
+                </Menu.Item>
+              ))}
+            </RailGroup>
+            {grouped.map((g) => (
+              <RailGroup key={g.type} label={g.type} icon={GROUP_ICON[g.type]} active={g.items.some((item) => isCurrentPath(routeFor(item)))}>
+                {g.items.map((item) => {
+                  const to = routeFor(item)
+                  return (
+                    <Menu.Item key={item.menu_item_id} component={Link} to={to || '#'} disabled={!to}>
+                      {item.caption}
+                    </Menu.Item>
+                  )
+                })}
+              </RailGroup>
+            ))}
+            {isAdmin && (
+              <RailGroup label="Inventory" icon={Package} active={isCurrentPath('/inventory')}>
+                <Menu.Item component={Link} to="/inventory/stock-adjustment">Stock Adjustment Entry</Menu.Item>
+                <Menu.Item component={Link} to="/inventory/store-issue">Store Issue Note</Menu.Item>
+                <Menu.Item component={Link} to="/inventory/purchase-bill">Purchase Bill</Menu.Item>
+                <Menu.Item component={Link} to="/inventory/bom">Bill of Material</Menu.Item>
+              </RailGroup>
+            )}
+            {isAdmin && (
+              <RailGroup label="Administration" icon={SlidersHorizontal} active={isCurrentPath('/settings')}>
+                <Menu.Item component={Link} to="/settings/admin-master">Admin Master</Menu.Item>
+              </RailGroup>
+            )}
           </div>
-          <div>
-            <Text fw={700} c="white" size="lg" lh={1.15} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-              vTemple
-            </Text>
-            <Text size="xs" c="kumkum.1">
-              e-Mandira Pranali
-            </Text>
-          </div>
-        </Group>
+        ) : (
+          <div className="vt-side-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 0.5rem 0.5rem' }}>
+            {/* Dashboard isn't a MstMenu row in the legacy app, so it sits outside the metadata tree (Reports is a normal menu group below). */}
+            <div style={{ marginBottom: 8 }}>
+              <NavLink component={Link} to="/" label="Dashboard" active={location.pathname === '/'} leftSection={<LayoutDashboard size={17} />} />
+            </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0.65rem' }}>
-          <div style={{ marginBottom: 8 }}>
-            {/* Dashboard (App.jsx's "/" route) and Reports (the report launcher)
-                aren't individual MstMenu rows in the legacy app — not
-                metadata-driven like the rest of the tree below. */}
-            <NavLink
-              component={Link}
-              to="/"
-              label="Dashboard"
-              active={location.pathname === '/'}
-              leftSection={<LayoutDashboard size={16} />}
-            />
-            <NavLink
-              component={Link}
-              to="/reports"
-              label="Reports"
-              active={isCurrentPath('/reports')}
-              leftSection={<BarChart3 size={16} />}
-            />
-          </div>
-          {grouped.map((g) => {
-            const isOpen = openGroups.has(g.type)
-            return (
-              <div key={g.type} style={{ marginBottom: 8 }}>
-                <UnstyledButton onClick={() => toggleGroup(g.type)} w="100%" px="xs" pt="sm" pb={4}>
-                  <Group justify="space-between" wrap="nowrap" gap={4}>
-                    <Text size="xs" fw={600} c="kumkum.1" tt="uppercase" style={{ letterSpacing: 0.8 }}>
-                      {g.type}
-                    </Text>
-                    <ChevronDown
-                      size={12}
-                      color="var(--mantine-color-kumkum-1)"
-                      style={{ opacity: 0.6, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
-                    />
-                  </Group>
-                </UnstyledButton>
-                <Collapse in={isOpen}>
-                  {g.items.map((item) => {
-                    const to = routeFor(item)
-                    return (
-                      <NavLink
-                        key={item.menu_item_id}
-                        component={Link}
-                        to={to || '#'}
-                        label={item.caption}
-                        disabled={!to}
-                        active={isCurrentPath(to)}
-                      />
-                    )
-                  })}
+            {/* Favourites: screens the user pinned with the star on any row below (saved per user, in this browser). */}
+            <div style={{ marginBottom: 8 }}>
+              <Group gap={10} wrap="nowrap" px="xs" h={32}>
+                <Star size={15} color="#F4E1A6" aria-hidden />
+                <Text size="sm" fw={700} c="#F4E1A6" style={{ letterSpacing: 0.3 }}>
+                  Favourites
+                </Text>
+              </Group>
+              {validFavs.length === 0 ? (
+                <Text size="xs" c="#D9B9A3" px="xs" pb={4}>
+                  Tap the star next to a screen to pin it here.
+                </Text>
+              ) : (
+                <div className="vt-side-sub">{validFavs.map((f) => renderItem(f.to, f.caption))}</div>
+              )}
+            </div>
+
+            {grouped.map((g) => (
+              <div key={g.type} style={{ marginBottom: 6 }}>
+                <GroupHeader
+                  label={g.type}
+                  open={openGroups.has(g.type)}
+                  active={g.items.some((item) => isCurrentPath(routeFor(item)))}
+                  onToggle={() => toggleGroup(g.type)}
+                />
+                <Collapse in={openGroups.has(g.type)}>
+                  <div className="vt-side-sub">{g.items.map((item) => renderItem(routeFor(item), item.caption))}</div>
                 </Collapse>
               </div>
-            )
-          })}
-          {user?.user_code?.toUpperCase() === 'ADMIN' && (
-            <div style={{ marginBottom: 8 }}>
-              {/* Stock Adjustment / Store Issue / Purchase Bill / BOM are MenuShow='N'
-                  in the legacy app (hidden, zero real usage) — built per explicit
-                  request but deliberately not injected into the metadata-driven tree
-                  above; ADMIN-only here so they don't clutter daily staff use. */}
-              <UnstyledButton onClick={() => toggleGroup('Inventory')} w="100%" px="xs" pt="sm" pb={4}>
-                <Group justify="space-between" wrap="nowrap" gap={4}>
-                  <Text size="xs" fw={600} c="kumkum.1" tt="uppercase" style={{ letterSpacing: 0.8 }}>
-                    Inventory
-                  </Text>
-                  <ChevronDown
-                    size={12}
-                    color="var(--mantine-color-kumkum-1)"
-                    style={{ opacity: 0.6, transform: openGroups.has('Inventory') ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
-                  />
-                </Group>
-              </UnstyledButton>
-              <Collapse in={openGroups.has('Inventory')}>
-                <NavLink component={Link} to="/inventory/stock-adjustment" label="Stock Adjustment Entry" active={isCurrentPath('/inventory/stock-adjustment')} />
-                <NavLink component={Link} to="/inventory/store-issue" label="Store Issue Note" active={isCurrentPath('/inventory/store-issue')} />
-                <NavLink component={Link} to="/inventory/purchase-bill" label="Purchase Bill" active={isCurrentPath('/inventory/purchase-bill')} />
-                <NavLink component={Link} to="/inventory/bom" label="Bill of Material" active={isCurrentPath('/inventory/bom')} />
-              </Collapse>
-            </div>
-          )}
-          {user?.user_code?.toUpperCase() === 'ADMIN' && (
-            <div style={{ marginBottom: 8 }}>
-              <Text size="xs" fw={600} c="kumkum.1" tt="uppercase" px="xs" pt="sm" style={{ letterSpacing: 0.8 }}>
-                Administration
-              </Text>
-              <NavLink
-                component={Link}
-                to="/settings/admin-master"
-                label="Admin Master"
-                active={isCurrentPath('/settings/admin-master')}
-                leftSection={<SlidersHorizontal size={16} />}
-              />
-            </div>
-          )}
-        </div>
+            ))}
 
-        {/* Softvent brand footer, styled like the reference's translucent "help" card. */}
-        <Stack gap={6} align="center" py="md" px="xs" mx="xs" mb="xs" style={{ borderRadius: 16, background: 'rgba(255,255,255,0.1)' }}>
-          <Text size="10px" fw={700} c="kumkum.1" tt="uppercase" style={{ letterSpacing: 0.6 }}>
-            Designed &amp; Developed by
-          </Text>
-          <div style={{ background: '#fff', borderRadius: 8, padding: '6px 14px', display: 'inline-flex' }}>
-            <img src="/softvent-logo-new.png" alt="Softvent" style={{ height: 22, width: 'auto', objectFit: 'contain', display: 'block' }} />
+            {isAdmin && (
+              <div style={{ marginBottom: 6 }}>
+                {/* Stock Adjustment / Store Issue / Purchase Bill / BOM are MenuShow='N' in the legacy app
+                    (hidden, zero real usage): built on request, ADMIN-only here so daily staff aren't cluttered. */}
+                <GroupHeader label="Inventory" open={openGroups.has('Inventory')} active={isCurrentPath('/inventory')} onToggle={() => toggleGroup('Inventory')} />
+                <Collapse in={openGroups.has('Inventory')}>
+                  <div className="vt-side-sub">
+                    {renderItem('/inventory/stock-adjustment', 'Stock Adjustment Entry')}
+                    {renderItem('/inventory/store-issue', 'Store Issue Note')}
+                    {renderItem('/inventory/purchase-bill', 'Purchase Bill')}
+                    {renderItem('/inventory/bom', 'Bill of Material')}
+                  </div>
+                </Collapse>
+              </div>
+            )}
+            {isAdmin && (
+              <div style={{ marginBottom: 6 }}>
+                <GroupHeader label="Administration" open={openGroups.has('Administration')} active={isCurrentPath('/settings')} onToggle={() => toggleGroup('Administration')} />
+                <Collapse in={openGroups.has('Administration')}>
+                  <div className="vt-side-sub">{renderItem('/settings/admin-master', 'Admin Master')}</div>
+                </Collapse>
+              </div>
+            )}
           </div>
-        </Stack>
+        )}
+
+        {/* Account card: who is signed in. Role names aren't in the session, so ADMIN is the only role shown by name. */}
+        <Group
+          gap="sm"
+          wrap="nowrap"
+          justify={rail ? 'center' : 'flex-start'}
+          py="xs"
+          px={rail ? 0 : 'sm'}
+          mx="xs"
+          mb={6}
+          style={{ borderRadius: 16, background: 'rgba(244,225,166,0.08)', border: '1px solid rgba(244,225,166,0.18)' }}
+        >
+          <Avatar radius="xl" size={36} color="gold" variant="filled" c="#2B0909" aria-label={`Signed in as ${user?.user_name || user?.user_code}`}>
+            {(user?.user_code || '?').slice(0, 2).toUpperCase()}
+          </Avatar>
+          {!rail && (
+            <div style={{ minWidth: 0 }}>
+              <Text size="sm" fw={600} c="#FBF6EC" truncate>
+                {user?.user_name || user?.user_code}
+              </Text>
+              <Text size="xs" c="#D9B9A3" truncate>
+                {isAdmin ? 'Administrator' : `User ${user?.user_code}`}
+              </Text>
+            </div>
+          )}
+        </Group>
+
+        {/* Credit card: gold + silver Softvent mark straight on the maroon, no white box. */}
+        {!rail && (
+          <Stack gap={8} align="center" py="sm" px={4} mx="xs" mb="xs" style={{ borderRadius: 16, background: 'rgba(244,225,166,0.08)', border: '1px solid rgba(244,225,166,0.18)' }}>
+            {/* One line (nowrap, tight tracking so it fits the 224px sidebar), logo centred beneath. */}
+            <Text fw={600} c="#D9B9A3" tt="uppercase" ta="center" style={{ fontSize: 11, letterSpacing: 0.7, whiteSpace: 'nowrap' }}>
+              Designed &amp; developed by
+            </Text>
+            <img src="/softvent-logo-dark.png" alt="Softvent" style={{ height: 30, width: 'auto', objectFit: 'contain', display: 'block' }} />
+          </Stack>
+        )}
       </AppShell.Navbar>
 
+      {welcome && <WelcomeSplash name={user?.user_name || user?.user_code} onDone={() => setWelcome(false)} />}
       <AppShell.Main ref={mainRef} style={{ background: TOKENS.sandal }}>
         <Outlet />
       </AppShell.Main>
-      <GlobalSearch opened={searchOpen} onClose={() => setSearchOpen(false)} items={searchItems} />
       <style>{`
         .vt-side .mantine-NavLink-root {
           border-radius: 999px;
-          color: rgba(255,255,255,0.92);
+          min-height: 40px;
+          color: rgba(251,246,236,0.92);
           font-weight: 500;
           margin-bottom: 2px;
           transition: background .15s, color .15s;
         }
-        .vt-side .mantine-NavLink-root:hover {
-          background: rgba(255,255,255,0.12);
-        }
-        .vt-side .mantine-NavLink-root[data-active] {
-          background: #fff;
-          color: var(--mantine-color-kumkum-7);
-          font-weight: 700;
-        }
-        .vt-side .mantine-NavLink-root[data-active]:hover {
-          background: #fff;
-        }
-        .vt-side .mantine-NavLink-section {
-          color: inherit;
-        }
-        .vt-side .mantine-NavLink-root[data-disabled] {
-          color: rgba(255,255,255,0.35);
-        }
+        .vt-side .mantine-NavLink-root:hover { background: rgba(244,225,166,0.12); }
+        .vt-side .mantine-NavLink-root[data-active] { background: rgba(244,225,166,0.10); color: #F4E1A6; font-weight: 700; box-shadow: inset 3px 0 0 #F4E1A6; }
+        .vt-side .mantine-NavLink-root[data-active]:hover { background: rgba(244,225,166,0.16); }
+        .vt-side .mantine-NavLink-section { color: inherit; }
+        .vt-side .mantine-NavLink-root[data-disabled] { color: rgba(251,246,236,0.38); }
+        .vt-side :where(a, button):focus-visible { outline: 2px solid #F4E1A6; outline-offset: 2px; }
+        .vt-brand-logo { height: 60px; width: auto; object-fit: contain; display: block; }
+        @media (max-width: 600px) { .vt-brand-logo { height: 44px; } }
+        .vt-side-scroll { scrollbar-width: thin; scrollbar-color: rgba(244,225,166,0.3) transparent; }
+        .vt-side-head { border-radius: 10px; min-height: 40px; transition: background .15s; }
+        .vt-side-head[data-active] { background: rgba(244,225,166,0.10); box-shadow: inset 3px 0 0 #F4E1A6; }
+        .vt-side-item { position: relative; }
+        .vt-side-item .mantine-NavLink-root { padding-right: 34px; padding-left: 10px; font-size: 14px; }
+        .vt-pin { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: #F4E1A6; cursor: pointer; opacity: 0; transition: opacity .15s, background .15s; }
+        .vt-side-item:hover .vt-pin, .vt-side-item:focus-within .vt-pin, .vt-pin[data-pinned] { opacity: 1; }
+        .vt-pin:hover { background: rgba(244,225,166,0.2); }
+                @media (hover: none) { .vt-pin { opacity: 0.75; } }
+        .vt-rail-btn { width: 48px; height: 48px; flex-shrink: 0; display: grid; place-items: center; border-radius: 14px; color: #FBF6EC; transition: background .15s, color .15s; }
+        .vt-rail-btn:hover { background: rgba(244,225,166,0.14); }
+        .vt-rail-btn[data-active] { background: rgba(244,225,166,0.10); color: #F4E1A6; box-shadow: inset 3px 0 0 #F4E1A6; }
+        .vt-rail-sep { width: 28px; height: 1px; background: rgba(244,225,166,0.25); margin: 4px 0; }
+        .vt-side-sub { margin: 2px 0 6px 14px; padding-left: 6px; border-left: 1px solid rgba(244,225,166,0.25); }
+        .vt-side-head:hover { background: rgba(244,225,166,0.08); }
       `}</style>
     </AppShell>
+  )
+}
+
+// Collapsible group heading for the sidebar (a real button with aria-expanded, >= 36px tall).
+// `active` = the current screen lives inside this group, so it stays visibly marked even when collapsed.
+function GroupHeader({ label, open, active, onToggle }) {
+  const Icon = GROUP_ICON[label]
+  return (
+    <UnstyledButton className="vt-side-head" data-active={active || undefined} onClick={onToggle} w="100%" px="xs" aria-expanded={open}>
+      <Group justify="space-between" wrap="nowrap" gap={4} h={40}>
+        <Group gap={10} wrap="nowrap">
+          {Icon && <Icon size={16} color="#F4E1A6" aria-hidden style={{ opacity: active ? 1 : 0.75 }} />}
+          <Text size="sm" fw={700} c="#F4E1A6" style={{ letterSpacing: 0.3, opacity: active ? 1 : 0.9 }}>
+            {label}
+          </Text>
+        </Group>
+        <ChevronDown size={14} color="#F4E1A6" style={{ opacity: 0.7, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} aria-hidden />
+      </Group>
+    </UnstyledButton>
+  )
+}
+
+// Sidebar row: NavLink + a star button (a sibling, not nested in the link) to pin it as a favourite.
+function SideItem({ to, caption, active, pinned, canPin, onPin }) {
+  return (
+    <div className="vt-side-item">
+      <NavLink component={Link} to={to || '#'} label={caption} disabled={!to} active={active} />
+      {canPin && (
+        <button
+          type="button"
+          className="vt-pin"
+          data-pinned={pinned || undefined}
+          aria-pressed={pinned}
+          aria-label={pinned ? `Unpin ${caption} from favourites` : `Pin ${caption} to favourites`}
+          onClick={onPin}
+        >
+          <Star size={15} fill={pinned ? 'currentColor' : 'none'} aria-hidden />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// Icon-rail entries: a plain link with a tooltip, and a group that opens its screens in a flyout (hover, click or keyboard).
+function RailLink({ to, label, icon: Icon, active }) {
+  return (
+    <Tooltip label={label} position="right" withArrow>
+      <UnstyledButton component={Link} to={to} className="vt-rail-btn" data-active={active || undefined} aria-label={label}>
+        <Icon size={20} aria-hidden />
+      </UnstyledButton>
+    </Tooltip>
+  )
+}
+
+function RailGroup({ label, icon: Icon, active, children }) {
+  return (
+    <Menu trigger="click-hover" openDelay={60} closeDelay={160} position="right-start" offset={10} withinPortal shadow="md" width={250}>
+      <Menu.Target>
+        <UnstyledButton className="vt-rail-btn" data-active={active || undefined} aria-label={label}>
+          <Icon size={20} aria-hidden />
+        </UnstyledButton>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Label>{label}</Menu.Label>
+        {children}
+      </Menu.Dropdown>
+    </Menu>
   )
 }

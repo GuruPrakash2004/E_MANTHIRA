@@ -3,7 +3,7 @@
 // never axios directly — see /CLAUDE.md §5.
 import axios from 'axios'
 import { isDemoMode } from '../lib/demoMode'
-import { resolveDemoGet } from '../lib/demoData'
+import { demoAdapter } from '../lib/demo/adapter'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL
 
@@ -11,6 +11,9 @@ if (!BASE_URL) {
   // Fail loudly in dev rather than silently calling a relative path.
   console.error('VITE_API_BASE_URL is not set — copy frontend/.env.example to frontend/.env')
 }
+
+/** Absolute URL for a backend path, for tags that cannot go through axios (e.g. <video src>). */
+export const apiUrl = (path) => `${BASE_URL || ''}${path}`
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -72,45 +75,15 @@ api.interceptors.response.use(
   }
 )
 
-// Demo Data mode (src/lib/demoMode.js, src/lib/demoAuth.js): when on, every
-// GET below is answered from src/lib/demoData.js's curated fixtures (or a
-// safe empty fallback) instead of a real network call, and every write is
-// rejected with a message shaped like a normal API error — so the existing
-// `err?.response?.data?.detail` handling in every screen's catch block
-// already renders it correctly, no per-screen changes needed.
-function demoReadOnlyRejection() {
-  return Promise.reject({
-    response: { data: { detail: 'Demo data is read-only — switch to Real Data (top right) to save changes.' } },
-  })
-}
-// A GET not in the curated fixture set still needs *some* valid shape so the
-// calling screen's `(data || []).map(...)` etc. don't throw — every screen
-// in this app already treats an empty result as a normal, valid state.
-function demoGetFallback(url) {
-  return /\/\d+$/.test(url.split('?')[0]) ? null : []
-}
+// Demo Data mode (src/lib/demoMode.js, src/lib/demo/*): when on, EVERY request, reads and writes alike, is answered
+// by the in-memory demo database (src/lib/demo/routes.js) through this axios adapter instead of the network, so all
+// screens are populated and saving works for the session. Nothing is persisted; a reload resets the demo data.
+const realAdapter = axios.getAdapter(axios.defaults.adapter)
+api.defaults.adapter = (config) => (isDemoMode() ? demoAdapter(config) : realAdapter(config))
 
 // Small helpers so feature code reads cleanly: get/post/put/del/download
-export const get = (url, config) => {
-  if (isDemoMode()) {
-    const mocked = resolveDemoGet(url)
-    return Promise.resolve(mocked !== undefined ? mocked : demoGetFallback(url))
-  }
-  return api.get(url, config).then((r) => r.data)
-}
-export const post = (url, data, config) => {
-  if (isDemoMode()) return demoReadOnlyRejection()
-  return api.post(url, data, config).then((r) => r.data)
-}
-export const put = (url, data, config) => {
-  if (isDemoMode()) return demoReadOnlyRejection()
-  return api.put(url, data, config).then((r) => r.data)
-}
-export const del = (url, config) => {
-  if (isDemoMode()) return demoReadOnlyRejection()
-  return api.delete(url, config).then((r) => r.data)
-}
-export const download = (url, config) => {
-  if (isDemoMode()) return demoReadOnlyRejection()
-  return api.get(url, { ...config, responseType: 'blob' }).then((r) => r.data)
-}
+export const get = (url, config) => api.get(url, config).then((r) => r.data)
+export const post = (url, data, config) => api.post(url, data, config).then((r) => r.data)
+export const put = (url, data, config) => api.put(url, data, config).then((r) => r.data)
+export const del = (url, config) => api.delete(url, config).then((r) => r.data)
+export const download = (url, config) => api.get(url, { ...config, responseType: 'blob' }).then((r) => r.data)

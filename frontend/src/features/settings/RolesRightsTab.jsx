@@ -1,6 +1,8 @@
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import { Badge, Button, Checkbox, Group, Modal, Pill, PillGroup, Stack, Table, Text, TextInput } from '@mantine/core'
-import { Eye, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Button, Card, Checkbox, Group, Modal, Skeleton, Stack, Table, Text, TextInput, UnstyledButton } from '@mantine/core'
+import { Eye, Pencil, Plus, ShieldCheck, Trash2, X } from 'lucide-react'
+import EmptyState from '../../components/ui/EmptyState'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as mastersApi from '../../api/endpoints/masters'
@@ -14,10 +16,10 @@ const COLUMNS = [
   { key: 'delete', label: 'Delete / Cancel' },
 ]
 
-function TriCheckbox({ items, field, onToggleAll }) {
+function TriCheckbox({ items, field, label, onToggleAll }) {
   const all = items.length > 0 && items.every((i) => i[field])
   const some = items.some((i) => i[field])
-  return <Checkbox checked={all} indeterminate={!all && some} onChange={() => onToggleAll(field, !all)} color="kumkum" />
+  return <Checkbox aria-label={label} checked={all} indeterminate={!all && some} onChange={() => onToggleAll(field, !all)} color="kumkum" styles={{ root: { display: 'flex', justifyContent: 'center' } }} />
 }
 
 export default function RolesRightsTab() {
@@ -31,7 +33,7 @@ export default function RolesRightsTab() {
   const [newRoleCode, setNewRoleCode] = useState('')
   const [newRoleName, setNewRoleName] = useState('')
 
-  const { data: roleData } = useQuery({ queryKey: ['master', ROLE_DOC_ID], queryFn: () => mastersApi.listMaster(ROLE_DOC_ID) })
+  const { data: roleData, isLoading: rolesLoading } = useQuery({ queryKey: ['master', ROLE_DOC_ID], queryFn: () => mastersApi.listMaster(ROLE_DOC_ID) })
   const roles = (roleData?.rows || []).filter((r) => r.ROLEID !== 0)
 
   useEffect(() => {
@@ -102,12 +104,20 @@ export default function RolesRightsTab() {
     }
   }
 
-  function onCancel() {
+  async function pickRole(id) {
+    if (id === selectedRoleId) return
+    if (dirty && !(await confirm({ title: 'Discard changes?', message: 'You have unsaved changes to this role. Switching roles will lose them.', confirmLabel: 'Discard' }))) return
+    setSelectedRoleId(id)
+  }
+
+  async function onCancel() {
+    if (dirty && !(await confirm({ title: 'Discard changes?', message: 'Your unsaved changes to this role will be lost.', confirmLabel: 'Discard' }))) return
     setItems(rights || [])
     setRoleName(selectedRole?.ROLENAME || '')
     setDirty(false)
   }
 
+  const confirm = useConfirm()
   async function onCreateRole() {
     if (!newRoleCode.trim() || !newRoleName.trim()) return
     try {
@@ -125,7 +135,7 @@ export default function RolesRightsTab() {
 
   async function onDeleteRole() {
     if (!selectedRole) return
-    if (!window.confirm(`Delete role "${selectedRole.ROLENAME}"? Users assigned to it will keep this RoleID until reassigned.`)) return
+    if (!(await confirm({ title: 'Delete this role?', message: `Role "${selectedRole.ROLENAME}" will be deleted. Users assigned to it keep this RoleID until reassigned.`, confirmLabel: 'Delete' }))) return
     try {
       await mastersApi.deleteMasterRow(ROLE_DOC_ID, selectedRoleId)
       notifications.show({ message: 'Role deleted', color: 'teal' })
@@ -138,26 +148,40 @@ export default function RolesRightsTab() {
 
   return (
     <Stack>
-      <Group justify="space-between" align="flex-end">
+      <Group justify="space-between" align="flex-end" wrap="wrap">
         <div>
-          <Text size="sm" fw={600} mb={6}>
-            Select Role:
+          <Text size="sm" fw={600} mb={6} id="vt-role-label">
+            Select role
           </Text>
-          <PillGroup>
-            {roles.map((r) => (
-              <Pill
-                key={r.ROLEID}
-                onClick={() => setSelectedRoleId(r.ROLEID)}
-                style={{
-                  cursor: 'pointer',
-                  background: r.ROLEID === selectedRoleId ? '#7A1F1F' : undefined,
-                  color: r.ROLEID === selectedRoleId ? 'white' : undefined,
-                }}
-              >
-                {r.ROLENAME}
-              </Pill>
-            ))}
-          </PillGroup>
+          {rolesLoading ? (
+            <Skeleton height={36} width={260} radius="xl" />
+          ) : (
+            <div role="radiogroup" aria-labelledby="vt-role-label" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {roles.map((r) => {
+                const on = r.ROLEID === selectedRoleId
+                return (
+                  <UnstyledButton
+                    key={r.ROLEID}
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => pickRole(r.ROLEID)}
+                    style={{
+                      minHeight: 40,
+                      padding: '0 16px',
+                      borderRadius: 999,
+                      fontSize: 14,
+                      fontWeight: on ? 700 : 500,
+                      border: `1px solid ${on ? 'var(--mantine-color-kumkum-7)' : 'var(--mantine-color-gray-4)'}`,
+                      background: on ? 'var(--mantine-color-kumkum-7)' : '#fff',
+                      color: on ? '#FBF6EC' : 'inherit',
+                    }}
+                  >
+                    {r.ROLENAME}
+                  </UnstyledButton>
+                )
+              })}
+            </div>
+          )}
         </div>
         <Button leftSection={<Plus size={16} />} variant="default" onClick={() => setCreateOpen(true)}>
           Create new role
@@ -166,11 +190,11 @@ export default function RolesRightsTab() {
 
       {selectedRole && (
         <>
-          <Group justify="space-between" align="flex-end">
-            <div style={{ flex: 1, maxWidth: 340 }}>
+          <Group justify="space-between" align="flex-end" wrap="wrap">
+            <div style={{ flex: 1, minWidth: 220, maxWidth: 340 }}>
               <TextInput label="Role Name" value={roleName} onChange={(e) => setRoleName(e.currentTarget.value)} />
               <Text size="xs" c="dimmed" mt={4}>
-                {openCount} of {items.length} screens open &middot; {buttonCount} buttons allowed
+                {openCount} of {items.length} screens open, {buttonCount} buttons allowed
               </Text>
             </div>
             <Group>
@@ -188,35 +212,37 @@ export default function RolesRightsTab() {
             </Group>
           </Group>
 
-          <Group gap="xl" p="sm" style={{ background: '#FAF6EE', borderRadius: 8 }}>
+          <Group gap="xl" p="sm" style={{ background: 'var(--mantine-color-gold-0)', borderRadius: 8 }}>
             <Group gap={6}>
-              <Eye size={16} color="#7A1F1F" />
+              <Eye size={16} color="var(--mantine-color-kumkum-7)" />
               <Text size="xs">
-                <b>Open</b> — see the screen in the sidebar and look at its data
+                <b>Open</b>: see the screen in the sidebar and look at its data
               </Text>
             </Group>
             <Group gap={6}>
-              <Plus size={16} color="#7A1F1F" />
+              <Plus size={16} color="var(--mantine-color-kumkum-7)" />
               <Text size="xs">
-                <b>Add / Save</b> — create new records or save bills and entries
+                <b>Add / Save</b>: create new records or save bills and entries
               </Text>
             </Group>
             <Group gap={6}>
-              <Pencil size={16} color="#7A1F1F" />
+              <Pencil size={16} color="var(--mantine-color-kumkum-7)" />
               <Text size="xs">
-                <b>Edit</b> — change existing records
+                <b>Edit</b>: change existing records
               </Text>
             </Group>
             <Group gap={6}>
-              <Trash2 size={16} color="#7A1F1F" />
+              <Trash2 size={16} color="var(--mantine-color-kumkum-7)" />
               <Text size="xs">
-                <b>Delete / Cancel</b> — remove records or cancel saved bills
+                <b>Delete / Cancel</b>: remove records or cancel saved bills
               </Text>
             </Group>
           </Group>
 
-          <Table striped highlightOnHover withTableBorder>
-            <Table.Thead>
+          <Card withBorder p={0} style={{ overflow: 'hidden' }}>
+          <Table.ScrollContainer minWidth={560} mah="70dvh">
+          <Table highlightOnHover stickyHeader>
+            <Table.Thead style={{ background: '#fff', zIndex: 2 }}>
               <Table.Tr>
                 <Table.Th>Screen</Table.Th>
                 {COLUMNS.map((c) => (
@@ -229,7 +255,7 @@ export default function RolesRightsTab() {
             <Table.Tbody>
               {groups.map((g) => (
                 <Fragment key={g.type}>
-                  <Table.Tr style={{ background: '#FAF6EE' }}>
+                  <Table.Tr style={{ background: 'var(--mantine-color-gold-0)' }}>
                     <Table.Td>
                       <Text fw={700} size="sm">
                         {g.type.toUpperCase()}{' '}
@@ -240,7 +266,7 @@ export default function RolesRightsTab() {
                     </Table.Td>
                     {COLUMNS.map((c) => (
                       <Table.Td key={c.key} style={{ textAlign: 'center' }}>
-                        <TriCheckbox items={g.items} field={c.key} onToggleAll={(field, value) => toggleGroup(g.type, field, value)} />
+                        <TriCheckbox items={g.items} field={c.key} label={`${c.label}: all ${g.type} screens`} onToggleAll={(field, value) => toggleGroup(g.type, field, value)} />
                       </Table.Td>
                     ))}
                   </Table.Tr>
@@ -250,9 +276,11 @@ export default function RolesRightsTab() {
                       {COLUMNS.map((c) => (
                         <Table.Td key={c.key} style={{ textAlign: 'center' }}>
                           <Checkbox
+                            aria-label={`${c.label}: ${item.caption}`}
                             checked={item[c.key]}
                             onChange={(e) => toggleCell(item.menu_item_id, c.key, e.currentTarget.checked)}
                             color="kumkum"
+                            styles={{ root: { display: 'flex', justifyContent: 'center' } }}
                           />
                         </Table.Td>
                       ))}
@@ -271,16 +299,16 @@ export default function RolesRightsTab() {
               )}
             </Table.Tbody>
           </Table>
+          </Table.ScrollContainer>
+          </Card>
         </>
       )}
 
-      {!selectedRole && roles.length === 0 && (
-        <Text c="dimmed" ta="center" py="xl">
-          No roles yet — click "Create new role" to add the first one.
-        </Text>
+      {!rolesLoading && !selectedRole && roles.length === 0 && (
+        <EmptyState icon={ShieldCheck} title="No roles yet" hint="Create the first role, then choose which screens and buttons it can use." />
       )}
 
-      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="Create new role" radius="lg">
+      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="Create new role">
         <Stack>
           <TextInput label="Role Code" required value={newRoleCode} onChange={(e) => setNewRoleCode(e.currentTarget.value)} />
           <TextInput label="Role Name" required value={newRoleName} onChange={(e) => setNewRoleName(e.currentTarget.value)} />

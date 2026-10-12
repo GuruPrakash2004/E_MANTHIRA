@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Badge, Checkbox, Group, NumberInput, Select, Table, Text, TextInput } from '@mantine/core'
+import { Badge, Card, Checkbox, Group, NumberInput, Select, Skeleton, Stack, Table, Text, TextInput } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as printOptionsApi from '../../api/endpoints/printOptions'
@@ -37,10 +37,21 @@ export default function PrintOptionsTab() {
     }
   }
 
-  if (isLoading) return <Text size="sm" c="dimmed">Loading…</Text>
+  if (isLoading)
+    return (
+      <Stack gap="xs">
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={44} radius="md" />)}
+      </Stack>
+    )
 
   return (
-    <Table striped highlightOnHover style={{ position: 'relative' }}>
+    <Stack gap="md">
+    <Text size="sm" c="dimmed">
+      Which printer each print format sends to, what happens after a save, and the default format. Each change saves as soon as you leave the field.
+    </Text>
+    <Card withBorder p={0} style={{ overflow: 'hidden' }}>
+    <Table.ScrollContainer minWidth={900}>
+    <Table highlightOnHover>
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Screen</Table.Th>
@@ -81,6 +92,7 @@ export default function PrintOptionsTab() {
               <Table.Td>
                 <TextInput
                   size="xs"
+                  aria-label={`Direct printer, ${row.MenuItemCaption || row.DocID} ${row.OptionName}`}
                   disabled={busy}
                   defaultValue={(row.DirectPrinterName || '').trim()}
                   onBlur={(e) => {
@@ -92,6 +104,7 @@ export default function PrintOptionsTab() {
               <Table.Td>
                 <Select
                   size="xs"
+                  aria-label={`After save, ${row.MenuItemCaption || row.DocID} ${row.OptionName}`}
                   data={AFTER_SAVE_ACTIONS}
                   value={(row.AfterSaveAction || '').trim() || null}
                   disabled={busy}
@@ -101,6 +114,7 @@ export default function PrintOptionsTab() {
               <Table.Td>
                 <NumberInput
                   size="xs"
+                  aria-label={`Copies, ${row.MenuItemCaption || row.DocID} ${row.OptionName}`}
                   disabled={busy}
                   defaultValue={row.NoOfCopies || 1}
                   min={1}
@@ -112,6 +126,8 @@ export default function PrintOptionsTab() {
               </Table.Td>
               <Table.Td>
                 <Checkbox
+                  aria-label={`Default format, ${row.MenuItemCaption || row.DocID} ${row.OptionName}`}
+                  color="kumkum"
                   checked={row.DefaultPrint === 'Y'}
                   disabled={busy}
                   onChange={(e) => save(row, { default_print: e.currentTarget.checked ? 'Y' : 'N' })}
@@ -122,5 +138,8 @@ export default function PrintOptionsTab() {
         })}
       </Table.Tbody>
     </Table>
+    </Table.ScrollContainer>
+    </Card>
+    </Stack>
   )
 }

@@ -1,7 +1,8 @@
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
-import { ActionIcon, Badge, Button, Card, Divider, Grid, Group, Kbd, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { ActionIcon, Button, Grid, Group, Kbd, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
-import { Gift, Plus, Printer, Trash2 } from 'lucide-react'
+import { Gift, HandCoins, Plus, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as donationApi from '../../api/endpoints/donation'
@@ -11,12 +12,14 @@ import PrintPickerModal from '../../components/PrintPickerModal'
 import DynamicField from '../../components/DynamicField'
 import useDocFields from '../../hooks/useDocFields'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
+import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
+import EmptyState from '../../components/ui/EmptyState'
+import { formatINR, isoDate } from '../../utils/format'
 import { isFieldHidden, isFieldMandatory, fieldCaption, fieldListOptions } from '../../utils/docFieldConditions'
 
 const PAYMENT_MODES = ['Cash', 'Card', 'Cheque', 'UPI']
 const DOC_ID = 1261
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
-const KOLAM_PATTERN = '/illustrations/kolam.svg'
 
 // Maps this screen's own form-state keys to the legacy FldCode UtlDocDsgrFlds
 // uses — same pattern as SevaEntryPage (CLAUDE.md rule 5).
@@ -28,6 +31,7 @@ const FIELD_CODE_MAP = {
 }
 
 export default function DonationReceiptPage() {
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
   const [form, setForm] = useState({
     prefix: '',
@@ -92,7 +96,7 @@ export default function DonationReceiptPage() {
   }
 
   const { data: prefixes } = useQuery({ queryKey: ['prefixes', DOC_ID], queryFn: () => metaApi.getPrefixes(DOC_ID) })
-  const { data: recent, refetch } = useQuery({
+  const { data: recent, refetch, isLoading: recentLoading } = useQuery({
     queryKey: ['donations', 'recent'],
     queryFn: () => donationApi.listDonations({ top: 15 }),
   })
@@ -132,8 +136,8 @@ export default function DonationReceiptPage() {
         cash_bank_ledger_id: Number(form.cash_bank_ledger_id),
         hb_id: form.hb_id ? Number(form.hb_id) : null,
         amount: Number(form.amount),
-        doc_date: form.doc_date.toISOString().slice(0, 10),
-        cheque_date: form.cheque_date ? form.cheque_date.toISOString().slice(0, 10) : null,
+        doc_date: isoDate(form.doc_date),
+        cheque_date: form.cheque_date ? isoDate(form.cheque_date) : null,
         lines: lines.length > 0 ? lines.map((l) => ({ seva_id: l.seva_id ? Number(l.seva_id) : null, amount: Number(l.amount) })) : null,
         extra_fields: extra,
       }
@@ -168,227 +172,231 @@ export default function DonationReceiptPage() {
 
   useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.donrec_id) })
 
+  const splitMismatch = lines.length > 0 && Math.round(linesTotal * 100) !== Math.round((Number(form.amount) || 0) * 100)
+
   return (
-    <Stack>
-      <Group justify="space-between" align="flex-end">
-        <Group gap="sm">
-          <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 36, width: 36 }} />
+    <Stack gap="lg" className="vt-rise">
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <Group gap="sm" wrap="nowrap">
+          <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 40, width: 40 }} />
           <div>
-            <Title order={2} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-              Donation Receipt Entry
-            </Title>
+            <Title order={2}>Donation Receipt Entry</Title>
             <Text size="sm" c="dimmed">
               Record a donation and issue its receipt
             </Text>
           </div>
         </Group>
-        {lastSaved && (
-          <Badge color="teal" size="lg" radius="sm">
-            Saved {lastSaved.donrec_no} · Receipt {lastSaved.receipt_no}
-          </Badge>
-        )}
+        <Group gap="md" visibleFrom="sm" c="dimmed">
+          <Group gap={6}>
+            <Kbd size="xs">Alt+S</Kbd>
+            <Text size="xs">Save</Text>
+          </Group>
+          <Group gap={6}>
+            <Kbd size="xs">Alt+P</Kbd>
+            <Text size="xs">Print last</Text>
+          </Group>
+        </Group>
       </Group>
 
-      <Grid>
-        <Grid.Col span={8}>
-          <Card withBorder radius="lg" p="lg" shadow="sm" style={{ position: 'relative', overflow: 'hidden' }}>
-            <div
-              aria-hidden
-              style={{ position: 'absolute', inset: 0, backgroundImage: `url(${KOLAM_PATTERN})`, backgroundSize: '140px 140px', opacity: 0.03, pointerEvents: 'none' }}
+      <EntryLayout
+        main={
+          <>
+        <Stack gap="lg">
+          <SectionCard title="Receipt and donor" hint="Document details and who is donating. A known contact number fills the donor's details.">
+            <Grid>
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <Select label="Prefix" required data={prefixes || []} value={form.prefix} onChange={(v) => set('prefix', v)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <DateInput label="Document Date" valueFormat="DD/MM/YYYY" value={form.doc_date} onChange={(v) => set('doc_date', v)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <Select
+              label={caption('PAYMNTMODE', 'Payment Mode')}
+              required={mandatory('PAYMNTMODE')}
+              data={fieldListOptions(fieldMeta.PAYMNTMODE, PAYMENT_MODES)}
+              value={form.payment_mode}
+              onChange={(v) => set('payment_mode', v)}
             />
-            <Grid style={{ position: 'relative' }}>
-              <Grid.Col span={4}>
-                <Select label="Prefix" required data={prefixes || []} value={form.prefix} onChange={(v) => set('prefix', v)} />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <DateInput label="Document Date" value={form.doc_date} onChange={(v) => set('doc_date', v)} />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <Select
-                  label={caption('PAYMNTMODE', 'Payment Mode')}
-                  required={mandatory('PAYMNTMODE')}
-                  data={fieldListOptions(fieldMeta.PAYMNTMODE, PAYMENT_MODES)}
-                  value={form.payment_mode}
-                  onChange={(v) => set('payment_mode', v)}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput label={caption('DONOR', 'Donor Name')} required={mandatory('DONOR')} value={form.donor} onChange={(e) => set('donor', e.currentTarget.value)} />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label={caption('CONTACTNO', 'Contact Number')}
-                  required={mandatory('CONTACTNO')}
-                  value={form.contact_no}
-                  onChange={(e) => set('contact_no', e.currentTarget.value)}
-                  onBlur={onContactBlur}
-                />
-              </Grid.Col>
-              {!hidden('ADDRESS') && (
-                <Grid.Col span={8}>
-                  <TextInput label={caption('ADDRESS', 'Address')} required={mandatory('ADDRESS')} value={form.address} onChange={(e) => set('address', e.currentTarget.value)} />
-                </Grid.Col>
-              )}
-              {!hidden('PANNO') && (
-                <Grid.Col span={4}>
-                  <TextInput label={caption('PANNO', 'PAN Number')} required={mandatory('PANNO')} value={form.pan_no} onChange={(e) => set('pan_no', e.currentTarget.value)} />
-                </Grid.Col>
-              )}
-              {!hidden('HBID') && (
-                <Grid.Col span={6}>
-                  <LookupSelect docId={DOC_ID} field="HBID" label={caption('HBID', 'Hall Booking No (optional)')} required={mandatory('HBID')} value={form.hb_id} onChange={(v) => set('hb_id', v)} />
-                </Grid.Col>
-              )}
-              {!hidden('REFNO') && (
-                <Grid.Col span={6}>
-                  <TextInput label={caption('REFNO', 'Reference No')} required={mandatory('REFNO')} value={form.reference_no} onChange={(e) => set('reference_no', e.currentTarget.value)} />
-                </Grid.Col>
-              )}
-              {(!hidden('BANKNAME') || !hidden('CHEQUENO') || !hidden('CHEQUEDATE')) && (
-                <>
-                  {/* UtlDocDsgrFlds FldSection='Footer' for these — visually
-                      separated from the Header fields above, matching the
-                      legacy screen's own header/footer grouping. */}
-                  <Grid.Col span={12}>
-                    <Divider label="Payment Details" labelPosition="left" mt="xs" />
-                  </Grid.Col>
-                  {!hidden('BANKNAME') && (
-                    <Grid.Col span={4}>
-                      <TextInput label={caption('BANKNAME', 'Bank Name')} required={mandatory('BANKNAME')} value={form.bank_name} onChange={(e) => set('bank_name', e.currentTarget.value)} />
-                    </Grid.Col>
-                  )}
-                  {!hidden('CHEQUENO') && (
-                    <Grid.Col span={4}>
-                      <TextInput label={caption('CHEQUENO', 'Cheque No')} required={mandatory('CHEQUENO')} value={form.cheque_no} onChange={(e) => set('cheque_no', e.currentTarget.value)} />
-                    </Grid.Col>
-                  )}
-                  {!hidden('CHEQUEDATE') && (
-                    <Grid.Col span={4}>
-                      <DateInput label={caption('CHEQUEDATE', 'Cheque Date')} required={mandatory('CHEQUEDATE')} value={form.cheque_date} onChange={(v) => set('cheque_date', v)} />
-                    </Grid.Col>
-                  )}
-                </>
-              )}
-              <Grid.Col span={6}>
-                <LookupSelect docId={DOC_ID} field="LEDGER" label={caption('LEDGER', 'Income Ledger')} required={mandatory('LEDGER')} value={form.ledger_id} onChange={(v) => set('ledger_id', v)} />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <LookupSelect docId={DOC_ID} field="LEDID" label={caption('LEDID', 'Cash / Bank Account')} required={mandatory('LEDID')} value={form.cash_bank_ledger_id} onChange={(v) => set('cash_bank_ledger_id', v)} />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <NumberInput label={caption('AMOUNT', 'Amount')} required={mandatory('AMOUNT')} value={form.amount} onChange={(v) => set('amount', v)} decimalScale={2} />
-              </Grid.Col>
-              {!hidden('RMKS') && (
-                <Grid.Col span={6}>
-                  <TextInput label={caption('RMKS', 'Remarks')} required={mandatory('RMKS')} value={form.remarks || ''} onChange={(e) => set('remarks', e.currentTarget.value)} />
-                </Grid.Col>
-              )}
-              {extraDesignerFields.map((f) => (
-                <Grid.Col span={4} key={f.FldCode}>
-                  <DynamicField
-                    docId={DOC_ID}
-                    field={f}
-                    value={extra[f.FldCode]}
-                    onChange={(v) => setExtra((e) => ({ ...e, [f.FldCode]: v }))}
-                    required={mandatory(f.FldCode)}
-                  />
-                </Grid.Col>
-              ))}
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <TextInput label={caption('DONOR', 'Donor Name')} required={mandatory('DONOR')} value={form.donor} onChange={(e) => set('donor', e.currentTarget.value)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <TextInput
+              label={caption('CONTACTNO', 'Contact Number')}
+              required={mandatory('CONTACTNO')}
+              value={form.contact_no}
+              onChange={(e) => set('contact_no', e.currentTarget.value)}
+              onBlur={onContactBlur}
+            />
+          </Grid.Col>
+          {!hidden('ADDRESS') && (
+            <Grid.Col span={{ base: 12, xl: 8 }}>
+              <TextInput label={caption('ADDRESS', 'Address')} required={mandatory('ADDRESS')} value={form.address} onChange={(e) => set('address', e.currentTarget.value)} />
+            </Grid.Col>
+          )}
+          {!hidden('PANNO') && (
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+              <TextInput label={caption('PANNO', 'PAN Number')} required={mandatory('PANNO')} value={form.pan_no} onChange={(e) => set('pan_no', e.currentTarget.value)} />
+            </Grid.Col>
+          )}
+          {!hidden('HBID') && (
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <LookupSelect docId={DOC_ID} field="HBID" label={caption('HBID', 'Hall Booking No (optional)')} required={mandatory('HBID')} value={form.hb_id} onChange={(v) => set('hb_id', v)} />
+            </Grid.Col>
+          )}
+          {!hidden('REFNO') && (
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <TextInput label={caption('REFNO', 'Reference No')} required={mandatory('REFNO')} value={form.reference_no} onChange={(e) => set('reference_no', e.currentTarget.value)} />
+            </Grid.Col>
+          )}
             </Grid>
+          </SectionCard>
 
-            <Group justify="space-between" mt="md" style={{ position: 'relative' }}>
-              <Text size="sm" fw={600}>
-                Split across Sevas (optional)
-              </Text>
+          <SectionCard title="Payment and amount" hint="How it was paid, the accounts it posts to, and the amount.">
+            <Grid>
+          {(!hidden('BANKNAME') || !hidden('CHEQUENO') || !hidden('CHEQUEDATE')) && (
+            <>
+              {!hidden('BANKNAME') && (
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <TextInput label={caption('BANKNAME', 'Bank Name')} required={mandatory('BANKNAME')} value={form.bank_name} onChange={(e) => set('bank_name', e.currentTarget.value)} />
+                </Grid.Col>
+              )}
+              {!hidden('CHEQUENO') && (
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <TextInput label={caption('CHEQUENO', 'Cheque No')} required={mandatory('CHEQUENO')} value={form.cheque_no} onChange={(e) => set('cheque_no', e.currentTarget.value)} />
+                </Grid.Col>
+              )}
+              {!hidden('CHEQUEDATE') && (
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <DateInput label={caption('CHEQUEDATE', 'Cheque Date')} required={mandatory('CHEQUEDATE')} valueFormat="DD/MM/YYYY" value={form.cheque_date} onChange={(v) => set('cheque_date', v)} />
+                </Grid.Col>
+              )}
+            </>
+          )}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <LookupSelect docId={DOC_ID} field="LEDGER" label={caption('LEDGER', 'Income Ledger')} required={mandatory('LEDGER')} value={form.ledger_id} onChange={(v) => set('ledger_id', v)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <LookupSelect docId={DOC_ID} field="LEDID" label={caption('LEDID', 'Cash / Bank Account')} required={mandatory('LEDID')} value={form.cash_bank_ledger_id} onChange={(v) => set('cash_bank_ledger_id', v)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <NumberInput label={caption('AMOUNT', 'Amount')} required={mandatory('AMOUNT')} value={form.amount} onChange={(v) => set('amount', v)} decimalScale={2} />
+          </Grid.Col>
+          {!hidden('RMKS') && (
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <TextInput label={caption('RMKS', 'Remarks')} required={mandatory('RMKS')} value={form.remarks || ''} onChange={(e) => set('remarks', e.currentTarget.value)} />
+            </Grid.Col>
+          )}
+          {extraDesignerFields.map((f) => (
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }} key={f.FldCode}>
+              <DynamicField
+                docId={DOC_ID}
+                field={f}
+                value={extra[f.FldCode]}
+                onChange={(v) => setExtra((e) => ({ ...e, [f.FldCode]: v }))}
+                required={mandatory(f.FldCode)}
+              />
+            </Grid.Col>
+          ))}
+            </Grid>
+          </SectionCard>
+
+          <SectionCard
+            title="Split across sevas"
+            hint="Optional. Tag parts of this donation to specific sevas; the parts must add up to the amount."
+            action={
               <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
-                Add Seva
+                Add seva
               </Button>
-            </Group>
-            {lines.length > 0 && (
-              <Table mt="xs" style={{ position: 'relative' }}>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Seva</Table.Th>
-                    <Table.Th w={160}>Amount</Table.Th>
-                    <Table.Th w={40}></Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {lines.map((l, i) => (
-                    <Table.Tr key={i}>
-                      <Table.Td>
-                        <LookupSelect docId={1263} field="SVAID" label="" value={l.seva_id} onChange={(v) => updateLine(i, { seva_id: v })} />
-                      </Table.Td>
-                      <Table.Td>
-                        <NumberInput value={l.amount} onChange={(v) => updateLine(i, { amount: v })} decimalScale={2} />
-                      </Table.Td>
-                      <Table.Td>
-                        <ActionIcon color="red" variant="subtle" onClick={() => removeLine(i)}>
-                          <Trash2 size={16} />
-                        </ActionIcon>
-                      </Table.Td>
+            }
+          >
+            {lines.length === 0 ? (
+              <EmptyState icon={HandCoins} title="No split" hint="Leave empty to record a plain donation, or add a seva to split the amount." />
+            ) : (
+              <Table.ScrollContainer minWidth={420}>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Seva</Table.Th>
+                      <Table.Th w={170}>Amount</Table.Th>
+                      <Table.Th w={48} aria-label="Remove" />
                     </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {lines.map((l, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td>
+                          <LookupSelect docId={1263} field="SVAID" label="" aria-label="Seva" value={l.seva_id} onChange={(v) => updateLine(i, { seva_id: v })} />
+                        </Table.Td>
+                        <Table.Td>
+                          <NumberInput aria-label="Amount" value={l.amount} onChange={(v) => updateLine(i, { amount: v })} decimalScale={2} />
+                        </Table.Td>
+                        <Table.Td>
+                          <ActionIcon
+                            color="red"
+                            variant="subtle"
+                            size={36}
+                            aria-label="Remove this line"
+                            onClick={async () => { if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeLine(i) }}
+                          >
+                            <Trash2 size={16} />
+                          </ActionIcon>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
             )}
-            {lines.length > 0 && Math.round(linesTotal * 100) !== Math.round((Number(form.amount) || 0) * 100) && (
-              <Text size="xs" c="red" mt={4}>
-                Line amounts (₹{linesTotal.toFixed(2)}) must add up to the total Amount (₹{(Number(form.amount) || 0).toFixed(2)}).
+            {splitMismatch && (
+              <Text size="xs" c="red" mt="xs" role="alert">
+                Line amounts ({formatINR(linesTotal)}) must add up to the total amount ({formatINR(form.amount)}).
               </Text>
             )}
-
-            <Card mt="lg" radius="md" style={{ position: 'relative', background: 'linear-gradient(120deg, #7A1F1F 0%, #5A1414 100%)' }}>
-              <Group justify="space-between">
-                <Text c="#F4E1A6" fw={600}>
-                  Donation Amount
-                </Text>
-                <Title order={3} c="white" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-                  ₹ {(Number(form.amount) || 0).toFixed(2)}
-                </Title>
-              </Group>
-            </Card>
-
-            <Group justify="flex-end" mt="lg" style={{ position: 'relative' }}>
-              <Kbd size="xs">Alt+S</Kbd>
-              <Button size="md" color="kumkum" loading={saving} onClick={onSave}>
-                Save &amp; Print
-              </Button>
-            </Group>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={4}>
-          <Card withBorder radius="lg" p="md" shadow="sm">
-            <Group gap={8} mb="sm">
-              <Gift size={18} color="#7A1F1F" />
-              <Title order={5} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-                Recent Donations
-              </Title>
-            </Group>
-            <Stack gap={0}>
-              {(recent || []).map((d, i) => (
-                <div key={d.DONRECID}>
-                  {i > 0 && <Divider my={8} />}
-                  <Group justify="space-between" wrap="nowrap">
-                    <div>
-                      <Text size="sm" fw={600}>
-                        {d.PrintDONRECNO}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {d.DONOR} · ₹{d.TOTAMT}
-                      </Text>
-                    </div>
-                    <ActionIcon variant="light" color="kumkum" onClick={() => setPrintFor(d.DONRECID)}>
-                      <Printer size={16} />
-                    </ActionIcon>
-                  </Group>
-                </div>
-              ))}
-            </Stack>
-          </Card>
-        </Grid.Col>
-      </Grid>
+          </SectionCard>
+        </Stack>
+          </>
+        }
+        side={
+          <>
+        <SummaryCard
+          rows={[
+            { label: 'Payment', value: form.payment_mode || '-' },
+            { label: 'Seva split', value: lines.length ? `${lines.length} line(s)` : 'None' },
+          ]}
+          totalLabel="Donation amount"
+          total={formatINR(form.amount)}
+          words={form.amount}
+          warning={splitMismatch ? 'Seva split does not add up to the amount.' : null}
+          saving={saving}
+          onSave={onSave}
+        />
+        {lastSaved && (
+          <SavedPanel
+            lines={[`Donation ${lastSaved.donrec_no}`, `Receipt ${lastSaved.receipt_no}`]}
+            onPrint={() => setPrintFor(lastSaved.donrec_id)}
+          />
+        )}
+        <RecentCard
+          title="Recent donations"
+          icon={Gift}
+          loading={recentLoading}
+          rows={recent || []}
+          emptyTitle="No donations yet"
+          emptyHint="Saved receipts will be listed here."
+          renderRow={(d) => ({
+            key: d.DONRECID,
+            title: d.PrintDONRECNO,
+            subtitle: `${d.DONOR} \u00b7 ${formatINR(d.TOTAMT)}`,
+            printLabel: `Print ${d.PrintDONRECNO}`,
+            onPrint: () => setPrintFor(d.DONRECID),
+          })}
+        />
+          </>
+        }
+      />
 
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Donation Receipt" />
     </Stack>

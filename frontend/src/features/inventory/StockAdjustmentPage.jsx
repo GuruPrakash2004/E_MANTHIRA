@@ -1,20 +1,23 @@
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
-import { ActionIcon, Badge, Button, Card, Divider, Grid, Group, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { ActionIcon, Grid, NumberInput, Select, Stack, Table, TextInput, Button } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
-import { Plus, Trash2 } from 'lucide-react'
+import { ClipboardList, Plus, Save, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as inventoryApi from '../../api/endpoints/inventory'
 import MasterOptionsSelect from './MasterOptionsSelect'
 import useDocFields from '../../hooks/useDocFields'
 import { isFieldHidden, isFieldMandatory, fieldCaption } from '../../utils/docFieldConditions'
+import dayjs from 'dayjs'
+import useDocShortcuts from '../../hooks/useDocShortcuts'
+import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard, PageHeader } from '../../components/ui/EntryParts'
+import { formatINR, isoDate } from '../../utils/format'
 
 const ITEM_DOC_ID = 1114
 const UOM_DOC_ID = 1115
 const LOCATION_DOC_ID = 1123
 const DOC_ID = 1268
-const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
-const KOLAM_PATTERN = '/illustrations/kolam.svg'
 
 // Maps this screen's own form-state keys to the legacy FldCode UtlDocDsgrFlds
 // uses — same pattern as the transaction screens (CLAUDE.md rule 5). None of
@@ -31,13 +34,14 @@ const EMPTY_LINE = { item_id: '', uom_id: '', qty: 0, rate: 0, adj_type: 'Add', 
  * explicit request. Adds or reduces stock directly (no supplier/GL side).
  */
 export default function StockAdjustmentPage() {
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
   const [form, setForm] = useState({ loc_id: '', adj_by: '', remarks: '', doc_date: new Date() })
   const [lines, setLines] = useState([{ ...EMPTY_LINE }])
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
 
-  const { data: recent, refetch } = useQuery({ queryKey: ['stock-adjustments', 'recent'], queryFn: () => inventoryApi.listStockAdjustments({ top: 15 }) })
+  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['stock-adjustments', 'recent'], queryFn: () => inventoryApi.listStockAdjustments({ top: 15 }) })
   const { byCode: fieldMeta } = useDocFields(DOC_ID)
   const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, form[key]]))
   const hidden = (code) => isFieldHidden(fieldMeta[code], codeValues)
@@ -68,7 +72,7 @@ export default function StockAdjustmentPage() {
         loc_id: Number(form.loc_id),
         adj_by: form.adj_by,
         remarks: form.remarks,
-        doc_date: form.doc_date.toISOString().slice(0, 10),
+        doc_date: isoDate(form.doc_date),
         lines: lines.map((l) => ({ item_id: Number(l.item_id), uom_id: Number(l.uom_id), qty: Number(l.qty), rate: Number(l.rate) || 0, adj_type: l.adj_type, remarks: l.remarks })),
       }
       const result = await inventoryApi.createStockAdjustment(body)
@@ -84,131 +88,131 @@ export default function StockAdjustmentPage() {
     }
   }
 
+  const addQty = lines.reduce((s, l) => s + (l.adj_type === 'Add' ? Number(l.qty) || 0 : 0), 0)
+  const reduceQty = lines.reduce((s, l) => s + (l.adj_type === 'Reduce' ? Number(l.qty) || 0 : 0), 0)
+  const fmtQty = (n) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+
+  useDocShortcuts({ onSave })
+
   return (
-    <Stack>
-      <Group justify="space-between" align="flex-end">
-        <Group gap="sm">
-          <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 36, width: 36 }} />
-          <div>
-            <Title order={2} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-              Stock Adjustment Entry
-            </Title>
-            <Text size="sm" c="dimmed">
-              Add or reduce item stock directly
-            </Text>
-          </div>
-        </Group>
-        {lastSaved && (
-          <Badge color="teal" size="lg" radius="sm">
-            Saved {lastSaved.sa_no}
-          </Badge>
-        )}
-      </Group>
+    <Stack gap="lg" className="vt-rise">
+      <PageHeader title="Stock Adjustment Entry" subtitle="Add or reduce item stock directly" />
 
-      <Grid>
-        <Grid.Col span={8}>
-          <Card withBorder radius="lg" p="lg" shadow="sm" style={{ position: 'relative', overflow: 'hidden' }}>
-            <div
-              aria-hidden
-              style={{ position: 'absolute', inset: 0, backgroundImage: `url(${KOLAM_PATTERN})`, backgroundSize: '140px 140px', opacity: 0.03, pointerEvents: 'none' }}
+      <EntryLayout
+        main={
+          <Stack gap="lg">
+            <SectionCard title="Adjustment details" hint="Where the stock sits and who is adjusting it.">
+              <Grid>
+                {!hidden('LOCID') && (
+                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                    <MasterOptionsSelect docId={LOCATION_DOC_ID} label={caption('LOCID', 'Location')} required={mandatory('LOCID')} value={form.loc_id} onChange={(v) => set('loc_id', v)} />
+                  </Grid.Col>
+                )}
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <DateInput label="Document Date" valueFormat="DD/MM/YYYY" value={form.doc_date} onChange={(v) => set('doc_date', v)} />
+                </Grid.Col>
+                {!hidden('ADJBY') && (
+                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                    <TextInput label={caption('ADJBY', 'Adjust By')} required={mandatory('ADJBY')} value={form.adj_by} onChange={(e) => set('adj_by', e.currentTarget.value)} />
+                  </Grid.Col>
+                )}
+                {!hidden('RMKS') && (
+                  <Grid.Col span={12}>
+                    <TextInput label={caption('RMKS', 'Remarks')} required={mandatory('RMKS')} value={form.remarks} onChange={(e) => set('remarks', e.currentTarget.value)} />
+                  </Grid.Col>
+                )}
+              </Grid>
+            </SectionCard>
+
+            <SectionCard
+              title="Items"
+              hint="One line per item. Choose Add to increase stock or Reduce to take it out."
+              action={
+                <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
+                  Add line
+                </Button>
+              }
+            >
+              <Table.ScrollContainer minWidth={720}>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Item</Table.Th>
+                      <Table.Th w={130}>UOM</Table.Th>
+                      <Table.Th w={110}>{caption('SAQTY', 'Qty')}</Table.Th>
+                      <Table.Th w={110}>Rate</Table.Th>
+                      <Table.Th w={140}>{caption('ADJTYPE', 'Adjust Type')}</Table.Th>
+                      <Table.Th w={48} aria-label="Remove" />
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {lines.map((l, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td>
+                          <MasterOptionsSelect ariaLabel={`Item, line ${i + 1}`} docId={ITEM_DOC_ID} value={l.item_id} onChange={(v) => updateLine(i, { item_id: v })} />
+                        </Table.Td>
+                        <Table.Td>
+                          <MasterOptionsSelect ariaLabel={`UOM, line ${i + 1}`} docId={UOM_DOC_ID} value={l.uom_id} onChange={(v) => updateLine(i, { uom_id: v })} />
+                        </Table.Td>
+                        <Table.Td>
+                          <NumberInput aria-label={`Quantity, line ${i + 1}`} value={l.qty} onChange={(v) => updateLine(i, { qty: v })} decimalScale={2} />
+                        </Table.Td>
+                        <Table.Td>
+                          <NumberInput aria-label={`Rate, line ${i + 1}`} value={l.rate} onChange={(v) => updateLine(i, { rate: v })} decimalScale={2} />
+                        </Table.Td>
+                        <Table.Td>
+                          <Select aria-label={`Adjust type, line ${i + 1}`} data={['Add', 'Reduce']} value={l.adj_type} onChange={(v) => updateLine(i, { adj_type: v })} />
+                        </Table.Td>
+                        <Table.Td>
+                          <ActionIcon
+                            color="red"
+                            variant="subtle"
+                            size={36}
+                            aria-label={`Remove line ${i + 1}`}
+                            disabled={lines.length <= 1}
+                            onClick={async () => {
+                              if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeLine(i)
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </ActionIcon>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </SectionCard>
+          </Stack>
+        }
+        side={
+          <>
+            <SummaryCard
+              rows={[
+                { label: 'Lines', value: lines.length },
+                { label: 'Stock added', value: fmtQty(addQty) },
+                { label: 'Stock reduced', value: fmtQty(reduceQty) },
+              ]}
+              totalLabel="Net change in quantity"
+              total={fmtQty(addQty - reduceQty)}
+              saveLabel="Save"
+              saveIcon={Save}
+              saving={saving}
+              onSave={onSave}
             />
-            <Grid style={{ position: 'relative' }}>
-              {!hidden('LOCID') && (
-                <Grid.Col span={4}>
-                  <MasterOptionsSelect docId={LOCATION_DOC_ID} label={caption('LOCID', 'Location')} required={mandatory('LOCID')} value={form.loc_id} onChange={(v) => set('loc_id', v)} />
-                </Grid.Col>
-              )}
-              <Grid.Col span={4}>
-                <DateInput label="Document Date" value={form.doc_date} onChange={(v) => set('doc_date', v)} />
-              </Grid.Col>
-              {!hidden('ADJBY') && (
-                <Grid.Col span={4}>
-                  <TextInput label={caption('ADJBY', 'Adjust By')} required={mandatory('ADJBY')} value={form.adj_by} onChange={(e) => set('adj_by', e.currentTarget.value)} />
-                </Grid.Col>
-              )}
-              {!hidden('RMKS') && (
-                <Grid.Col span={12}>
-                  <TextInput label={caption('RMKS', 'Remarks')} required={mandatory('RMKS')} value={form.remarks} onChange={(e) => set('remarks', e.currentTarget.value)} />
-                </Grid.Col>
-              )}
-            </Grid>
-
-            <Group justify="space-between" mt="md">
-              <Text size="sm" fw={600}>
-                Items
-              </Text>
-              <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
-                Add Line
-              </Button>
-            </Group>
-            <Table mt="xs">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Item</Table.Th>
-                  <Table.Th w={120}>UOM</Table.Th>
-                  <Table.Th w={100}>{caption('SAQTY', 'Qty')}</Table.Th>
-                  <Table.Th w={100}>Rate</Table.Th>
-                  <Table.Th w={130}>{caption('ADJTYPE', 'Adjust Type')}</Table.Th>
-                  <Table.Th w={40}></Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {lines.map((l, i) => (
-                  <Table.Tr key={i}>
-                    <Table.Td>
-                      <MasterOptionsSelect docId={ITEM_DOC_ID} value={l.item_id} onChange={(v) => updateLine(i, { item_id: v })} />
-                    </Table.Td>
-                    <Table.Td>
-                      <MasterOptionsSelect docId={UOM_DOC_ID} value={l.uom_id} onChange={(v) => updateLine(i, { uom_id: v })} />
-                    </Table.Td>
-                    <Table.Td>
-                      <NumberInput value={l.qty} onChange={(v) => updateLine(i, { qty: v })} decimalScale={2} />
-                    </Table.Td>
-                    <Table.Td>
-                      <NumberInput value={l.rate} onChange={(v) => updateLine(i, { rate: v })} decimalScale={2} />
-                    </Table.Td>
-                    <Table.Td>
-                      <Select data={['Add', 'Reduce']} value={l.adj_type} onChange={(v) => updateLine(i, { adj_type: v })} />
-                    </Table.Td>
-                    <Table.Td>
-                      <ActionIcon color="red" variant="subtle" disabled={lines.length <= 1} onClick={() => removeLine(i)}>
-                        <Trash2 size={16} />
-                      </ActionIcon>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-
-            <Group justify="flex-end" mt="lg">
-              <Button size="md" color="kumkum" loading={saving} onClick={onSave}>
-                Save
-              </Button>
-            </Group>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={4}>
-          <Card withBorder radius="lg" p="md" shadow="sm">
-            <Title order={5} mb="sm" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-              Recent Adjustments
-            </Title>
-            <Stack gap={0}>
-              {(recent || []).map((r, i) => (
-                <div key={r.SAID}>
-                  {i > 0 && <Divider my={8} />}
-                  <Text size="sm" fw={600}>
-                    {r.PrintSANO}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    {r.RMKS} · Qty {r.TOTQTY}
-                  </Text>
-                </div>
-              ))}
-            </Stack>
-          </Card>
-        </Grid.Col>
-      </Grid>
+            {lastSaved && <SavedPanel lines={[`Adjustment ${lastSaved.sa_no}`]} />}
+            <RecentCard
+              title="Recent adjustments"
+              icon={ClipboardList}
+              loading={recentLoading}
+              rows={recent || []}
+              emptyTitle="No adjustments yet"
+              emptyHint="Saved documents will be listed here."
+              renderRow={(r) => ({ key: r.SAID, title: r.PrintSANO, subtitle: `${r.RMKS} \u00b7 Qty ${r.TOTQTY}` })}
+            />
+          </>
+        }
+      />
     </Stack>
   )
 }

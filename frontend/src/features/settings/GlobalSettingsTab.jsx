@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Accordion, Badge, Group, Stack, Text, TextInput, Tooltip } from '@mantine/core'
+import { Accordion, Badge, Card, Group, Skeleton, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useQuery } from '@tanstack/react-query'
 import * as settingsApi from '../../api/endpoints/settings'
+import WelcomeVideoCard from './WelcomeVideoCard'
 
 /**
  * Grouped grid of UtlGSettings (doc 07 §5.9) — Set Group / Setting caption /
@@ -38,20 +39,29 @@ export default function GlobalSettingsTab() {
     }
   }
 
-  if (isLoading) return <Text c="dimmed">Loading settings…</Text>
+  if (isLoading)
+    return (
+      <Stack>
+        <WelcomeVideoCard />
+        <Skeleton height={48} radius="md" />
+        <Skeleton height={48} radius="md" />
+      </Stack>
+    )
 
   return (
     <Stack>
+      <WelcomeVideoCard />
       <Text size="sm" c="dimmed">
-        Grouped configuration values (UtlGSettings) — same values the legacy app's Global Settings screen edits.
+        Grouped configuration values. These are the same values the old app's Global Settings screen edits. Each value saves when you leave the field.
       </Text>
-      <Accordion multiple defaultValue={Object.keys(groups).slice(0, 1)}>
+      <Card withBorder p={0} style={{ overflow: 'hidden' }}>
+      <Accordion multiple defaultValue={Object.keys(groups).slice(0, 1)} variant="default">
         {Object.entries(groups).map(([group, settings]) => (
           <Accordion.Item key={group} value={group}>
             <Accordion.Control>
               <Group gap="xs">
                 <Text fw={600}>{group}</Text>
-                <Badge size="xs" variant="light" color="gray">
+                <Badge size="sm" variant="light" color="gold" c="kumkum.8">
                   {settings.length}
                 </Badge>
               </Group>
@@ -78,6 +88,7 @@ export default function GlobalSettingsTab() {
           </Accordion.Item>
         ))}
       </Accordion>
+      </Card>
     </Stack>
   )
 }

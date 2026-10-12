@@ -1,17 +1,20 @@
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
-import { ActionIcon, Badge, Button, Card, Divider, Grid, Group, NumberInput, Select, Stack, Table, Text, Title } from '@mantine/core'
+import { ActionIcon, Grid, NumberInput, Select, Stack, Table, Text, Button } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Receipt, Save, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as inventoryApi from '../../api/endpoints/inventory'
 import LookupSelect from '../../components/LookupSelect'
 import useDocFields from '../../hooks/useDocFields'
 import { isFieldHidden, isFieldMandatory, fieldCaption } from '../../utils/docFieldConditions'
+import dayjs from 'dayjs'
+import useDocShortcuts from '../../hooks/useDocShortcuts'
+import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard, PageHeader } from '../../components/ui/EntryParts'
+import { formatINR, isoDate } from '../../utils/format'
 
 const DOC_ID = 1272
-const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
-const KOLAM_PATTERN = '/illustrations/kolam.svg'
 const EMPTY_LINES = [
   { ac_led_id: '', dr_amt: 0, cr_amt: 0 },
   { ac_led_id: '', dr_amt: 0, cr_amt: 0 },
@@ -24,6 +27,7 @@ const EMPTY_LINES = [
  * filled in) via the Bill No field.
  */
 export default function PurchaseVoucherPage() {
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
   const [voucherDate, setVoucherDate] = useState(new Date())
   const [crPeriod, setCrPeriod] = useState(0)
@@ -32,7 +36,7 @@ export default function PurchaseVoucherPage() {
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
 
-  const { data: recent, refetch } = useQuery({ queryKey: ['purchase-vouchers', 'recent'], queryFn: () => inventoryApi.listPurchaseVouchers({ top: 15 }) })
+  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['purchase-vouchers', 'recent'], queryFn: () => inventoryApi.listPurchaseVouchers({ top: 15 }) })
   const { data: bills } = useQuery({ queryKey: ['purchase-bills', 'unvouchered'], queryFn: () => inventoryApi.listPurchaseBills({ top: 100 }) })
   const unvoucheredBills = (bills || []).filter((b) => !b.VCHID)
   const { byCode: fieldMeta } = useDocFields(DOC_ID)
@@ -67,7 +71,7 @@ export default function PurchaseVoucherPage() {
     setSaving(true)
     try {
       const body = {
-        voucher_date: voucherDate.toISOString().slice(0, 10),
+        voucher_date: isoDate(voucherDate),
         cr_period: Number(crPeriod) || 0,
         pb_id: pbId ? Number(pbId) : null,
         lines: lines
@@ -89,139 +93,134 @@ export default function PurchaseVoucherPage() {
     }
   }
 
+  useDocShortcuts({ onSave })
+
   return (
-    <Stack>
-      <Group justify="space-between" align="flex-end">
-        <Group gap="sm">
-          <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 36, width: 36 }} />
-          <div>
-            <Title order={2} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-              Purchase Voucher
-            </Title>
-            <Text size="sm" c="dimmed">
-              Post the accounting for a purchase, optionally linked to a bill
-            </Text>
-          </div>
-        </Group>
-        {lastSaved && (
-          <Badge color="teal" size="lg" radius="sm">
-            Saved {lastSaved.purvch_no}
-          </Badge>
-        )}
-      </Group>
+    <Stack gap="lg" className="vt-rise">
+      <PageHeader title="Purchase Voucher" subtitle="Post the accounting for a purchase, optionally linked to a bill" />
 
-      <Grid>
-        <Grid.Col span={8}>
-          <Card withBorder radius="lg" p="lg" shadow="sm" style={{ position: 'relative', overflow: 'hidden' }}>
-            <div
-              aria-hidden
-              style={{ position: 'absolute', inset: 0, backgroundImage: `url(${KOLAM_PATTERN})`, backgroundSize: '140px 140px', opacity: 0.03, pointerEvents: 'none' }}
-            />
-            <Grid style={{ position: 'relative' }}>
-              <Grid.Col span={4}>
-                <DateInput label="Voucher Date" value={voucherDate} onChange={setVoucherDate} />
-              </Grid.Col>
-              {!hidden('CRPERIOD') && (
-                <Grid.Col span={4}>
-                  <NumberInput label={caption('CRPERIOD', 'Credit Period (days)')} required={mandatory('CRPERIOD')} value={crPeriod} onChange={setCrPeriod} />
+      <EntryLayout
+        main={
+          <Stack gap="lg">
+            <SectionCard title="Voucher details" hint="Date, credit period and the purchase bill this voucher settles.">
+              <Grid>
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <DateInput label="Voucher Date" valueFormat="DD/MM/YYYY" value={voucherDate} onChange={setVoucherDate} />
                 </Grid.Col>
-              )}
-              <Grid.Col span={4}>
-                <Select
-                  label="Link Purchase Bill (optional)"
-                  placeholder="Standalone voucher"
-                  clearable
-                  data={unvoucheredBills.map((b) => ({ value: String(b.PBID), label: `${b.PrintPBNO} — ${b.PartyName}` }))}
-                  value={pbId || null}
-                  onChange={(v) => setPbId(v || '')}
-                />
-              </Grid.Col>
-            </Grid>
+                {!hidden('CRPERIOD') && (
+                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                    <NumberInput label={caption('CRPERIOD', 'Credit Period (days)')} required={mandatory('CRPERIOD')} value={crPeriod} onChange={setCrPeriod} />
+                  </Grid.Col>
+                )}
+                <Grid.Col span={{ base: 12, sm: 12, xl: 4 }}>
+                  <Select
+                    label="Link Purchase Bill (optional)"
+                    placeholder="Standalone voucher"
+                    clearable
+                    data={unvoucheredBills.map((b) => ({ value: String(b.PBID), label: `${b.PrintPBNO} \u00b7 ${b.PartyName}` }))}
+                    value={pbId || null}
+                    onChange={(v) => setPbId(v || '')}
+                  />
+                </Grid.Col>
+              </Grid>
+            </SectionCard>
 
-            <Group justify="space-between" mt="md">
-              <Text size="sm" fw={600}>
-                Account Heads
-              </Text>
-              <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
-                Add Line
-              </Button>
-            </Group>
-            <Table mt="xs">
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Account Head</Table.Th>
-                  <Table.Th w={140}>Debit</Table.Th>
-                  <Table.Th w={140}>Credit</Table.Th>
-                  <Table.Th w={40}></Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {lines.map((l, i) => (
-                  <Table.Tr key={i}>
-                    <Table.Td>
-                      <LookupSelect ledgerPicker label="" value={l.ac_led_id} onChange={(v) => updateLine(i, { ac_led_id: v })} />
-                    </Table.Td>
-                    <Table.Td>
-                      <NumberInput value={l.dr_amt} onChange={(v) => updateLine(i, { dr_amt: v, cr_amt: v ? 0 : l.cr_amt })} decimalScale={2} />
-                    </Table.Td>
-                    <Table.Td>
-                      <NumberInput value={l.cr_amt} onChange={(v) => updateLine(i, { cr_amt: v, dr_amt: v ? 0 : l.dr_amt })} decimalScale={2} />
-                    </Table.Td>
-                    <Table.Td>
-                      <ActionIcon color="red" variant="subtle" disabled={lines.length <= 2} onClick={() => removeLine(i)}>
-                        <Trash2 size={16} />
-                      </ActionIcon>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-            {!balanced && (
-              <Text size="xs" c="red" mt={4}>
-                Debit and Credit totals are NOT matching!
-              </Text>
-            )}
-
-            <Card mt="lg" radius="md" style={{ background: 'linear-gradient(120deg, #7A1F1F 0%, #5A1414 100%)' }}>
-              <Group justify="space-between">
-                <Text c="#F4E1A6" fw={600}>
-                  Total Dr / Cr
+            <SectionCard
+              title="Account heads"
+              hint="Pick the ledger for each line and enter either a debit or a credit. Totals must match."
+              action={
+                <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
+                  Add line
+                </Button>
+              }
+            >
+              <Table.ScrollContainer minWidth={560}>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Account Head</Table.Th>
+                      <Table.Th w={160}>Debit</Table.Th>
+                      <Table.Th w={160}>Credit</Table.Th>
+                      <Table.Th w={48} aria-label="Remove" />
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {lines.map((l, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td>
+                          <LookupSelect ledgerPicker ariaLabel={`Account head, line ${i + 1}`} label="" value={l.ac_led_id} onChange={(v) => updateLine(i, { ac_led_id: v })} />
+                        </Table.Td>
+                        <Table.Td>
+                          <NumberInput aria-label={`Debit, line ${i + 1}`} value={l.dr_amt} onChange={(v) => updateLine(i, { dr_amt: v, cr_amt: v ? 0 : l.cr_amt })} decimalScale={2} />
+                        </Table.Td>
+                        <Table.Td>
+                          <NumberInput aria-label={`Credit, line ${i + 1}`} value={l.cr_amt} onChange={(v) => updateLine(i, { cr_amt: v, dr_amt: v ? 0 : l.dr_amt })} decimalScale={2} />
+                        </Table.Td>
+                        <Table.Td>
+                          <ActionIcon
+                            color="red"
+                            variant="subtle"
+                            size={36}
+                            aria-label={`Remove line ${i + 1}`}
+                            disabled={lines.length <= 2}
+                            onClick={async () => {
+                              if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeLine(i)
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </ActionIcon>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                  <Table.Tfoot>
+                    <Table.Tr>
+                      <Table.Th>Total Dr / Total Cr</Table.Th>
+                      <Table.Th className="vt-num">{formatINR(totalDr)}</Table.Th>
+                      <Table.Th className="vt-num">{formatINR(totalCr)}</Table.Th>
+                      <Table.Th />
+                    </Table.Tr>
+                  </Table.Tfoot>
+                </Table>
+              </Table.ScrollContainer>
+              {!balanced && (totalDr > 0 || totalCr > 0) && (
+                <Text size="sm" c="red" mt="xs" role="alert">
+                  Debit and Credit totals are NOT matching!
                 </Text>
-                <Title order={3} c="white" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-                  ₹ {totalDr.toFixed(2)} / ₹ {totalCr.toFixed(2)}
-                </Title>
-              </Group>
-            </Card>
-
-            <Group justify="flex-end" mt="lg">
-              <Button size="md" color="kumkum" loading={saving} onClick={onSave}>
-                Save
-              </Button>
-            </Group>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={4}>
-          <Card withBorder radius="lg" p="md" shadow="sm">
-            <Title order={5} mb="sm" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-              Recent Vouchers
-            </Title>
-            <Stack gap={0}>
-              {(recent || []).map((r, i) => (
-                <div key={r.PURVCHID}>
-                  {i > 0 && <Divider my={8} />}
-                  <Text size="sm" fw={600}>
-                    {r.PrintPURVCHNO}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    Credit period {r.CRPERIOD} days
-                  </Text>
-                </div>
-              ))}
-            </Stack>
-          </Card>
-        </Grid.Col>
-      </Grid>
+              )}
+            </SectionCard>
+          </Stack>
+        }
+        side={
+          <>
+            <SummaryCard
+              rows={[
+                { label: 'Total debit', value: formatINR(totalDr) },
+                { label: 'Total credit', value: formatINR(totalCr) },
+                { label: 'Difference', value: formatINR(Math.abs(totalDr - totalCr)) },
+              ]}
+              totalLabel="Voucher amount"
+              total={formatINR(totalDr)}
+              words={totalDr}
+              warning={balanced || (totalDr === 0 && totalCr === 0) ? null : 'Debit and Credit totals are NOT matching!'}
+              saveLabel="Save"
+              saveIcon={Save}
+              saving={saving}
+              onSave={onSave}
+            />
+            {lastSaved && <SavedPanel lines={[`Voucher ${lastSaved.purvch_no}`]} />}
+            <RecentCard
+              title="Recent vouchers"
+              icon={Receipt}
+              loading={recentLoading}
+              rows={recent || []}
+              emptyTitle="No purchase vouchers yet"
+              emptyHint="Saved documents will be listed here."
+              renderRow={(r) => ({ key: r.PURVCHID, title: r.PrintPURVCHNO, subtitle: `Credit period ${r.CRPERIOD} days` })}
+            />
+          </>
+        }
+      />
     </Stack>
   )
 }

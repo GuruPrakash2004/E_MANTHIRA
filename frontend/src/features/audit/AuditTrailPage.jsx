@@ -1,3 +1,4 @@
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
 import { Badge, Button, Card, Grid, Group, Select, Stack, Table, Text, Title } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
@@ -46,8 +47,9 @@ export default function AuditTrailPage() {
     refetch()
   }, [fromDate, toDate, entity, action, userCode])
 
+  const confirm = useConfirm()
   async function onPurge() {
-    if (!window.confirm(`Delete every audit log entry before ${dayjs(fromDate).format('DD/MM/YYYY')}? This cannot be undone.`)) return
+    if (!(await confirm({ title: 'Delete old audit entries?', message: `Every audit log entry before ${dayjs(fromDate).format('DD/MM/YYYY')} will be deleted. This cannot be undone.`, confirmLabel: 'Delete' }))) return
     try {
       const r = await auditApi.purgeAuditLog(dayjs(fromDate).format('YYYY-MM-DD'))
       notifications.show({ message: `Deleted ${r.deleted} entries`, color: 'teal' })

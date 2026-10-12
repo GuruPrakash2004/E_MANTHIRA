@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Badge, Button, Card, Checkbox, Grid, Group, Loader, Select, Stack, Table, Tabs, Text, Title } from '@mantine/core'
+import { Badge, Button, Card, Checkbox, Grid, Group, Select, SimpleGrid, Skeleton, Stack, Table, Tabs, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
-import { Download, Play, X } from 'lucide-react'
+import { BookOpen, Building, Coins, CalendarCheck, ClipboardList, Download, FileSearch, HandCoins, LayoutList, Play, SlidersHorizontal, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import dayjs from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 import * as metaApi from '../../api/endpoints/meta'
 import * as reportsApi from '../../api/endpoints/reports'
 import LookupSelect from '../../components/LookupSelect'
+import StatCard from '../../components/ui/StatCard'
+import EmptyState from '../../components/ui/EmptyState'
+import { formatINR } from '../../utils/format'
 
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
-const KOLAM_PATTERN = '/illustrations/kolam.svg'
 const SEVA_DOC_ID = 1263
 
 // Legacy frmRptReport ("Subsidiary Reports") RptFrmName -> the tab here
@@ -34,21 +36,27 @@ function SubsidiaryReportsCatalog({ onOpenTab }) {
   const { data: catalog, isLoading } = useQuery({ queryKey: ['report-catalog'], queryFn: reportsApi.getReportCatalog })
 
   return (
-    <Card withBorder radius="lg" p="lg">
+    <Card withBorder p="lg">
       <Text size="sm" c="dimmed" mb="md">
-        Every report registered in UtlReports — the same catalog the legacy "Subsidiary Reports" screen opened from.
+        Every report registered in UtlReports, the same catalog the legacy "Subsidiary Reports" screen opened from.
       </Text>
-      {isLoading && <Loader size="sm" />}
+      {isLoading && (
+        <Stack gap="xs">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} height={56} radius="md" />
+          ))}
+        </Stack>
+      )}
       <Stack gap="xs">
         {(catalog || []).map((r) => {
           const tab = CATALOG_FORM_TAB[r.form_name]
           return (
-            <Group key={r.rpt_id} justify="space-between" p="sm" style={{ border: '1px solid var(--mantine-color-gray-2)', borderRadius: 8 }}>
-              <div>
-                <Text size="sm" fw={600}>
+            <Group key={r.rpt_id} justify="space-between" wrap="nowrap" p="sm" style={{ border: '1px solid var(--vt-line)', borderRadius: 12, background: '#fff' }}>
+              <div style={{ minWidth: 0 }}>
+                <Text size="sm" fw={600} truncate>
                   {r.name}
                 </Text>
-                <Text size="xs" c="dimmed">
+                <Text size="xs" c="dimmed" truncate>
                   {r.group} &middot; {r.form_name}
                 </Text>
               </div>
@@ -58,19 +66,13 @@ function SubsidiaryReportsCatalog({ onOpenTab }) {
             </Group>
           )
         })}
-        {!isLoading && (catalog || []).length === 0 && (
-          <Text c="dimmed" size="sm">
-            No subsidiary reports registered.
-          </Text>
-        )}
+        {!isLoading && (catalog || []).length === 0 && <EmptyState icon={LayoutList} title="No subsidiary reports registered" hint="Reports added to UtlReports will be listed here." />}
       </Stack>
     </Card>
   )
 }
 
-function money(v) {
-  return `₹ ${Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+const money = (v) => formatINR(v)
 
 function toCsv(rows, columns) {
   const header = columns.map((c) => c.label).join(',')
@@ -97,7 +99,122 @@ function downloadCsv(filename, rows, columns) {
   URL.revokeObjectURL(url)
 }
 
-/** Shared shell: date range + optional Sannidhi/Seva filters, Run + Export, result table. */
+const PRESETS = [
+  { label: 'Today', range: () => [dayjs(), dayjs()] },
+  { label: 'Yesterday', range: () => [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')] },
+  { label: 'This week', range: () => [dayjs().startOf('week'), dayjs()] },
+  { label: 'This month', range: () => [dayjs().startOf('month'), dayjs()] },
+  { label: 'Last month', range: () => [dayjs().subtract(1, 'month').startOf('month'), dayjs().subtract(1, 'month').endOf('month')] },
+]
+
+/** From/To dates plus one-tap presets. Dates show as DD/MM/YYYY. */
+function DateRange({ from, to, onFrom, onTo }) {
+  return (
+    <>
+      <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+        <DateInput label="From Date" valueFormat="DD/MM/YYYY" value={from} onChange={onFrom} />
+      </Grid.Col>
+      <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+        <DateInput label="To Date" valueFormat="DD/MM/YYYY" value={to} onChange={onTo} />
+      </Grid.Col>
+      <Grid.Col span={{ base: 12, md: 6 }} style={{ display: 'flex', alignItems: 'flex-end' }}>
+        <Group gap={6}>
+          {PRESETS.map((p) => (
+            <Button
+              key={p.label}
+              size="compact-sm"
+              variant="light"
+              color="gold"
+              c="kumkum.8"
+              onClick={() => {
+                const [a, b] = p.range()
+                onFrom(a.toDate())
+                onTo(b.toDate())
+              }}
+            >
+              {p.label}
+            </Button>
+          ))}
+        </Group>
+      </Grid.Col>
+    </>
+  )
+}
+
+function FilterCard({ children, actions }) {
+  return (
+    <Card withBorder p="lg">
+      <Grid>{children}</Grid>
+      <Group justify="flex-end" mt="md">
+        {actions}
+      </Group>
+    </Card>
+  )
+}
+
+function ResultSkeleton() {
+  return (
+    <Card withBorder p="md">
+      <Stack gap="xs">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} height={34} radius="sm" />
+        ))}
+      </Stack>
+    </Card>
+  )
+}
+
+function ResultTable({ columns, rows, emptyHint = 'No records for this range.' }) {
+  return (
+    <Card withBorder p={0} style={{ overflow: 'hidden' }}>
+      {rows.length === 0 ? (
+        <EmptyState icon={FileSearch} title="No records found" hint={emptyHint} />
+      ) : (
+        <Table.ScrollContainer minWidth={640} mah={560} type="native">
+          <Table striped highlightOnHover stickyHeader>
+            <Table.Thead>
+              <Table.Tr>
+                {columns.map((c) => (
+                  <Table.Th key={c.key} ta={c.num ? 'right' : undefined}>
+                    {c.label}
+                  </Table.Th>
+                ))}
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map((r, i) => (
+                <Table.Tr key={i}>
+                  {columns.map((c) => (
+                    <Table.Td key={c.key} ta={c.num ? 'right' : undefined} className={c.num ? 'vt-num' : undefined}>
+                      {c.value ? c.value(r) : r[c.key]}
+                    </Table.Td>
+                  ))}
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+    </Card>
+  )
+}
+
+function RunButtons({ loading, onRun, canExport, onExport, runDisabled }) {
+  return (
+    <>
+      <Button leftSection={<Play size={16} />} color="kumkum" loading={loading} disabled={runDisabled} onClick={onRun}>
+        Run report
+      </Button>
+      {onExport && (
+        <Button leftSection={<Download size={16} />} variant="default" disabled={!canExport} onClick={onExport}>
+          Export CSV
+        </Button>
+      )}
+    </>
+  )
+}
+
+/** Shared shell: date range + optional Sannidhi/Seva filters, Run + Export, summary tiles, result table. */
 function ReportPanel({ runFn, columns, filename, withSevaFilters = true, extraSummary }) {
   const [fromDate, setFromDate] = useState(dayjs().startOf('month').toDate())
   const [toDate, setToDate] = useState(new Date())
@@ -127,89 +244,35 @@ function ReportPanel({ runFn, columns, filename, withSevaFilters = true, extraSu
   }
 
   return (
-    <Stack>
-      <Card withBorder radius="lg" p="lg" shadow="sm" style={{ position: 'relative', overflow: 'hidden' }}>
-        <div
-          aria-hidden
-          style={{ position: 'absolute', inset: 0, backgroundImage: `url(${KOLAM_PATTERN})`, backgroundSize: '140px 140px', opacity: 0.03, pointerEvents: 'none' }}
-        />
-        <Grid style={{ position: 'relative' }}>
-          <Grid.Col span={3}>
-            <DateInput label="From Date" value={fromDate} onChange={setFromDate} />
-          </Grid.Col>
-          <Grid.Col span={3}>
-            <DateInput label="To Date" value={toDate} onChange={setToDate} />
-          </Grid.Col>
-          {withSevaFilters && (
-            <>
-              <Grid.Col span={3}>
-                <LookupSelect docId={SEVA_DOC_ID} field="SANNIDHIID" label="Sannidhi (optional)" value={sannidhiId} onChange={setSannidhiId} />
-              </Grid.Col>
-              <Grid.Col span={3}>
-                <LookupSelect docId={SEVA_DOC_ID} field="SVAID" label="Seva (optional)" value={sevaId} onChange={setSevaId} />
-              </Grid.Col>
-            </>
-          )}
-        </Grid>
-        <Group justify="flex-end" mt="md" style={{ position: 'relative' }}>
-          <Button leftSection={<Play size={16} />} color="kumkum" loading={loading} onClick={onRun}>
-            Run Report
-          </Button>
-          <Button
-            leftSection={<Download size={16} />}
-            variant="default"
-            disabled={!result?.rows?.length}
-            onClick={() => downloadCsv(filename, result.rows, columns)}
-          >
-            Export CSV
-          </Button>
-        </Group>
-      </Card>
+    <Stack gap="lg">
+      <FilterCard actions={<RunButtons loading={loading} onRun={onRun} canExport={Boolean(result?.rows?.length)} onExport={() => downloadCsv(filename, result.rows, columns)} />}>
+        <DateRange from={fromDate} to={toDate} onFrom={setFromDate} onTo={setToDate} />
+        {withSevaFilters && (
+          <>
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <LookupSelect docId={SEVA_DOC_ID} field="SANNIDHIID" label="Sannidhi (optional)" value={sannidhiId} onChange={setSannidhiId} />
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <LookupSelect docId={SEVA_DOC_ID} field="SVAID" label="Seva (optional)" value={sevaId} onChange={setSevaId} />
+            </Grid.Col>
+          </>
+        )}
+      </FilterCard>
 
-      {loading && <Loader color="kumkum" mx="auto" />}
-
-      {result && (
+      {loading ? (
+        <ResultSkeleton />
+      ) : !result ? (
+        <Card withBorder>
+          <EmptyState icon={FileSearch} title="Ready when you are" hint="Choose the dates and filters, then run the report." />
+        </Card>
+      ) : (
         <>
-          <Group>
-            <Badge size="lg" color="kumkum" variant="light">
-              {result.total_count} record{result.total_count === 1 ? '' : 's'}
-            </Badge>
-            {result.total_amount != null && (
-              <Badge size="lg" color="teal" variant="light">
-                Total {money(result.total_amount)}
-              </Badge>
-            )}
-          </Group>
+          <SimpleGrid cols={{ base: 1, xs: result.total_amount != null ? 2 : 1 }}>
+            <StatCard label="Records" value={result.total_count} icon={ClipboardList} footer={`${dayjs(fromDate).format('DD/MM/YYYY')} to ${dayjs(toDate).format('DD/MM/YYYY')}`} />
+            {result.total_amount != null && <StatCard label="Total amount" value={money(result.total_amount)} icon={Coins} tone="dark" footer="For the records shown" />}
+          </SimpleGrid>
           {extraSummary?.(result)}
-          <Card withBorder radius="lg" p={0} shadow="sm" style={{ overflow: 'auto' }}>
-            <Table striped highlightOnHover stickyHeader>
-              <Table.Thead>
-                <Table.Tr>
-                  {columns.map((c) => (
-                    <Table.Th key={c.key}>{c.label}</Table.Th>
-                  ))}
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {result.rows.length === 0 && (
-                  <Table.Tr>
-                    <Table.Td colSpan={columns.length}>
-                      <Text c="dimmed" ta="center" py="md">
-                        No records for this range.
-                      </Text>
-                    </Table.Td>
-                  </Table.Tr>
-                )}
-                {result.rows.map((r, i) => (
-                  <Table.Tr key={i}>
-                    {columns.map((c) => (
-                      <Table.Td key={c.key}>{c.value ? c.value(r) : r[c.key]}</Table.Td>
-                    ))}
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Card>
+          <ResultTable columns={columns} rows={result.rows} />
         </>
       )}
     </Stack>
@@ -223,7 +286,7 @@ const collectionColumns = [
   { key: 'Sannadhi', label: 'Sannidhi' },
   { key: 'Seva', label: 'Seva' },
   { key: 'Payment', label: 'Payment' },
-  { key: 'Totalamt', label: 'Amount', value: (r) => money(r.Totalamt) },
+  { key: 'Totalamt', label: 'Amount', num: true, value: (r) => money(r.Totalamt) },
   { key: 'AddedBy', label: 'Added By' },
 ]
 
@@ -245,7 +308,7 @@ const donationColumns = [
   { key: 'DONOR', label: 'Donor' },
   { key: 'CONTACTNO', label: 'Contact' },
   { key: 'PANNO', label: 'PAN' },
-  { key: 'TOTAMT', label: 'Amount', value: (r) => money(r.TOTAMT) },
+  { key: 'TOTAMT', label: 'Amount', num: true, value: (r) => money(r.TOTAMT) },
   { key: 'PAYMNTMODE', label: 'Payment' },
   { key: 'AddedBy', label: 'Added By' },
 ]
@@ -258,67 +321,79 @@ const hallBookingVoucherColumns = [
   { key: 'CONTACTNO', label: 'Contact No' },
   { key: 'HBSTARTDT', label: 'Start', value: (r) => dayjs(r.HBSTARTDT).format('DD/MM/YYYY') },
   { key: 'HBENDDT', label: 'End', value: (r) => dayjs(r.HBENDDT).format('DD/MM/YYYY') },
-  { key: 'AMOUNT', label: 'Amount', value: (r) => money(r.AMOUNT) },
+  { key: 'AMOUNT', label: 'Amount', num: true, value: (r) => money(r.AMOUNT) },
   { key: 'RCPTVCHNO', label: 'Receipt Voucher No' },
   { key: 'RCPTTYPE', label: 'Receipt Type' },
-  { key: 'TOTCR', label: 'Receipt Amount', value: (r) => money(r.TOTCR) },
-  { key: 'BALAMT', label: 'Balance', value: (r) => money(r.BALAMT) },
+  { key: 'TOTCR', label: 'Receipt Amount', num: true, value: (r) => money(r.TOTCR) },
+  { key: 'BALAMT', label: 'Balance', num: true, value: (r) => money(r.BALAMT) },
   { key: 'printdonrecno', label: 'Linked Donation Receipt' },
 ]
 
 function CollectionSummary({ result }) {
   return (
     <Grid>
-      <Grid.Col span={6}>
-        <Card withBorder radius="lg" p="md">
-          <Text fw={600} size="sm" mb={6}>
+      <Grid.Col span={{ base: 12, md: 6 }}>
+        <Card withBorder p="md" h="100%">
+          <Text fw={700} mb={6}>
             By Sannidhi / Seva
           </Text>
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Sannidhi</Table.Th>
-                <Table.Th>Seva</Table.Th>
-                <Table.Th>Count</Table.Th>
-                <Table.Th>Amount</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {result.summary_by_sannidhi_seva.map((g, i) => (
-                <Table.Tr key={i}>
-                  <Table.Td>{g.sannidhi}</Table.Td>
-                  <Table.Td>{g.seva}</Table.Td>
-                  <Table.Td>{g.count}</Table.Td>
-                  <Table.Td>{money(g.amount)}</Table.Td>
+          <Table.ScrollContainer minWidth={360}>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Sannidhi</Table.Th>
+                  <Table.Th>Seva</Table.Th>
+                  <Table.Th ta="right">Count</Table.Th>
+                  <Table.Th ta="right">Amount</Table.Th>
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {result.summary_by_sannidhi_seva.map((g, i) => (
+                  <Table.Tr key={i}>
+                    <Table.Td>{g.sannidhi}</Table.Td>
+                    <Table.Td>{g.seva}</Table.Td>
+                    <Table.Td ta="right" className="vt-num">
+                      {g.count}
+                    </Table.Td>
+                    <Table.Td ta="right" className="vt-num">
+                      {money(g.amount)}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         </Card>
       </Grid.Col>
-      <Grid.Col span={6}>
-        <Card withBorder radius="lg" p="md">
-          <Text fw={600} size="sm" mb={6}>
-            By Payment Mode
+      <Grid.Col span={{ base: 12, md: 6 }}>
+        <Card withBorder p="md" h="100%">
+          <Text fw={700} mb={6}>
+            By payment mode
           </Text>
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Mode</Table.Th>
-                <Table.Th>Count</Table.Th>
-                <Table.Th>Amount</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {result.summary_by_payment_mode.map((g, i) => (
-                <Table.Tr key={i}>
-                  <Table.Td>{g.payment_mode}</Table.Td>
-                  <Table.Td>{g.count}</Table.Td>
-                  <Table.Td>{money(g.amount)}</Table.Td>
+          <Table.ScrollContainer minWidth={280}>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Mode</Table.Th>
+                  <Table.Th ta="right">Count</Table.Th>
+                  <Table.Th ta="right">Amount</Table.Th>
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {result.summary_by_payment_mode.map((g, i) => (
+                  <Table.Tr key={i}>
+                    <Table.Td>{g.payment_mode}</Table.Td>
+                    <Table.Td ta="right" className="vt-num">
+                      {g.count}
+                    </Table.Td>
+                    <Table.Td ta="right" className="vt-num">
+                      {money(g.amount)}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         </Card>
       </Grid.Col>
     </Grid>
@@ -368,90 +443,113 @@ function GeneralLedgerPanel() {
   }
 
   return (
-    <Stack>
-      <Card withBorder radius="lg" p="lg" shadow="sm">
-        <Grid>
-          <Grid.Col span={3}>
-            <DateInput label="From Date" value={fromDate} onChange={setFromDate} />
-          </Grid.Col>
-          <Grid.Col span={3}>
-            <DateInput label="To Date" value={toDate} onChange={setToDate} />
-          </Grid.Col>
-          <Grid.Col span={3}>
-            <Select label="Mode" data={[{ value: 'detail', label: 'Detail' }, { value: 'summary', label: 'Summary' }]} value={mode} onChange={setMode} />
-          </Grid.Col>
-          <Grid.Col span={3} style={{ display: 'flex', alignItems: 'flex-end' }}>
-            <Checkbox label="Hide zero balances" checked={hideZero} onChange={(e) => setHideZero(e.currentTarget.checked)} />
-          </Grid.Col>
-          <Grid.Col span={12}>
-            <LookupSelect ledgerPicker label="Add Ledger" value={pickerValue} onChange={addLedger} />
-          </Grid.Col>
-          <Grid.Col span={12}>
+    <Stack gap="lg">
+      <FilterCard actions={<RunButtons loading={loading} onRun={onRun} />}>
+        <DateRange from={fromDate} to={toDate} onFrom={setFromDate} onTo={setToDate} />
+        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+          <Select label="Mode" data={[{ value: 'detail', label: 'Detail' }, { value: 'summary', label: 'Summary' }]} value={mode} onChange={setMode} />
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 6, md: 4 }} style={{ display: 'flex', alignItems: 'flex-end', minHeight: 56 }}>
+          <Checkbox label="Hide zero balances" checked={hideZero} onChange={(e) => setHideZero(e.currentTarget.checked)} />
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, md: 4 }}>
+          <LookupSelect ledgerPicker label="Add Ledger" value={pickerValue} onChange={addLedger} />
+        </Grid.Col>
+        <Grid.Col span={12}>
+          {ledgerIds.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              No ledgers chosen yet. Pick one or more above.
+            </Text>
+          ) : (
             <Group gap="xs">
               {ledgerIds.map((id) => (
-                <Badge key={id} variant="light" color="kumkum" rightSection={<X size={12} style={{ cursor: 'pointer' }} onClick={() => removeLedger(id)} />}>
+                <Badge
+                  key={id}
+                  size="lg"
+                  variant="light"
+                  color="kumkum"
+                  tt="none"
+                  pr={4}
+                  rightSection={
+                    <UnstyledButton aria-label={`Remove ${ledgerName(id)}`} onClick={() => removeLedger(id)} style={{ display: 'grid', placeItems: 'center', width: 22, height: 22 }}>
+                      <X size={14} />
+                    </UnstyledButton>
+                  }
+                >
                   {ledgerName(id)}
                 </Badge>
               ))}
             </Group>
-          </Grid.Col>
-        </Grid>
-        <Group justify="flex-end" mt="md">
-          <Button leftSection={<Play size={16} />} color="kumkum" loading={loading} onClick={onRun}>
-            Run Report
-          </Button>
-        </Group>
-      </Card>
+          )}
+        </Grid.Col>
+      </FilterCard>
 
-      {loading && <Loader color="kumkum" mx="auto" />}
+      {loading && <ResultSkeleton />}
 
-      {cards &&
+      {!loading && !cards && (
+        <Card withBorder>
+          <EmptyState icon={BookOpen} title="Ready when you are" hint="Pick the ledgers and dates, then run the report." />
+        </Card>
+      )}
+
+      {!loading &&
+        cards &&
         cards.map((c) => (
-          <Card key={c.ac_led_id} withBorder radius="lg" p="lg" shadow="sm">
-            <Group justify="space-between" mb="sm">
-              <Title order={5} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-                {c.name}
-              </Title>
-              <Group gap="lg">
-                <Text size="sm">
-                  Opening: <b>{money(c.opening)}</b>
-                </Text>
-                <Text size="sm">
-                  Closing: <b>{money(c.closing)}</b>
-                </Text>
+          <Card key={c.ac_led_id} withBorder p="lg">
+            <Group justify="space-between" align="center" mb="sm" wrap="wrap" gap="sm">
+              <Title order={4}>{c.name}</Title>
+              <Group gap="sm">
+                <Badge size="lg" variant="light" color="gold" c="kumkum.8" tt="none" className="vt-num">
+                  Opening {money(c.opening)}
+                </Badge>
+                <Badge size="lg" variant="filled" color="kumkum" tt="none" className="vt-num">
+                  Closing {money(c.closing)}
+                </Badge>
               </Group>
             </Group>
             {c.rows.length > 0 && (
-              <Table striped highlightOnHover>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Date</Table.Th>
-                    <Table.Th>Type</Table.Th>
-                    <Table.Th>Voucher No</Table.Th>
-                    <Table.Th>Narration</Table.Th>
-                    <Table.Th>Debit</Table.Th>
-                    <Table.Th>Credit</Table.Th>
-                    <Table.Th>Balance</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {c.rows.map((r, i) => (
-                    <Table.Tr key={i}>
-                      <Table.Td>{dayjs(r.date).format('DD/MM/YYYY')}</Table.Td>
-                      <Table.Td>{r.doc_type}</Table.Td>
-                      <Table.Td>{r.trn_no}</Table.Td>
-                      <Table.Td>{r.narration}</Table.Td>
-                      <Table.Td>{r.dr ? money(r.dr) : ''}</Table.Td>
-                      <Table.Td>{r.cr ? money(r.cr) : ''}</Table.Td>
-                      <Table.Td>{money(r.balance)}</Table.Td>
+              <Table.ScrollContainer minWidth={720}>
+                <Table striped highlightOnHover>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Date</Table.Th>
+                      <Table.Th>Type</Table.Th>
+                      <Table.Th>Voucher No</Table.Th>
+                      <Table.Th>Narration</Table.Th>
+                      <Table.Th ta="right">Debit</Table.Th>
+                      <Table.Th ta="right">Credit</Table.Th>
+                      <Table.Th ta="right">Balance</Table.Th>
                     </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {c.rows.map((r, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td className="vt-num">{dayjs(r.date).format('DD/MM/YYYY')}</Table.Td>
+                        <Table.Td>{r.doc_type}</Table.Td>
+                        <Table.Td className="vt-num">{r.trn_no}</Table.Td>
+                        <Table.Td>{r.narration}</Table.Td>
+                        <Table.Td ta="right" className="vt-num">
+                          {r.dr ? money(r.dr) : ''}
+                        </Table.Td>
+                        <Table.Td ta="right" className="vt-num">
+                          {r.cr ? money(r.cr) : ''}
+                        </Table.Td>
+                        <Table.Td ta="right" className="vt-num" fw={600}>
+                          {money(r.balance)}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
             )}
           </Card>
         ))}
-      {cards && cards.length === 0 && <Text c="dimmed">No ledgers with activity in this range.</Text>}
+      {!loading && cards && cards.length === 0 && (
+        <Card withBorder>
+          <EmptyState icon={FileSearch} title="No ledger activity" hint="None of the chosen ledgers have entries in this range." />
+        </Card>
+      )}
     </Stack>
   )
 }
@@ -498,12 +596,15 @@ function CustomReportsPanel() {
     return fields.map((f) => ({ key: `${f.table}__${f.code}`, label: f.caption }))
   }
 
+  const cols = columnsFor(visibleFields)
+
   return (
-    <Stack>
-      <Card withBorder radius="lg" p="lg" shadow="sm">
+    <Stack gap="lg">
+      <Card withBorder p="lg">
         <Select
           label="Report"
           placeholder="Choose a report"
+          searchable
           data={(reportsList || []).map((r) => ({ value: String(r.crid), label: r.name }))}
           value={crid}
           onChange={onPickReport}
@@ -512,14 +613,14 @@ function CustomReportsPanel() {
           <Grid mt="md">
             {filterFields.map((f) =>
               f.data_type === 'DATE' ? (
-                <Grid.Col span={3} key={f.code}>
-                  <Group grow>
-                    <DateInput label={`${f.caption} From`} onChange={(v) => setFilter(`${f.code}_from`, v ? dayjs(v).format('YYYY-MM-DD') : '')} />
-                    <DateInput label={`${f.caption} To`} onChange={(v) => setFilter(`${f.code}_to`, v ? dayjs(v).format('YYYY-MM-DD') : '')} />
+                <Grid.Col span={{ base: 12, md: 6 }} key={f.code}>
+                  <Group grow align="flex-end">
+                    <DateInput label={`${f.caption} From`} valueFormat="DD/MM/YYYY" clearable onChange={(v) => setFilter(`${f.code}_from`, v ? dayjs(v).format('YYYY-MM-DD') : '')} />
+                    <DateInput label={`${f.caption} To`} valueFormat="DD/MM/YYYY" clearable onChange={(v) => setFilter(`${f.code}_to`, v ? dayjs(v).format('YYYY-MM-DD') : '')} />
                   </Group>
                 </Grid.Col>
               ) : (
-                <Grid.Col span={3} key={f.code}>
+                <Grid.Col span={{ base: 12, sm: 6, md: 3 }} key={f.code}>
                   <TextInput label={f.caption} value={filterValues[f.code] || ''} onChange={(e) => setFilter(f.code, e.currentTarget.value)} />
                 </Grid.Col>
               )
@@ -527,55 +628,67 @@ function CustomReportsPanel() {
           </Grid>
         )}
         <Group justify="flex-end" mt="md">
-          <Button leftSection={<Play size={16} />} color="kumkum" loading={loading} disabled={!crid} onClick={onRun}>
-            Run Report
-          </Button>
-          <Button
-            leftSection={<Download size={16} />}
-            variant="default"
-            disabled={!result?.rows?.length}
-            onClick={() => downloadCsv(`${(reportsList || []).find((r) => String(r.crid) === crid)?.name || 'report'}.csv`, result.rows, columnsFor(visibleFields))}
-          >
-            Export CSV
-          </Button>
+          <RunButtons
+            loading={loading}
+            runDisabled={!crid}
+            onRun={onRun}
+            canExport={Boolean(result?.rows?.length)}
+            onExport={() => downloadCsv(`${(reportsList || []).find((r) => String(r.crid) === crid)?.name || 'report'}.csv`, result.rows, cols)}
+          />
         </Group>
       </Card>
 
-      {loading && <Loader color="kumkum" mx="auto" />}
-
-      {result && (
+      {loading ? (
+        <ResultSkeleton />
+      ) : !result ? (
+        <Card withBorder>
+          <EmptyState icon={SlidersHorizontal} title={crid ? 'Ready when you are' : 'Choose a report'} hint={crid ? 'Set any filters, then run the report.' : 'Pick one of the customised reports above.'} />
+        </Card>
+      ) : (
         <>
-          <Badge size="lg" color="kumkum" variant="light">
-            {result.count} record{result.count === 1 ? '' : 's'}
-          </Badge>
-          <Card withBorder radius="lg" p={0} shadow="sm" style={{ overflow: 'auto' }}>
-            <Table striped highlightOnHover stickyHeader>
-              <Table.Thead>
-                <Table.Tr>
-                  {columnsFor(visibleFields).map((c) => (
-                    <Table.Th key={c.key}>{c.label}</Table.Th>
-                  ))}
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {result.rows.map((r, i) => (
-                  <Table.Tr key={i}>
-                    {columnsFor(visibleFields).map((c) => (
-                      <Table.Td key={c.key}>{result.totals[c.key] != null && r[c.key] != null ? money(r[c.key]) : String(r[c.key] ?? '')}</Table.Td>
+          <SimpleGrid cols={{ base: 1, xs: 2 }}>
+            <StatCard label="Records" value={result.count} icon={ClipboardList} />
+          </SimpleGrid>
+          <Card withBorder p={0} style={{ overflow: 'hidden' }}>
+            {result.rows.length === 0 ? (
+              <EmptyState icon={FileSearch} title="No records found" hint="Nothing matches these filters." />
+            ) : (
+              <Table.ScrollContainer minWidth={640} mah={560} type="native">
+                <Table striped highlightOnHover stickyHeader>
+                  <Table.Thead>
+                    <Table.Tr>
+                      {cols.map((c) => (
+                        <Table.Th key={c.key} ta={result.totals[c.key] != null ? 'right' : undefined}>
+                          {c.label}
+                        </Table.Th>
+                      ))}
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {result.rows.map((r, i) => (
+                      <Table.Tr key={i}>
+                        {cols.map((c) => (
+                          <Table.Td key={c.key} ta={result.totals[c.key] != null ? 'right' : undefined} className={result.totals[c.key] != null ? 'vt-num' : undefined}>
+                            {result.totals[c.key] != null && r[c.key] != null ? money(r[c.key]) : String(r[c.key] ?? '')}
+                          </Table.Td>
+                        ))}
+                      </Table.Tr>
                     ))}
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-              {Object.keys(result.totals).length > 0 && (
-                <Table.Tfoot>
-                  <Table.Tr>
-                    {columnsFor(visibleFields).map((c) => (
-                      <Table.Th key={c.key}>{result.totals[c.key] != null ? money(result.totals[c.key]) : ''}</Table.Th>
-                    ))}
-                  </Table.Tr>
-                </Table.Tfoot>
-              )}
-            </Table>
+                  </Table.Tbody>
+                  {Object.keys(result.totals).length > 0 && (
+                    <Table.Tfoot>
+                      <Table.Tr>
+                        {cols.map((c) => (
+                          <Table.Th key={c.key} ta="right" className="vt-num">
+                            {result.totals[c.key] != null ? money(result.totals[c.key]) : ''}
+                          </Table.Th>
+                        ))}
+                      </Table.Tr>
+                    </Table.Tfoot>
+                  )}
+                </Table>
+              </Table.ScrollContainer>
+            )}
           </Card>
         </>
       )}
@@ -601,29 +714,43 @@ export default function ReportsPage() {
   }
 
   return (
-    <Stack>
-      <Group gap="sm">
-        <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 36, width: 36 }} />
+    <Stack gap="lg" className="vt-rise">
+      <Group gap="sm" wrap="nowrap">
+        <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 40, width: 40 }} />
         <div>
-          <Title order={2} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-            Reports
-          </Title>
+          <Title order={2}>Reports</Title>
           <Text size="sm" c="dimmed">
-            Complete Day, Detailed Collection, Seva Issue/Schedule and Kanike (Donation) reports
+            Daily collection, sevas, donations, ledgers and customised reports
           </Text>
         </div>
       </Group>
 
       <Tabs value={activeTab} onChange={changeTab} color="kumkum" keepMounted={false}>
-        <Tabs.List>
-          <Tabs.Tab value="complete-day">Complete Day</Tabs.Tab>
-          <Tabs.Tab value="collection">Detailed Collection</Tabs.Tab>
-          <Tabs.Tab value="seva-issue">Seva Issue / Schedule</Tabs.Tab>
-          <Tabs.Tab value="donations">Kanike / Donation</Tabs.Tab>
-          <Tabs.Tab value="general-ledger">General Ledger</Tabs.Tab>
-          <Tabs.Tab value="custom">Customised Reports</Tabs.Tab>
-          <Tabs.Tab value="hall-voucher">Hall Booking with Voucher Detail</Tabs.Tab>
-          <Tabs.Tab value="catalog">Subsidiary Reports</Tabs.Tab>
+        <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden' }}>
+          <Tabs.Tab value="complete-day" leftSection={<CalendarCheck size={16} />}>
+            Complete Day
+          </Tabs.Tab>
+          <Tabs.Tab value="collection" leftSection={<Coins size={16} />}>
+            Detailed Collection
+          </Tabs.Tab>
+          <Tabs.Tab value="seva-issue" leftSection={<ClipboardList size={16} />}>
+            Seva Issue / Schedule
+          </Tabs.Tab>
+          <Tabs.Tab value="donations" leftSection={<HandCoins size={16} />}>
+            Kanike / Donation
+          </Tabs.Tab>
+          <Tabs.Tab value="general-ledger" leftSection={<BookOpen size={16} />}>
+            General Ledger
+          </Tabs.Tab>
+          <Tabs.Tab value="custom" leftSection={<SlidersHorizontal size={16} />}>
+            Customised Reports
+          </Tabs.Tab>
+          <Tabs.Tab value="hall-voucher" leftSection={<Building size={16} />}>
+            Hall Booking with Voucher Detail
+          </Tabs.Tab>
+          <Tabs.Tab value="catalog" leftSection={<LayoutList size={16} />}>
+            Subsidiary Reports
+          </Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="complete-day" pt="md">

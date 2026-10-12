@@ -1,7 +1,8 @@
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
-import { ActionIcon, Badge, Button, Card, Divider, Grid, Group, Kbd, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { ActionIcon, Button, Grid, Group, Kbd, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
-import { ArrowDownLeft, Plus, Printer, Trash2 } from 'lucide-react'
+import { ArrowDownLeft, Plus, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as voucherApi from '../../api/endpoints/voucher'
@@ -12,11 +13,12 @@ import DynamicField from '../../components/DynamicField'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import useDocFields from '../../hooks/useDocFields'
 import { isFieldHidden, isFieldMandatory, fieldCaption, fieldListOptions } from '../../utils/docFieldConditions'
+import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
+import { formatINR, isoDate } from '../../utils/format'
 
 const VCH_TYPES = ['Cash', 'Bank', 'Card']
 const DOC_ID = 1248
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
-const KOLAM_PATTERN = '/illustrations/kolam.svg'
 
 // Maps this screen's own form-state keys to the legacy FldCode UtlDocDsgrFlds
 // uses — same pattern as the other transaction screens (CLAUDE.md rule 5).
@@ -34,6 +36,7 @@ const EMPTY_LINES = [
 ]
 
 export default function ReceiptVoucherPage() {
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
   const [form, setForm] = useState({
     prefix: '',
@@ -65,7 +68,7 @@ export default function ReceiptVoucherPage() {
   )
 
   const { data: prefixes } = useQuery({ queryKey: ['prefixes', DOC_ID], queryFn: () => metaApi.getPrefixes(DOC_ID) })
-  const { data: recent, refetch } = useQuery({
+  const { data: recent, isLoading: recentLoading, refetch } = useQuery({
     queryKey: ['receipt-vouchers', 'recent'],
     queryFn: () => voucherApi.listReceiptVouchers({ top: 15 }),
   })
@@ -86,6 +89,9 @@ export default function ReceiptVoucherPage() {
   function removeLine(idx) {
     setLines((ls) => (ls.length > 2 ? ls.filter((_, i) => i !== idx) : ls))
   }
+
+  const hasPaymentDetails =
+    !hidden('CHQDDNO') || !hidden('CHQDT') || !hidden('CHQAMT') || !hidden('CHQNO') || !hidden('BANK') || !hidden('CARDNO') || !hidden('CRDAMT') || extraDesignerFields.length > 0
 
   const totalDr = lines.reduce((s, l) => s + (Number(l.dr_amt) || 0), 0)
   const totalCr = lines.reduce((s, l) => s + (Number(l.cr_amt) || 0), 0)
@@ -108,8 +114,8 @@ export default function ReceiptVoucherPage() {
     try {
       const body = {
         ...form,
-        receipt_date: form.receipt_date.toISOString().slice(0, 10),
-        cheque_date: form.cheque_date ? form.cheque_date.toISOString().slice(0, 10) : null,
+        receipt_date: isoDate(form.receipt_date),
+        cheque_date: form.cheque_date ? isoDate(form.cheque_date) : null,
         bank_id: form.bank_id ? Number(form.bank_id) : null,
         card_amt: Number(form.card_amt) || 0,
         lines: lines
@@ -136,207 +142,216 @@ export default function ReceiptVoucherPage() {
   useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.receipt_id) })
 
   return (
-    <Stack>
-      <Group justify="space-between" align="flex-end">
-        <Group gap="sm">
-          <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 36, width: 36 }} />
+    <Stack gap="lg" className="vt-rise">
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <Group gap="sm" wrap="nowrap">
+          <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 40, width: 40 }} />
           <div>
-            <Title order={2} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-              Receipt Voucher
-            </Title>
+            <Title order={2}>Receipt Voucher</Title>
             <Text size="sm" c="dimmed">
               Record money received and post it to the ledger
             </Text>
           </div>
         </Group>
-        {lastSaved && (
-          <Badge color="teal" size="lg" radius="sm">
-            Saved {lastSaved.receipt_no}
-          </Badge>
-        )}
+        <Group gap="md" visibleFrom="sm" c="dimmed">
+          <Group gap={6}>
+            <Kbd size="xs">Alt+S</Kbd>
+            <Text size="xs">Save</Text>
+          </Group>
+          <Group gap={6}>
+            <Kbd size="xs">Alt+P</Kbd>
+            <Text size="xs">Print last</Text>
+          </Group>
+        </Group>
       </Group>
 
-      <Grid>
-        <Grid.Col span={8}>
-          <Card withBorder radius="lg" p="lg" shadow="sm" style={{ position: 'relative', overflow: 'hidden' }}>
-            <div
-              aria-hidden
-              style={{ position: 'absolute', inset: 0, backgroundImage: `url(${KOLAM_PATTERN})`, backgroundSize: '140px 140px', opacity: 0.03, pointerEvents: 'none' }}
-            />
-            <Grid style={{ position: 'relative' }}>
-              <Grid.Col span={4}>
-                <Select label="Prefix" required data={prefixes || []} value={form.prefix} onChange={(v) => set('prefix', v)} />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <DateInput label="Receipt Date" value={form.receipt_date} onChange={(v) => set('receipt_date', v)} />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <Select
-                  label={caption('VCHTYP', 'Voucher Type')}
-                  required={mandatory('VCHTYP')}
-                  data={fieldListOptions(fieldMeta.VCHTYP, VCH_TYPES)}
-                  value={form.vch_type}
-                  onChange={(v) => set('vch_type', v)}
-                />
-              </Grid.Col>
-              <Grid.Col span={12}>
-                <TextInput label={caption('NARR', 'Narration')} required value={form.narration} onChange={(e) => set('narration', e.currentTarget.value)} />
-              </Grid.Col>
-              {(!hidden('CHQDDNO') || !hidden('CHQDT') || !hidden('CHQAMT') || !hidden('CHQNO') || !hidden('BANK')) && (
-                <>
+      <EntryLayout
+        main={
+          <Stack gap="lg">
+            <SectionCard title="Voucher details" hint="Number series, date and what the voucher is for.">
+              <Grid>
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <Select label="Prefix" required data={prefixes || []} value={form.prefix} onChange={(v) => set('prefix', v)} />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <DateInput label="Receipt Date" valueFormat="DD/MM/YYYY" value={form.receipt_date} onChange={(v) => set('receipt_date', v)} />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <Select
+                    label={caption('VCHTYP', 'Voucher Type')}
+                    required={mandatory('VCHTYP')}
+                    data={fieldListOptions(fieldMeta.VCHTYP, VCH_TYPES)}
+                    value={form.vch_type}
+                    onChange={(v) => set('vch_type', v)}
+                  />
+                </Grid.Col>
+                <Grid.Col span={12}>
+                  <TextInput label={caption('NARR', 'Narration')} required value={form.narration} onChange={(e) => set('narration', e.currentTarget.value)} />
+                </Grid.Col>
+              </Grid>
+            </SectionCard>
+
+            {hasPaymentDetails && (
+              <SectionCard title="Payment details" hint="Cheque, bank and card details, shown as set up for this voucher.">
+                <Grid>
                   {/* UtlDocDsgrFlds FldSection='Footer' for these. */}
-                  <Grid.Col span={12}>
-                    <Divider label="Payment Details" labelPosition="left" mt="xs" />
-                  </Grid.Col>
                   {!hidden('CHQDDNO') && (
-                    <Grid.Col span={4}>
+                    <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
                       <TextInput label={caption('CHQDDNO', 'Cheque /DD No')} required={mandatory('CHQDDNO')} value={form.cheque_dd_no} onChange={(e) => set('cheque_dd_no', e.currentTarget.value)} />
                     </Grid.Col>
                   )}
                   {!hidden('CHQDT') && (
-                    <Grid.Col span={4}>
-                      <DateInput label={caption('CHQDT', 'Cheque Date')} required={mandatory('CHQDT')} value={form.cheque_date} onChange={(v) => set('cheque_date', v)} />
+                    <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                      <DateInput label={caption('CHQDT', 'Cheque Date')} required={mandatory('CHQDT')} valueFormat="DD/MM/YYYY" value={form.cheque_date} onChange={(v) => set('cheque_date', v)} />
                     </Grid.Col>
                   )}
                   {!hidden('CHQAMT') && (
-                    <Grid.Col span={4}>
+                    <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
                       <TextInput label={caption('CHQAMT', 'Cheque/DD Amount')} required={mandatory('CHQAMT')} value={form.cheque_dd_amt} onChange={(e) => set('cheque_dd_amt', e.currentTarget.value)} />
                     </Grid.Col>
                   )}
                   {!hidden('CHQNO') && (
-                    <Grid.Col span={4}>
+                    <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
                       <TextInput label={caption('CHQNO', 'Cheque No')} required={mandatory('CHQNO')} value={form.cheque_no} onChange={(e) => set('cheque_no', e.currentTarget.value)} />
                     </Grid.Col>
                   )}
                   {!hidden('BANK') && (
-                    <Grid.Col span={4}>
+                    <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
                       <LookupSelect docId={DOC_ID} field="BANK" label={caption('BANK', 'Bank')} required={mandatory('BANK')} value={form.bank_id} onChange={(v) => set('bank_id', v)} />
                     </Grid.Col>
                   )}
-                </>
-              )}
-              {(!hidden('CARDNO') || !hidden('CRDAMT')) && (
-                <>
                   {!hidden('CARDNO') && (
-                    <Grid.Col span={4}>
+                    <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
                       <TextInput label={caption('CARDNO', 'Card No')} required={mandatory('CARDNO')} value={form.card_no} onChange={(e) => set('card_no', e.currentTarget.value)} />
                     </Grid.Col>
                   )}
                   {!hidden('CRDAMT') && (
-                    <Grid.Col span={4}>
+                    <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
                       <NumberInput label={caption('CRDAMT', 'Card Amount')} required={mandatory('CRDAMT')} value={form.card_amt} onChange={(v) => set('card_amt', v)} decimalScale={2} />
                     </Grid.Col>
                   )}
-                </>
-              )}
-              {extraDesignerFields.map((f) => (
-                <Grid.Col span={4} key={f.FldCode}>
-                  <DynamicField
-                    docId={DOC_ID}
-                    field={f}
-                    value={extra[f.FldCode]}
-                    onChange={(v) => setExtra((e) => ({ ...e, [f.FldCode]: v }))}
-                    required={mandatory(f.FldCode)}
-                  />
-                </Grid.Col>
-              ))}
-            </Grid>
-
-            <Group justify="space-between" mt="md" style={{ position: 'relative' }}>
-              <Text size="sm" fw={600}>
-                Account Heads
-              </Text>
-              <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
-                Add Line
-              </Button>
-            </Group>
-            <Table mt="xs" style={{ position: 'relative' }}>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Account Head</Table.Th>
-                  <Table.Th w={140}>Debit</Table.Th>
-                  <Table.Th w={140}>Credit</Table.Th>
-                  <Table.Th w={40}></Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {lines.map((l, i) => (
-                  <Table.Tr key={i}>
-                    <Table.Td>
-                      <LookupSelect ledgerPicker label="" value={l.ac_led_id} onChange={(v) => updateLine(i, { ac_led_id: v })} />
-                    </Table.Td>
-                    <Table.Td>
-                      <NumberInput value={l.dr_amt} onChange={(v) => updateLine(i, { dr_amt: v, cr_amt: v ? 0 : l.cr_amt })} decimalScale={2} />
-                    </Table.Td>
-                    <Table.Td>
-                      <NumberInput value={l.cr_amt} onChange={(v) => updateLine(i, { cr_amt: v, dr_amt: v ? 0 : l.dr_amt })} decimalScale={2} />
-                    </Table.Td>
-                    <Table.Td>
-                      <ActionIcon color="red" variant="subtle" disabled={lines.length <= 2} onClick={() => removeLine(i)}>
-                        <Trash2 size={16} />
-                      </ActionIcon>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-            {!balanced && (
-              <Text size="xs" c="red" mt={4} style={{ position: 'relative' }}>
-                Debit and Credit totals are NOT matching!
-              </Text>
+                  {extraDesignerFields.map((f) => (
+                    <Grid.Col span={{ base: 12, sm: 6, xl: 4 }} key={f.FldCode}>
+                      <DynamicField
+                        docId={DOC_ID}
+                        field={f}
+                        value={extra[f.FldCode]}
+                        onChange={(v) => setExtra((e) => ({ ...e, [f.FldCode]: v }))}
+                        required={mandatory(f.FldCode)}
+                      />
+                    </Grid.Col>
+                  ))}
+                </Grid>
+              </SectionCard>
             )}
 
-            <Card mt="lg" radius="md" style={{ position: 'relative', background: 'linear-gradient(120deg, #7A1F1F 0%, #5A1414 100%)' }}>
-              <Group justify="space-between">
-                <Text c="#F4E1A6" fw={600}>
-                  {caption('TOTDR', 'Total Dr')} / {caption('TOTCR', 'Total Cr')}
+            <SectionCard
+              title="Account heads"
+              hint="Pick the ledger for each line and enter either a debit or a credit. Totals must match."
+              action={
+                <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
+                  Add line
+                </Button>
+              }
+            >
+              <Table.ScrollContainer minWidth={560}>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Account Head</Table.Th>
+                      <Table.Th w={160}>Debit</Table.Th>
+                      <Table.Th w={160}>Credit</Table.Th>
+                      <Table.Th w={48} aria-label="Remove" />
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {lines.map((l, i) => (
+                      <Table.Tr key={i}>
+                        <Table.Td>
+                          <LookupSelect ledgerPicker ariaLabel={`Account head, line ${i + 1}`} label="" value={l.ac_led_id} onChange={(v) => updateLine(i, { ac_led_id: v })} />
+                        </Table.Td>
+                        <Table.Td>
+                          <NumberInput aria-label={`Debit, line ${i + 1}`} value={l.dr_amt} onChange={(v) => updateLine(i, { dr_amt: v, cr_amt: v ? 0 : l.cr_amt })} decimalScale={2} />
+                        </Table.Td>
+                        <Table.Td>
+                          <NumberInput aria-label={`Credit, line ${i + 1}`} value={l.cr_amt} onChange={(v) => updateLine(i, { cr_amt: v, dr_amt: v ? 0 : l.dr_amt })} decimalScale={2} />
+                        </Table.Td>
+                        <Table.Td>
+                          <ActionIcon
+                            color="red"
+                            variant="subtle"
+                            size={36}
+                            aria-label={`Remove line ${i + 1}`}
+                            disabled={lines.length <= 2}
+                            onClick={async () => {
+                              if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeLine(i)
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </ActionIcon>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                  <Table.Tfoot>
+                    <Table.Tr>
+                      <Table.Th>
+                        {caption('TOTDR', 'Total Dr')} / {caption('TOTCR', 'Total Cr')}
+                      </Table.Th>
+                      <Table.Th className="vt-num">{formatINR(totalDr)}</Table.Th>
+                      <Table.Th className="vt-num">{formatINR(totalCr)}</Table.Th>
+                      <Table.Th />
+                    </Table.Tr>
+                  </Table.Tfoot>
+                </Table>
+              </Table.ScrollContainer>
+              {!balanced && (totalDr > 0 || totalCr > 0) && (
+                <Text size="sm" c="red" mt="xs" role="alert">
+                  Debit and Credit totals are NOT matching!
                 </Text>
-                <Title order={3} c="white" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-                  ₹ {totalDr.toFixed(2)} / ₹ {totalCr.toFixed(2)}
-                </Title>
-              </Group>
-            </Card>
-
-            <Group justify="flex-end" mt="lg" style={{ position: 'relative' }}>
-              <Kbd size="xs">Alt+S</Kbd>
-              <Button size="md" color="kumkum" loading={saving} onClick={onSave}>
-                Save &amp; Print
-              </Button>
-            </Group>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={4}>
-          <Card withBorder radius="lg" p="md" shadow="sm">
-            <Group gap={8} mb="sm">
-              <ArrowDownLeft size={18} color="#7A1F1F" />
-              <Title order={5} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-                Recent Receipts
-              </Title>
-            </Group>
-            <Stack gap={0}>
-              {(recent || []).map((r, i) => (
-                <div key={r.RCPTVCHID}>
-                  {i > 0 && <Divider my={8} />}
-                  <Group justify="space-between" wrap="nowrap">
-                    <div>
-                      <Text size="sm" fw={600}>
-                        {r.PrintRCPTVCHNO}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {r.NARR} · ₹{r.TOTCR}
-                      </Text>
-                    </div>
-                    <ActionIcon variant="light" color="kumkum" onClick={() => setPrintFor(r.RCPTVCHID)}>
-                      <Printer size={16} />
-                    </ActionIcon>
-                  </Group>
-                </div>
-              ))}
-            </Stack>
-          </Card>
-        </Grid.Col>
-      </Grid>
+              )}
+            </SectionCard>
+          </Stack>
+        }
+        side={
+          <>
+            <SummaryCard
+              rows={[
+                { label: 'Total debit', value: formatINR(totalDr) },
+                { label: 'Total credit', value: formatINR(totalCr) },
+                { label: 'Difference', value: formatINR(Math.abs(totalDr - totalCr)) },
+              ]}
+              totalLabel="Receipt amount"
+              total={formatINR(totalCr)}
+              words={totalCr}
+              warning={balanced || (totalDr === 0 && totalCr === 0) ? null : 'Debit and Credit totals are NOT matching!'}
+              saving={saving}
+              onSave={onSave}
+            />
+            {lastSaved && (
+              <SavedPanel
+                lines={[`Voucher ${lastSaved.receipt_no}`]}
+                onPrint={() => setPrintFor(lastSaved.receipt_id)}
+              />
+            )}
+            <RecentCard
+              title="Recent receipts"
+              icon={ArrowDownLeft}
+              loading={recentLoading}
+              rows={recent || []}
+              emptyTitle="No receipts yet"
+              emptyHint="Saved vouchers will be listed here."
+              renderRow={(v) => ({
+                key: v.RCPTVCHID,
+                title: v.PrintRCPTVCHNO,
+                subtitle: `${v.NARR} · ${formatINR(v.TOTCR)}`,
+                printLabel: `Print ${v.PrintRCPTVCHNO}`,
+                onPrint: () => setPrintFor(v.RCPTVCHID),
+              })}
+            />
+          </>
+        }
+      />
 
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Receipt Voucher" />
     </Stack>

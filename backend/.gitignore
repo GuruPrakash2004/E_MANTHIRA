@@ -27,3 +27,6 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Uploaded welcome video (runtime data)
+welcome_media/

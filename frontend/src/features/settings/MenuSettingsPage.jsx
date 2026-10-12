@@ -1,11 +1,9 @@
-import { Card, Divider, Group, Stack, Switch, Text, Title } from '@mantine/core'
+import { Badge, Card, Divider, Group, Skeleton, Stack, Switch, Text, Title } from '@mantine/core'
 import { SlidersHorizontal } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as metaApi from '../../api/endpoints/meta'
 
-const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
-const KOLAM_PATTERN = '/illustrations/kolam.svg'
 const TYPE_ORDER = ['Transactions', 'Vouchers', 'Masters', 'Reports', 'Ac-Reports', 'Utilities']
 
 export default function MenuSettingsPage() {
@@ -27,44 +25,42 @@ export default function MenuSettingsPage() {
   }
 
   return (
-    <Stack>
-      <Group gap="sm">
-        <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 36, width: 36 }} />
-        <div>
-          <Title order={2} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-            Customise Menu
-          </Title>
-          <Text size="sm" c="dimmed">
-            Show or hide any master, transaction, voucher or report for this temple — same MenuShow flag the desktop app uses
-          </Text>
-        </div>
-      </Group>
+    <Stack gap="lg">
+      <Text size="sm" c="dimmed">
+        Show or hide any master, transaction, voucher or report for this temple. This is the same MenuShow flag the desktop app uses. Changes apply straight away.
+      </Text>
 
-      {grouped.map((g) => (
-        <Card key={g.type} withBorder radius="lg" p="lg" shadow="sm" style={{ position: 'relative', overflow: 'hidden' }}>
-          <div
-            aria-hidden
-            style={{ position: 'absolute', inset: 0, backgroundImage: `url(${KOLAM_PATTERN})`, backgroundSize: '140px 140px', opacity: 0.03, pointerEvents: 'none' }}
-          />
-          <Group gap={8} mb="sm" style={{ position: 'relative' }}>
-            <SlidersHorizontal size={18} color="#7A1F1F" />
-            <Title order={4} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-              {g.type}
-            </Title>
-          </Group>
-          <Stack gap={0} style={{ position: 'relative' }}>
-            {g.items.map((item, i) => (
-              <div key={item.menu_item_id}>
-                {i > 0 && <Divider my={8} />}
-                <Group justify="space-between" wrap="nowrap">
-                  <Text size="sm">{item.caption}</Text>
-                  <Switch checked={item.show} onChange={(e) => toggle(item, e.currentTarget.checked)} color="kumkum" />
+      {!items && [0, 1].map((i) => <Skeleton key={i} height={160} radius="md" />)}
+
+      <div style={{ display: 'grid', gap: 'var(--mantine-spacing-md)', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', alignItems: 'start' }}>
+        {grouped.map((g) => {
+          const shown = g.items.filter((m) => m.show).length
+          return (
+            <Card key={g.type} withBorder p="lg">
+              <Group justify="space-between" mb="sm" wrap="nowrap">
+                <Group gap={8}>
+                  <SlidersHorizontal size={18} color="var(--mantine-color-kumkum-7)" aria-hidden />
+                  <Title order={4}>{g.type}</Title>
                 </Group>
-              </div>
-            ))}
-          </Stack>
-        </Card>
-      ))}
+                <Badge variant="light" color="gold" c="kumkum.8" tt="none">
+                  {shown} of {g.items.length} shown
+                </Badge>
+              </Group>
+              <Stack gap={0}>
+                {g.items.map((item, i) => (
+                  <div key={item.menu_item_id}>
+                    {i > 0 && <Divider my={4} />}
+                    <Group justify="space-between" wrap="nowrap" mih={44}>
+                      <Text size="sm" id={`menu-${item.menu_item_id}`}>{item.caption}</Text>
+                      <Switch aria-labelledby={`menu-${item.menu_item_id}`} checked={item.show} onChange={(e) => toggle(item, e.currentTarget.checked)} color="kumkum" />
+                    </Group>
+                  </div>
+                ))}
+              </Stack>
+            </Card>
+          )
+        })}
+      </div>
     </Stack>
   )
 }

@@ -11,7 +11,7 @@ import * as metaApi from '../api/endpoints/meta'
  * `ledgerPicker` for the generic MstLed picker used by voucher screens
  * whose Dr/Cr lines aren't tied to one specific document field.
  */
-export default function LookupSelect({ docId, field, ledgerPicker, label, required, value, onChange, disabled }) {
+export default function LookupSelect({ docId, field, ledgerPicker, label, ariaLabel, required, value, onChange, disabled }) {
   const [search, setSearch] = useState('')
 
   const { data, isLoading } = useQuery({
@@ -25,6 +25,7 @@ export default function LookupSelect({ docId, field, ledgerPicker, label, requir
   return (
     <Select
       label={label}
+      aria-label={ariaLabel}
       required={required}
       disabled={disabled}
       searchable

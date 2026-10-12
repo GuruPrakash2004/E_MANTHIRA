@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import audit, auth, bulk_update, company, db_settings, display, donations, hall_booking_entry, halls, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, users, vouchers
+from app.api.v1 import audit, auth, bulk_update, company, db_settings, display, donations, hall_booking_entry, halls, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, users, vouchers, welcome
 from app.core.config import get_settings
 from app.core.db import get_engine, healthcheck, with_transaction
 from app.core.audit import ensure_schema
@@ -63,6 +63,7 @@ app.include_router(display.router, prefix=settings.api_prefix)
 app.include_router(bulk_update.router, prefix=settings.api_prefix)
 app.include_router(inventory.router, prefix=settings.api_prefix)
 app.include_router(audit.router, prefix=settings.api_prefix)
+app.include_router(welcome.router, prefix=settings.api_prefix)
 
 
 @app.get("/health")

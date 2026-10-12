@@ -1,18 +1,17 @@
 import { useState } from 'react'
-import { Card, Grid, Group, Stack, Table, Text, Title } from '@mantine/core'
+import { Card, Grid, Stack } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import * as inventoryApi from '../../api/endpoints/inventory'
 import MasterOptionsSelect from './MasterOptionsSelect'
+import { ReportTable } from './ReportParts'
+import { PageHeader } from '../../components/ui/EntryParts'
 
 const ITEM_DOC_ID = 1114
-const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
 
 /**
- * Item Referencer ("Where Used Report") — port of frmRptWhereUsed. Pick a
- * raw-material/component item and see every Bill of Material it's used
- * in. Zero real BOM rows in this client's data today (see
- * app/services/inventory.py) but the join is schema-verified.
+ * Item Referencer ("Where Used Report"), port of frmRptWhereUsed. Pick a raw-material/component item and see
+ * every Bill of Material it is used in.
  */
 export default function ItemReferencerPage() {
   const [itemId, setItemId] = useState('')
@@ -23,21 +22,19 @@ export default function ItemReferencerPage() {
     enabled: Boolean(itemId),
   })
 
-  return (
-    <Stack>
-      <Group gap="sm">
-        <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 36, width: 36 }} />
-        <div>
-          <Title order={2} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-            Item Referencer
-          </Title>
-          <Text size="sm" c="dimmed">
-            Where an item is used — every Bill of Material that consumes it
-          </Text>
-        </div>
-      </Group>
+  const columns = [
+    { key: 'bom_no', label: 'BOM No', render: (r) => <b>{r.bom_no}</b> },
+    { key: 'bom_date', label: 'Date', render: (r) => dayjs(r.bom_date).format('DD/MM/YYYY') },
+    { key: 'finished', label: 'Finished Item', render: (r) => `${r.finished_item_code} · ${r.finished_item_name}` },
+    { key: 'qty_per_unit', label: 'Qty per Unit', num: true },
+    { key: 'uom_code', label: 'UOM' },
+  ]
 
-      <Card withBorder radius="lg" p="lg">
+  return (
+    <Stack gap="lg" className="vt-rise">
+      <PageHeader title="Item Referencer" subtitle="Where an item is used: every Bill of Material that consumes it" shortcuts={[]} />
+
+      <Card withBorder p="lg">
         <Grid align="flex-end">
           <Grid.Col span={{ base: 12, md: 5 }}>
             <MasterOptionsSelect docId={ITEM_DOC_ID} label="Item" required value={itemId} onChange={setItemId} />
@@ -45,61 +42,17 @@ export default function ItemReferencerPage() {
         </Grid>
       </Card>
 
-      <Card withBorder radius="lg" p={0} style={{ overflow: 'hidden' }}>
-        <Table.ScrollContainer minWidth={700}>
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>BOM No</Table.Th>
-                <Table.Th>Date</Table.Th>
-                <Table.Th>Finished Item</Table.Th>
-                <Table.Th style={{ textAlign: 'right' }}>Qty per Unit</Table.Th>
-                <Table.Th>UOM</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {!itemId && (
-                <Table.Tr>
-                  <Table.Td colSpan={5}>
-                    <Text c="dimmed" ta="center" py="md">
-                      Choose an item to see where it's used
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              )}
-              {itemId && isLoading && (
-                <Table.Tr>
-                  <Table.Td colSpan={5}>
-                    <Text c="dimmed" ta="center" py="md">
-                      Loading…
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              )}
-              {itemId && !isLoading && (rows || []).length === 0 && (
-                <Table.Tr>
-                  <Table.Td colSpan={5}>
-                    <Text c="dimmed" ta="center" py="md">
-                      Not used in any Bill of Material
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              )}
-              {(rows || []).map((r, i) => (
-                <Table.Tr key={i}>
-                  <Table.Td>{r.bom_no}</Table.Td>
-                  <Table.Td>{dayjs(r.bom_date).format('DD/MM/YYYY')}</Table.Td>
-                  <Table.Td>
-                    {r.finished_item_code} — {r.finished_item_name}
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right' }}>{r.qty_per_unit}</Table.Td>
-                  <Table.Td>{r.uom_code}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      </Card>
+      <ReportTable
+        columns={columns}
+        rows={rows || []}
+        loading={Boolean(itemId) && isLoading}
+        idle={!itemId}
+        idleTitle="Choose an item"
+        idleHint="Pick an item above to see which Bills of Material use it."
+        emptyTitle="Not used in any Bill of Material"
+        emptyHint="This item is not a component of any finished item yet."
+        minWidth={640}
+      />
     </Stack>
   )
 }

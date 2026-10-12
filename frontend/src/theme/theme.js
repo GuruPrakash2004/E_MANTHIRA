@@ -18,12 +18,32 @@ export const theme = createTheme({
   headings: { fontFamily: 'Marcellus, Georgia, serif' },
   defaultRadius: 'md',
   components: {
-    Button: { defaultProps: { radius: 'xl' } },
     ActionIcon: { defaultProps: { radius: 'xl' } },
     Badge: { defaultProps: { radius: 'sm' } },
     Paper: { defaultProps: { radius: 'lg' } },
     Card: { defaultProps: { radius: 'lg' } },
     Modal: { defaultProps: { radius: 'lg' } },
+    // Redesign foundation: roomy hit targets (>=40px), clear labels, quiet table headers.
+    TextInput: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
+    PasswordInput: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
+    Select: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
+    NumberInput: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
+    Textarea: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
+    Button: { defaultProps: { radius: 'xl' }, styles: { root: { fontWeight: 600 } } },
+    Table: {
+      defaultProps: { highlightOnHover: true, verticalSpacing: 'sm' },
+      styles: {
+        th: {
+          background: 'var(--mantine-color-gold-0)',
+          color: 'var(--mantine-color-kumkum-8)',
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: 0.4,
+          textTransform: 'uppercase',
+          whiteSpace: 'nowrap',
+        },
+      },
+    },
   },
 })
 

@@ -8,7 +8,7 @@ import * as mastersApi from '../../api/endpoints/masters'
  * depending on per-field UtlDocDsgrFlds combo metadata (which isn't fully
  * configured for these low-usage inventory docs). Same data, simpler path.
  */
-export default function MasterOptionsSelect({ docId, label, required, value, onChange }) {
+export default function MasterOptionsSelect({ docId, label, ariaLabel, required, value, onChange }) {
   const { data } = useQuery({ queryKey: ['master-options', docId], queryFn: () => mastersApi.listMaster(docId) })
   const meta = data?.meta
   const options = (data?.rows || [])
@@ -18,6 +18,7 @@ export default function MasterOptionsSelect({ docId, label, required, value, onC
   return (
     <Select
       label={label}
+      aria-label={ariaLabel}
       required={required}
       searchable
       clearable

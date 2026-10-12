@@ -6,7 +6,7 @@
 // one mode is never valid for the other anyway.
 import { setSession, clearSession } from '../api/api'
 import { setDemoModeFlag } from './demoMode'
-import { DEMO_LOGIN_RESPONSE } from './demoData'
+import { DEMO_LOGIN_RESPONSE } from './demo/routes'
 
 export function enterDemoMode() {
   setDemoModeFlag(true)

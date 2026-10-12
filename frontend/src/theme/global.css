@@ -1,0 +1,63 @@
+/* Global baseline for the e-Mandira redesign. Colours come from theme.js / Mantine vars, not here. */
+:root {
+  --vt-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --vt-line: #eadfd3;
+  --vt-sandal: #fbf6ec;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Money and counts line up in columns. */
+.vt-num,
+.mantine-Table-td[data-numeric],
+.mantine-Table-th[data-numeric] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible keyboard focus everywhere (counter staff are keyboard-first). */
+:where(a, button, [role='button'], input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--mantine-color-kumkum-5);
+  outline-offset: 2px;
+}
+
+/* Smooth, short transitions on interactive surfaces. */
+.vt-lift {
+  transition: transform 0.2s var(--vt-ease), box-shadow 0.2s var(--vt-ease), border-color 0.2s var(--vt-ease);
+}
+.vt-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(90, 20, 20, 0.1);
+  border-color: var(--mantine-color-gold-3);
+}
+.vt-lift:active {
+  transform: translateY(0) scale(0.99);
+}
+
+/* Entry animation for page content. */
+@keyframes vt-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.vt-rise {
+  animation: vt-rise 0.4s var(--vt-ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vt-rise,
+  .vt-lift {
+    animation: none;
+    transition: none;
+  }
+  .vt-lift:hover {
+    transform: none;
+  }
+}

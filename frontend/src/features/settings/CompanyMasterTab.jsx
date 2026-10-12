@@ -1,7 +1,12 @@
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
-import { Badge, Button, Card, Grid, Group, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { Badge, Button, Grid, Group, Stack, Table, Text, TextInput } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
-import { Plus } from 'lucide-react'
+import { Plus, Save } from 'lucide-react'
+import useDocShortcuts from '../../hooks/useDocShortcuts'
+import { SectionCard } from '../../components/ui/EntryParts'
+import EmptyState from '../../components/ui/EmptyState'
+import { isoDate } from '../../utils/format'
 import { notifications } from '@mantine/notifications'
 import dayjs from 'dayjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -45,8 +50,12 @@ export default function CompanyMasterTab() {
 
   async function onAddYear() {
     if (!newFrom || !newTo) return
+    if (dayjs(newTo).isBefore(dayjs(newFrom))) {
+      notifications.show({ message: 'The end date must be after the start date', color: 'red' })
+      return
+    }
     try {
-      await companyApi.addFinancialYear(dayjs(newFrom).format('YYYY-MM-DD'), dayjs(newTo).format('YYYY-MM-DD'))
+      await companyApi.addFinancialYear(isoDate(newFrom), isoDate(newTo))
       notifications.show({ message: 'Financial year added', color: 'teal' })
       setNewFrom(null)
       setNewTo(null)
@@ -56,10 +65,12 @@ export default function CompanyMasterTab() {
     }
   }
 
+  const confirm = useConfirm()
+  useDocShortcuts({ onSave })
   async function onSetActive(fromDate) {
-    if (!window.confirm(`Make ${dayjs(fromDate).format('DD/MM/YYYY')} the active financial year for the whole app?`)) return
+    if (!(await confirm({ title: 'Change the active financial year?', message: `${dayjs(fromDate).format('DD/MM/YYYY')} becomes the active financial year for the whole app.`, confirmLabel: 'Make active', tone: 'warning' }))) return
     try {
-      await companyApi.setActiveFinancialYear(dayjs(fromDate).format('YYYY-MM-DD'))
+      await companyApi.setActiveFinancialYear(isoDate(fromDate))
       notifications.show({ message: 'Active financial year updated', color: 'teal' })
       refetchYears()
     } catch (err) {
@@ -69,75 +80,71 @@ export default function CompanyMasterTab() {
 
   return (
     <Stack>
-      <Card withBorder radius="lg" p="lg" shadow="sm">
-        <Title order={5} mb="md" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-          Company Info
-        </Title>
+      <SectionCard title="Company info" hint="Printed on receipts and reports. Saves with Alt+S.">
         <Grid>
           <Grid.Col span={12}>
             <TextInput label="Company / Trust Name" required value={form.CompName} onChange={(e) => set('CompName', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={6}>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
             <TextInput label="Address 1" value={form.Address1} onChange={(e) => set('Address1', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={6}>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
             <TextInput label="Address 2" value={form.Address2} onChange={(e) => set('Address2', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="Address 3" value={form.Address3} onChange={(e) => set('Address3', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="Address 4" value={form.Address4} onChange={(e) => set('Address4', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="Address 5" value={form.Address5} onChange={(e) => set('Address5', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="Phone" value={form.TELNO} onChange={(e) => set('TELNO', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="Mobile" value={form.MOBNO} onChange={(e) => set('MOBNO', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="Email" value={form.EMAIL} onChange={(e) => set('EMAIL', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="Website" value={form.WEB} onChange={(e) => set('WEB', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="PAN No" value={form.PANNO} onChange={(e) => set('PANNO', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="GST No" value={form.GSTNO} onChange={(e) => set('GSTNO', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="CIN No" value={form.CINNO} onChange={(e) => set('CINNO', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={4}>
+          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <TextInput label="Customer Code" value={form.Custcode} onChange={(e) => set('Custcode', e.currentTarget.value)} />
           </Grid.Col>
-          <Grid.Col span={8}>
+          <Grid.Col span={{ base: 12, md: 8 }}>
             <TextInput label="Dashboard Link" value={form.DashBoardLink} onChange={(e) => set('DashBoardLink', e.currentTarget.value)} />
           </Grid.Col>
         </Grid>
         <Group justify="flex-end" mt="md">
-          <Button color="kumkum" loading={saving} onClick={onSave}>
+          <Button color="kumkum" leftSection={<Save size={16} />} loading={saving} onClick={onSave}>
             Save
           </Button>
         </Group>
-      </Card>
+      </SectionCard>
 
-      <Card withBorder radius="lg" p="lg" shadow="sm">
-        <Title order={5} mb="md" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-          Financial Year(s)
-        </Title>
+      <SectionCard title="Financial years" hint="The active year filters every list and document number in the app.">
+        {(years || []).length === 0 && <EmptyState title="No financial years yet" hint="Add one below." />}
+        <Table.ScrollContainer minWidth={480}>
         <Table mb="md">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>From</Table.Th>
               <Table.Th>To</Table.Th>
               <Table.Th>Status</Table.Th>
-              <Table.Th w={140}></Table.Th>
+              <Table.Th w={140} aria-label="Actions" />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -147,7 +154,7 @@ export default function CompanyMasterTab() {
                 <Table.Td>{dayjs(y.yrTdate).format('DD/MM/YYYY')}</Table.Td>
                 <Table.Td>
                   {y.Active === 'Y' ? (
-                    <Badge color="teal" variant="light">
+                    <Badge color="gold" variant="light" c="kumkum.8">
                       Active
                     </Badge>
                   ) : (
@@ -167,17 +174,18 @@ export default function CompanyMasterTab() {
             ))}
           </Table.Tbody>
         </Table>
+        </Table.ScrollContainer>
         <Group align="end">
-          <DateInput label="New FY From" value={newFrom} onChange={setNewFrom} />
-          <DateInput label="New FY To" value={newTo} onChange={setNewTo} />
+          <DateInput label="New FY from" valueFormat="DD/MM/YYYY" value={newFrom} onChange={setNewFrom} />
+          <DateInput label="New FY to" valueFormat="DD/MM/YYYY" value={newTo} onChange={setNewTo} />
           <Button leftSection={<Plus size={16} />} variant="light" color="kumkum" onClick={onAddYear}>
             Add Financial Year
           </Button>
         </Group>
         <Text size="xs" c="dimmed" mt="xs">
-          "Make Active" changes the whole app's default financial year — used at year-end rollover.
+          Make Active changes the default financial year for the whole app. Use it at year-end rollover.
         </Text>
-      </Card>
+      </SectionCard>
     </Stack>
   )
 }

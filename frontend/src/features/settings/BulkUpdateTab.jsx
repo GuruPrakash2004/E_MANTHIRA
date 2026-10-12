@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Checkbox, Grid, Group, Select, Stack, Table, Text, TextInput } from '@mantine/core'
-import { Play } from 'lucide-react'
+import { Save, Search, ListChecks } from 'lucide-react'
+import { useConfirm } from '../../components/ui/ConfirmProvider'
+import { SectionCard } from '../../components/ui/EntryParts'
+import EmptyState from '../../components/ui/EmptyState'
 import { notifications } from '@mantine/notifications'
 import { useQuery } from '@tanstack/react-query'
 import * as bulkUpdateApi from '../../api/endpoints/bulkUpdate'
@@ -13,6 +16,7 @@ import * as bulkUpdateApi from '../../api/endpoints/bulkUpdate'
  * TrnHdrSEVA.PRASADA across many sevas at once.
  */
 export default function BulkUpdateTab() {
+  const confirm = useConfirm()
   const [rowId, setRowId] = useState('')
   const [filterValues, setFilterValues] = useState({})
   const [rows, setRows] = useState(null)
@@ -62,6 +66,8 @@ export default function BulkUpdateTab() {
       notifications.show({ message: 'No changes to save', color: 'yellow' })
       return
     }
+    const n = changedRows.length
+    if (!(await confirm({ title: `Update ${n} record${n === 1 ? '' : 's'}?`, message: `The changes will be written to ${n} record${n === 1 ? '' : 's'} at once.`, confirmLabel: 'Update', tone: 'warning' }))) return
     setSaving(true)
     try {
       const result = await bulkUpdateApi.saveRows(rowId, changedRows)
@@ -76,9 +82,9 @@ export default function BulkUpdateTab() {
 
   return (
     <Stack>
-      <Card withBorder radius="lg" p="lg" shadow="sm">
+      <SectionCard title="What to update" hint="Pick a definition, narrow down the records, then edit the columns that allow it.">
         <Select
-          label="Bulk Update Definition"
+          label="Bulk update definition"
           placeholder="Choose what to bulk-update"
           data={(definitions || []).map((d) => ({ value: String(d.row_id), label: `${d.doc_name} (${d.table})` }))}
           value={rowId}
@@ -87,7 +93,7 @@ export default function BulkUpdateTab() {
         {definition?.filters?.length > 0 && (
           <Grid mt="md">
             {definition.filters.map((f) => (
-              <Grid.Col span={3} key={f.name}>
+              <Grid.Col span={{ base: 12, sm: 6, md: 3 }} key={f.name}>
                 <TextInput
                   label={f.name}
                   value={filterValues[f.name] || ''}
@@ -98,15 +104,22 @@ export default function BulkUpdateTab() {
           </Grid>
         )}
         <Group justify="flex-end" mt="md">
-          <Button leftSection={<Play size={16} />} color="kumkum" loading={loading} disabled={!rowId} onClick={onSearch}>
+          <Button leftSection={<Search size={16} />} color="kumkum" loading={loading} disabled={!rowId} onClick={onSearch}>
             Search
           </Button>
         </Group>
-      </Card>
+      </SectionCard>
+
+      {!rows && <EmptyState icon={ListChecks} title="Nothing loaded yet" hint="Choose a definition and press Search to list the records." />}
 
       {rows && (
-        <Card withBorder radius="lg" p="lg" shadow="sm" style={{ overflow: 'auto' }}>
-          <Table striped highlightOnHover>
+        <Card withBorder p="lg">
+          <Text size="sm" c="dimmed" mb="sm">
+            {rows.length} record{rows.length === 1 ? '' : 's'}
+            {Object.keys(edited).length > 0 && `, ${Object.keys(edited).length} changed`}
+          </Text>
+          <Table.ScrollContainer minWidth={640} mah="65dvh">
+          <Table highlightOnHover stickyHeader>
             <Table.Thead>
               <Table.Tr>
                 {visibleCols.map((c) => (
@@ -140,6 +153,8 @@ export default function BulkUpdateTab() {
                         return (
                           <Table.Td key={c.name}>
                             <Checkbox
+                              color="kumkum"
+                              aria-label={`${c.name}, ${keyVal}`}
                               checked={truthy}
                               onChange={(e) => setCellValue(keyVal, c.name, e.currentTarget.checked ? (yesForm ? 'Yes' : 'Y') : yesForm ? 'No' : 'N')}
                             />
@@ -148,7 +163,7 @@ export default function BulkUpdateTab() {
                       }
                       return (
                         <Table.Td key={c.name}>
-                          <TextInput size="xs" value={currentValue ?? ''} onChange={(e) => setCellValue(keyVal, c.name, e.currentTarget.value)} />
+                          <TextInput size="xs" aria-label={`${c.name}, ${keyVal}`} value={currentValue ?? ''} onChange={(e) => setCellValue(keyVal, c.name, e.currentTarget.value)} />
                         </Table.Td>
                       )
                     })}
@@ -157,10 +172,11 @@ export default function BulkUpdateTab() {
               })}
             </Table.Tbody>
           </Table>
+          </Table.ScrollContainer>
           {rows.length > 0 && (
             <Group justify="flex-end" mt="md">
-              <Button color="kumkum" loading={saving} onClick={onSave}>
-                Save Changes
+              <Button color="kumkum" leftSection={<Save size={16} />} loading={saving} onClick={onSave}>
+                Save changes
               </Button>
             </Group>
           )}

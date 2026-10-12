@@ -1,6 +1,6 @@
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
 import {
-  Badge,
   Button,
   Card,
   Checkbox,
@@ -16,9 +16,11 @@ import {
   Title,
   ActionIcon,
   Kbd,
+  Skeleton,
 } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
-import { Plus, Trash2, Printer, Search, Receipt } from 'lucide-react'
+import { Plus, Trash2, Printer, Search, Receipt, CalendarPlus, CheckCircle2 } from 'lucide-react'
+import dayjs from 'dayjs'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as sevaApi from '../../api/endpoints/seva'
@@ -29,6 +31,9 @@ import DynamicField from '../../components/DynamicField'
 import useDocFields from '../../hooks/useDocFields'
 import { isFieldHidden, isFieldMandatory, fieldCaption, fieldListOptions } from '../../utils/docFieldConditions'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
+import EmptyState from '../../components/ui/EmptyState'
+import { EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
+import { formatINR, isoDate } from '../../utils/format'
 
 // Maps this screen's own form-state keys to the legacy FldCode UtlDocDsgrFlds
 // uses — lets the SAME live designer metadata that drives frmTrnSeva's hide/
@@ -49,9 +54,9 @@ const DOC_ID = 1263
 const SEVA_MASTER_DOC_ID = 1265
 const NAKSHATRA_MASTER_DOC_ID = 1258
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
-const KOLAM_PATTERN = '/illustrations/kolam.svg'
 
 export default function SevaEntryPage() {
+  const confirm = useConfirm()
   const queryClient = useQueryClient()
   const [form, setForm] = useState({
     sannidhi_id: '',
@@ -100,7 +105,7 @@ export default function SevaEntryPage() {
   )
   const [extra, setExtra] = useState({})
 
-  const { data: recent, refetch } = useQuery({
+  const { data: recent, refetch, isLoading: recentLoading } = useQuery({
     queryKey: ['sevas', 'recent'],
     queryFn: () => sevaApi.listSevas({ top: 15 }),
   })
@@ -163,7 +168,7 @@ export default function SevaEntryPage() {
   }
 
   function addDate() {
-    const iso = newDate.toISOString().slice(0, 10)
+    const iso = isoDate(newDate)
     if (dates.some((d) => d.perform_date === iso)) {
       notifications.show({ message: `Duplicate date ${iso}`, color: 'red' })
       return
@@ -201,9 +206,9 @@ export default function SevaEntryPage() {
         rashi_id: form.rashi_id ? Number(form.rashi_id) : null,
         nakshatra2_id: form.nakshatra2_id ? Number(form.nakshatra2_id) : null,
         rashi2_id: form.rashi2_id ? Number(form.rashi2_id) : null,
-        cheque_date: form.cheque_date ? form.cheque_date.toISOString().slice(0, 10) : null,
+        cheque_date: form.cheque_date ? isoDate(form.cheque_date) : null,
         rate: Number(form.rate),
-        doc_date: form.doc_date.toISOString().slice(0, 10),
+        doc_date: isoDate(form.doc_date),
         dates,
         extra_fields: extra,
       }
@@ -226,291 +231,301 @@ export default function SevaEntryPage() {
   useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.seva_id) })
 
   return (
-    <Stack>
-      <Group justify="space-between" align="flex-end">
-        <Group gap="sm">
-          <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 36, width: 36 }} />
+    <Stack gap="lg" className="vt-rise">
+      {/* Page header */}
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <Group gap="sm" wrap="nowrap">
+          <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 40, width: 40 }} />
           <div>
-            <Title order={2} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-              Seva Entry
-            </Title>
+            <Title order={2}>Seva Entry</Title>
             <Text size="sm" c="dimmed">
               Record a devotee's seva booking and print the receipt
             </Text>
           </div>
         </Group>
-        {lastSaved && (
-          <Badge color="teal" size="lg" radius="sm">
-            Saved {lastSaved.seva_no} · Receipt {lastSaved.receipt_no}
-          </Badge>
-        )}
+        <Group gap="md" visibleFrom="sm" c="dimmed">
+          <Group gap={6}>
+            <Kbd size="xs">Alt+S</Kbd>
+            <Text size="xs">Save</Text>
+          </Group>
+          <Group gap={6}>
+            <Kbd size="xs">Alt+P</Kbd>
+            <Text size="xs">Print last</Text>
+          </Group>
+        </Group>
       </Group>
 
-      <Grid>
-        <Grid.Col span={8}>
-          <Card withBorder radius="lg" p="lg" shadow="sm" style={{ position: 'relative', overflow: 'hidden' }}>
-            <div
-              aria-hidden
-              style={{
-                position: 'absolute',
-                inset: 0,
-                backgroundImage: `url(${KOLAM_PATTERN})`,
-                backgroundSize: '140px 140px',
-                opacity: 0.03,
-                pointerEvents: 'none',
-              }}
+      <EntryLayout
+        main={
+          <>
+        <Stack gap="lg">
+          <Card withBorder p="lg">
+            <Title order={4} mb={2}>Seva and devotee</Title>
+            <Text size="xs" c="dimmed" mb="md">Choose the seva, then the devotee. A known mobile number fills the rest.</Text>
+            <Grid>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <LookupSelect docId={DOC_ID} field="SANNIDHIID" label={caption('SANNIDHIID', 'Sannidhi')} required={mandatory('SANNIDHIID')} value={form.sannidhi_id} onChange={(v) => set('sannidhi_id', v)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <LookupSelect docId={DOC_ID} field="SVAID" label={caption('SVAID', 'Seva')} required={mandatory('SVAID')} value={form.seva_id} onChange={onSevaChange} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <TextInput
+              label={caption('MOBNUM', 'Mobile Number')}
+              required={mandatory('MOBNUM')}
+              value={form.mobile}
+              onChange={(e) => set('mobile', e.currentTarget.value)}
+              onBlur={onMobileBlur}
+              rightSection={<Search size={16} />}
             />
-            <Grid style={{ position: 'relative' }}>
-              <Grid.Col span={6}>
-                <LookupSelect docId={DOC_ID} field="SANNIDHIID" label={caption('SANNIDHIID', 'Sannidhi')} required={mandatory('SANNIDHIID')} value={form.sannidhi_id} onChange={(v) => set('sannidhi_id', v)} />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <LookupSelect docId={DOC_ID} field="SVAID" label={caption('SVAID', 'Seva')} required={mandatory('SVAID')} value={form.seva_id} onChange={onSevaChange} />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput
-                  label={caption('MOBNUM', 'Mobile Number')}
-                  required={mandatory('MOBNUM')}
-                  value={form.mobile}
-                  onChange={(e) => set('mobile', e.currentTarget.value)}
-                  onBlur={onMobileBlur}
-                  rightSection={<Search size={16} />}
-                />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <TextInput label={caption('KNAME', 'Name')} required value={form.name} onChange={(e) => set('name', e.currentTarget.value)} />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <LookupSelect docId={DOC_ID} field="GOTHRAID" label={caption('GOTHRAID', 'Gothra')} required={mandatory('GOTHRAID')} value={form.gothra_id} onChange={(v) => set('gothra_id', v)} />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <LookupSelect docId={DOC_ID} field="NAKSHATRAID" label={caption('NAKSHATRAID', 'Nakshatra')} required={mandatory('NAKSHATRAID')} value={form.nakshatra_id} onChange={onNakshatraChange} />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <LookupSelect docId={DOC_ID} field="RASHIID" label={caption('RASHIID', 'Rashi')} required={mandatory('RASHIID')} value={form.rashi_id} onChange={(v) => set('rashi_id', v)} />
-              </Grid.Col>
-              {/* Second devotee on this seva — tracked/saved already, but was
-                  missing its own inputs entirely (metadata: visible, optional). */}
-              {!hidden('SECKNAME') && (
-                <Grid.Col span={4}>
-                  <TextInput label={caption('SECKNAME', 'Name-2')} required={mandatory('SECKNAME')} value={form.name2} onChange={(e) => set('name2', e.currentTarget.value)} />
-                </Grid.Col>
-              )}
-              {!hidden('SECNAKSHATRAID') && (
-                <Grid.Col span={4}>
-                  <LookupSelect docId={DOC_ID} field="SECNAKSHATRAID" label={caption('SECNAKSHATRAID', 'Nakshatra-2')} required={mandatory('SECNAKSHATRAID')} value={form.nakshatra2_id} onChange={(v) => set('nakshatra2_id', v)} />
-                </Grid.Col>
-              )}
-              {!hidden('SECRASHIID') && (
-                <Grid.Col span={4}>
-                  <LookupSelect docId={DOC_ID} field="SECRASHIID" label={caption('SECRASHIID', 'Rashi-2')} required={mandatory('SECRASHIID')} value={form.rashi2_id} onChange={(v) => set('rashi2_id', v)} />
-                </Grid.Col>
-              )}
-              {/* Rate/Document Date have no UtlDocDsgrFlds row for DocID 1263 (confirmed via live audit) — plain static labels are correct, nothing to wire. */}
-              <Grid.Col span={4}>
-                <NumberInput label="Rate" required value={form.rate} onChange={(v) => set('rate', v)} decimalScale={2} />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <Select
-                  label={caption('PAYMENT', 'Payment Mode')}
-                  required={mandatory('PAYMENT')}
-                  data={fieldListOptions(fieldMeta.PAYMENT, PAYMENT_MODES)}
-                  value={form.payment_mode}
-                  onChange={(v) => set('payment_mode', v)}
-                />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <DateInput label="Document Date" value={form.doc_date} onChange={(v) => set('doc_date', v)} />
-              </Grid.Col>
-              <Grid.Col span={4}>
-                <TextInput
-                  label={caption('RMKS', 'Seva Timing')}
-                  required={mandatory('RMKS')}
-                  placeholder="e.g. 7.30 AM"
-                  value={form.timing_text}
-                  onChange={(e) => set('timing_text', e.currentTarget.value)}
-                />
-              </Grid.Col>
-              {!hidden('ADDRES') && (
-                <Grid.Col span={8}>
-                  <TextInput
-                    label={caption('ADDRES', 'Address')}
-                    required={mandatory('ADDRES')}
-                    value={form.address}
-                    onChange={(e) => set('address', e.currentTarget.value)}
-                  />
-                </Grid.Col>
-              )}
-              <Grid.Col span={12}>
-                <Group gap="xl">
-                  <Checkbox
-                    label="Regular Devotee"
-                    checked={form.is_regular}
-                    onChange={(e) => set('is_regular', e.currentTarget.checked)}
-                  />
-                  {/* Prasada is FLdBlnHide='Y'/ReadOnly='Y' on this screen — set
-                      via Admin Master > Bulk Update instead, not entered here. */}
-                </Group>
-              </Grid.Col>
-              {!hidden('REFNO') && (
-                <Grid.Col span={6}>
-                  <TextInput
-                    label={caption('REFNO', 'Reference No')}
-                    required={mandatory('REFNO')}
-                    value={form.reference_no}
-                    onChange={(e) => set('reference_no', e.currentTarget.value)}
-                  />
-                </Grid.Col>
-              )}
-              {(!hidden('BANKNAME') || !hidden('CHQNO') || !hidden('CHQDATE')) && (
-                <>
-                  {!hidden('BANKNAME') && (
-                    <Grid.Col span={4}>
-                      <Select
-                        label={caption('BANKNAME', 'Bank Name')}
-                        required={mandatory('BANKNAME')}
-                        data={BANK_NAMES}
-                        value={form.bank_name}
-                        onChange={(v) => set('bank_name', v)}
-                      />
-                    </Grid.Col>
-                  )}
-                  {!hidden('CHQNO') && (
-                    <Grid.Col span={4}>
-                      <TextInput
-                        label={caption('CHQNO', 'Cheque No')}
-                        required={mandatory('CHQNO')}
-                        value={form.cheque_no}
-                        onChange={(e) => set('cheque_no', e.currentTarget.value)}
-                      />
-                    </Grid.Col>
-                  )}
-                  {!hidden('CHQDATE') && (
-                    <Grid.Col span={4}>
-                      <DateInput
-                        label={caption('CHQDATE', 'Cheque Date')}
-                        required={mandatory('CHQDATE')}
-                        value={form.cheque_date}
-                        onChange={(v) => set('cheque_date', v)}
-                      />
-                    </Grid.Col>
-                  )}
-                </>
-              )}
-              <Grid.Col span={6}>
-                <LookupSelect docId={DOC_ID} field="LEDGER" label={caption('LEDGER', 'Income Ledger')} required={mandatory('LEDGER')} value={form.ledger_id} onChange={(v) => set('ledger_id', v)} />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <LookupSelect docId={DOC_ID} field="LEDID" label={caption('LEDID', 'Cash / Bank Account')} required={mandatory('LEDID')} value={form.cash_bank_ledger_id} onChange={(v) => set('cash_bank_ledger_id', v)} />
-              </Grid.Col>
-              <Grid.Col span={6}>
-                <Select label={caption('VCHTYP', 'Voucher Type')} required={mandatory('VCHTYP')} data={['Cash', 'Bank', 'Card']} value={form.voucher_type} onChange={(v) => set('voucher_type', v)} />
-              </Grid.Col>
-              {/* Any field a Designer edit adds later that this screen doesn't
-                  already know about — renders itself automatically. */}
-              {extraDesignerFields.map((f) => (
-                <Grid.Col span={4} key={f.FldCode}>
-                  <DynamicField
-                    docId={DOC_ID}
-                    field={f}
-                    value={extra[f.FldCode]}
-                    onChange={(v) => setExtra((e) => ({ ...e, [f.FldCode]: v }))}
-                    required={mandatory(f.FldCode)}
-                  />
-                </Grid.Col>
-              ))}
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <TextInput label={caption('KNAME', 'Name')} required value={form.name} onChange={(e) => set('name', e.currentTarget.value)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <LookupSelect docId={DOC_ID} field="GOTHRAID" label={caption('GOTHRAID', 'Gothra')} required={mandatory('GOTHRAID')} value={form.gothra_id} onChange={(v) => set('gothra_id', v)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <LookupSelect docId={DOC_ID} field="NAKSHATRAID" label={caption('NAKSHATRAID', 'Nakshatra')} required={mandatory('NAKSHATRAID')} value={form.nakshatra_id} onChange={onNakshatraChange} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <LookupSelect docId={DOC_ID} field="RASHIID" label={caption('RASHIID', 'Rashi')} required={mandatory('RASHIID')} value={form.rashi_id} onChange={(v) => set('rashi_id', v)} />
+          </Grid.Col>
+          {/* Second devotee on this seva — tracked/saved already, but was
+              missing its own inputs entirely (metadata: visible, optional). */}
+          {!hidden('SECKNAME') && (
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+              <TextInput label={caption('SECKNAME', 'Name-2')} required={mandatory('SECKNAME')} value={form.name2} onChange={(e) => set('name2', e.currentTarget.value)} />
+            </Grid.Col>
+          )}
+          {!hidden('SECNAKSHATRAID') && (
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+              <LookupSelect docId={DOC_ID} field="SECNAKSHATRAID" label={caption('SECNAKSHATRAID', 'Nakshatra-2')} required={mandatory('SECNAKSHATRAID')} value={form.nakshatra2_id} onChange={(v) => set('nakshatra2_id', v)} />
+            </Grid.Col>
+          )}
+          {!hidden('SECRASHIID') && (
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+              <LookupSelect docId={DOC_ID} field="SECRASHIID" label={caption('SECRASHIID', 'Rashi-2')} required={mandatory('SECRASHIID')} value={form.rashi2_id} onChange={(v) => set('rashi2_id', v)} />
+            </Grid.Col>
+          )}
             </Grid>
+          </Card>
 
-            <Title order={5} mt="lg" mb="xs" style={{ position: 'relative', fontFamily: 'Marcellus, Georgia, serif' }}>
-              Seva Dates
-            </Title>
-            <Group align="end" mb="sm" style={{ position: 'relative' }}>
-              <DateInput label="Add date" value={newDate} onChange={setNewDate} />
-              <Button leftSection={<Plus size={16} />} onClick={addDate} variant="light" color="kumkum">
-                Add
-              </Button>
+          <Card withBorder p="lg">
+            <Title order={4} mb={2}>Booking and payment</Title>
+            <Text size="xs" c="dimmed" mb="md">Rate, payment mode and the accounts this receipt posts to.</Text>
+            <Grid>
+          {/* Rate/Document Date have no UtlDocDsgrFlds row for DocID 1263 (confirmed via live audit) — plain static labels are correct, nothing to wire. */}
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <NumberInput label="Rate" required value={form.rate} onChange={(v) => set('rate', v)} decimalScale={2} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <Select
+              label={caption('PAYMENT', 'Payment Mode')}
+              required={mandatory('PAYMENT')}
+              data={fieldListOptions(fieldMeta.PAYMENT, PAYMENT_MODES)}
+              value={form.payment_mode}
+              onChange={(v) => set('payment_mode', v)}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <DateInput label="Document Date" valueFormat="DD/MM/YYYY" value={form.doc_date} onChange={(v) => set('doc_date', v)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+            <TextInput
+              label={caption('RMKS', 'Seva Timing')}
+              required={mandatory('RMKS')}
+              placeholder="e.g. 7.30 AM"
+              value={form.timing_text}
+              onChange={(e) => set('timing_text', e.currentTarget.value)}
+            />
+          </Grid.Col>
+          {!hidden('ADDRES') && (
+            <Grid.Col span={{ base: 12, xl: 8 }}>
+              <TextInput
+                label={caption('ADDRES', 'Address')}
+                required={mandatory('ADDRES')}
+                value={form.address}
+                onChange={(e) => set('address', e.currentTarget.value)}
+              />
+            </Grid.Col>
+          )}
+          <Grid.Col span={12}>
+            <Group gap="xl">
+              <Checkbox
+                label="Regular Devotee"
+                checked={form.is_regular}
+                onChange={(e) => set('is_regular', e.currentTarget.checked)}
+              />
+              {/* Prasada is FLdBlnHide='Y'/ReadOnly='Y' on this screen — set
+                  via Admin Master > Bulk Update instead, not entered here. */}
             </Group>
-            <Table style={{ position: 'relative' }}>
-              <Table.Tbody>
-                {dates.map((d, i) => (
-                  <Table.Tr key={d.perform_date}>
-                    <Table.Td w={130}>{d.perform_date}</Table.Td>
-                    <Table.Td>
-                      <TextInput
-                        placeholder="Remarks for this date"
-                        size="xs"
-                        value={d.remarks}
-                        onChange={(e) => setDates((ds) => ds.map((x, xi) => (xi === i ? { ...x, remarks: e.currentTarget.value } : x)))}
-                      />
-                    </Table.Td>
-                    <Table.Td w={40}>
-                      <ActionIcon color="red" variant="subtle" onClick={() => removeDate(i)}>
-                        <Trash2 size={16} />
-                      </ActionIcon>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+          </Grid.Col>
+          {!hidden('REFNO') && (
+            <Grid.Col span={{ base: 12, sm: 6 }}>
+              <TextInput
+                label={caption('REFNO', 'Reference No')}
+                required={mandatory('REFNO')}
+                value={form.reference_no}
+                onChange={(e) => set('reference_no', e.currentTarget.value)}
+              />
+            </Grid.Col>
+          )}
+          {(!hidden('BANKNAME') || !hidden('CHQNO') || !hidden('CHQDATE')) && (
+            <>
+              {!hidden('BANKNAME') && (
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <Select
+                    label={caption('BANKNAME', 'Bank Name')}
+                    required={mandatory('BANKNAME')}
+                    data={BANK_NAMES}
+                    value={form.bank_name}
+                    onChange={(v) => set('bank_name', v)}
+                  />
+                </Grid.Col>
+              )}
+              {!hidden('CHQNO') && (
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <TextInput
+                    label={caption('CHQNO', 'Cheque No')}
+                    required={mandatory('CHQNO')}
+                    value={form.cheque_no}
+                    onChange={(e) => set('cheque_no', e.currentTarget.value)}
+                  />
+                </Grid.Col>
+              )}
+              {!hidden('CHQDATE') && (
+                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
+                  <DateInput
+                    label={caption('CHQDATE', 'Cheque Date')}
+                    required={mandatory('CHQDATE')}
+                    valueFormat="DD/MM/YYYY"
+                    value={form.cheque_date}
+                    onChange={(v) => set('cheque_date', v)}
+                  />
+                </Grid.Col>
+              )}
+            </>
+          )}
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <LookupSelect docId={DOC_ID} field="LEDGER" label={caption('LEDGER', 'Income Ledger')} required={mandatory('LEDGER')} value={form.ledger_id} onChange={(v) => set('ledger_id', v)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <LookupSelect docId={DOC_ID} field="LEDID" label={caption('LEDID', 'Cash / Bank Account')} required={mandatory('LEDID')} value={form.cash_bank_ledger_id} onChange={(v) => set('cash_bank_ledger_id', v)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, sm: 6 }}>
+            <Select label={caption('VCHTYP', 'Voucher Type')} required={mandatory('VCHTYP')} data={['Cash', 'Bank', 'Card']} value={form.voucher_type} onChange={(v) => set('voucher_type', v)} />
+          </Grid.Col>
+          {/* Any field a Designer edit adds later that this screen doesn't
+              already know about — renders itself automatically. */}
+          {extraDesignerFields.map((f) => (
+            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }} key={f.FldCode}>
+              <DynamicField
+                docId={DOC_ID}
+                field={f}
+                value={extra[f.FldCode]}
+                onChange={(v) => setExtra((e) => ({ ...e, [f.FldCode]: v }))}
+                required={mandatory(f.FldCode)}
+              />
+            </Grid.Col>
+          ))}
+            </Grid>
+          </Card>
 
-            <Card
-              mt="lg"
-              radius="md"
-              style={{
-                position: 'relative',
-                background: 'linear-gradient(120deg, #7A1F1F 0%, #5A1414 100%)',
-              }}
-            >
-              <Group justify="space-between">
-                <Text fw={600} c="#F4E1A6">
-                  {form.rate || 0} × {dates.length} day(s)
-                </Text>
-                <Title order={3} c="white" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-                  ₹ {totalAmt.toFixed(2)}
-                </Title>
+          <Card withBorder p="lg">
+            <Group justify="space-between" align="flex-end" mb="md" wrap="wrap">
+              <div>
+                <Title order={4} mb={2}>Seva dates</Title>
+                <Text size="xs" c="dimmed">Add every date this seva will be performed. The total is rate x number of dates.</Text>
+              </div>
+              <Group align="flex-end" gap="xs">
+                <DateInput label="Add date" valueFormat="DD/MM/YYYY" value={newDate} onChange={setNewDate} w={160} />
+                <Button leftSection={<Plus size={16} />} onClick={addDate} variant="light" color="kumkum">
+                  Add
+                </Button>
               </Group>
-            </Card>
-
-            <Group justify="flex-end" mt="lg" gap="xs" style={{ position: 'relative' }}>
-              <Kbd size="xs">Alt+S</Kbd>
-              <Button size="md" color="kumkum" loading={saving} onClick={onSave}>
-                Save &amp; Print
-              </Button>
             </Group>
+            {dates.length === 0 ? (
+              <EmptyState icon={CalendarPlus} title="No dates added yet" hint="Pick a date above and press Add. At least one date is required to save." />
+            ) : (
+              <Table.ScrollContainer minWidth={320}>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th w={130}>Date</Table.Th>
+                      <Table.Th>Remarks</Table.Th>
+                      <Table.Th w={48} aria-label="Remove" />
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {dates.map((d, i) => (
+                      <Table.Tr key={d.perform_date}>
+                        <Table.Td className="vt-num">{dayjs(d.perform_date).format('DD/MM/YYYY')}</Table.Td>
+                        <Table.Td>
+                          <TextInput
+                            aria-label={`Remarks for ${dayjs(d.perform_date).format('DD/MM/YYYY')}`}
+                            placeholder="Remarks for this date"
+                            size="xs"
+                            value={d.remarks}
+                            onChange={(e) => setDates((ds) => ds.map((x, xi) => (xi === i ? { ...x, remarks: e.currentTarget.value } : x)))}
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <ActionIcon
+                            color="red"
+                            variant="subtle"
+                            size={36}
+                            aria-label={`Remove ${dayjs(d.perform_date).format('DD/MM/YYYY')}`}
+                            onClick={async () => { if (await confirm({ title: 'Remove this seva date?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeDate(i) }}
+                          >
+                            <Trash2 size={16} />
+                          </ActionIcon>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            )}
           </Card>
-        </Grid.Col>
-
-        <Grid.Col span={4}>
-          <Card withBorder radius="lg" p="md" shadow="sm">
-            <Group gap={8} mb="sm">
-              <Receipt size={18} color="#7A1F1F" />
-              <Title order={5} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-                Recent Sevas
-              </Title>
-            </Group>
-            <Stack gap={0}>
-              {(recent || []).map((s, i) => (
-                <div key={s.SEVAID}>
-                  {i > 0 && <Divider my={8} />}
-                  <Group justify="space-between" wrap="nowrap">
-                    <div>
-                      <Text size="sm" fw={600}>
-                        {s.PrintSEVANO}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {s.KNAME} · ₹{s.TotalAmt}
-                      </Text>
-                    </div>
-                    <ActionIcon variant="light" color="kumkum" onClick={() => setPrintFor(s.SEVAID)}>
-                      <Printer size={16} />
-                    </ActionIcon>
-                  </Group>
-                </div>
-              ))}
-            </Stack>
-          </Card>
-        </Grid.Col>
-      </Grid>
+        </Stack>
+          </>
+        }
+        side={
+          <>
+        <SummaryCard
+          rows={[
+            { label: 'Rate', value: formatINR(form.rate) },
+            { label: 'Dates', value: dates.length },
+            { label: 'Payment', value: form.payment_mode || '-' },
+          ]}
+          total={formatINR(totalAmt)}
+          words={totalAmt}
+          warning={dates.length === 0 ? 'Add at least one seva date to save.' : null}
+          saving={saving}
+          onSave={onSave}
+        />
+        {lastSaved && (
+          <SavedPanel lines={[`Seva ${lastSaved.seva_no}`, `Receipt ${lastSaved.receipt_no}`]} onPrint={() => setPrintFor(lastSaved.seva_id)} />
+        )}
+        <RecentCard
+          title="Recent sevas"
+          icon={Receipt}
+          loading={recentLoading}
+          rows={recent || []}
+          emptyTitle="No sevas yet"
+          emptyHint="Saved bookings will be listed here."
+          renderRow={(s) => ({
+            key: s.SEVAID,
+            title: s.PrintSEVANO,
+            subtitle: `${s.KNAME} \u00b7 ${formatINR(s.TotalAmt)}`,
+            printLabel: `Print ${s.PrintSEVANO}`,
+            onPrint: () => setPrintFor(s.SEVAID),
+          })}
+        />
+          </>
+        }
+      />
 
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Seva Receipt" />
     </Stack>

@@ -1,5 +1,5 @@
-import { Card, Group, Stack, Tabs, Text, Title } from '@mantine/core'
-import { SlidersHorizontal, University, Database, Printer, Settings, ShieldLock, Import, Users } from 'lucide-react'
+import { Card, Stack, Tabs, Text } from '@mantine/core'
+import { SlidersHorizontal, University, Database, Printer, Monitor, Settings, ShieldLock, Import, Users } from 'lucide-react'
 import BulkUpdateTab from './BulkUpdateTab'
 import CompanyMasterTab from './CompanyMasterTab'
 import GlobalSettingsTab from './GlobalSettingsTab'
@@ -9,8 +9,7 @@ import UsersTab from './UsersTab'
 import PrintOptionsTab from './PrintOptionsTab'
 import DatabaseSettingsPanel from '../../components/DatabaseSettingsPanel'
 import LocalPrinterSetting from '../../components/LocalPrinterSetting'
-
-const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
+import { PageHeader } from '../../components/ui/EntryParts'
 
 /**
  * Single admin home for Users, Roles & Rights, menu visibility and Global
@@ -25,21 +24,11 @@ const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
  */
 export default function AdminMasterPage() {
   return (
-    <Stack>
-      <Group gap="sm">
-        <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 36, width: 36 }} />
-        <div>
-          <Title order={2} style={{ fontFamily: 'Marcellus, Georgia, serif' }}>
-            Admin Master
-          </Title>
-          <Text size="sm" c="dimmed">
-            Users, roles and structured permissions, menu visibility, global settings.
-          </Text>
-        </div>
-      </Group>
+    <Stack gap="lg" className="vt-rise">
+      <PageHeader title="Admin Master" subtitle="Users, roles and permissions, menu, global settings, company, printing and database." shortcuts={[]} />
 
       <Tabs defaultValue="users" color="kumkum" keepMounted={false}>
-        <Tabs.List>
+        <Tabs.List className="vt-admin-tabs" aria-label="Administration sections">
           <Tabs.Tab value="users" leftSection={<Users size={16} />}>
             Users
           </Tabs.Tab>
@@ -64,7 +53,7 @@ export default function AdminMasterPage() {
           <Tabs.Tab value="print-options" leftSection={<Printer size={16} />}>
             Print Options
           </Tabs.Tab>
-          <Tabs.Tab value="print-settings" leftSection={<Printer size={16} />}>
+          <Tabs.Tab value="print-settings" leftSection={<Monitor size={16} />}>
             Print Settings
           </Tabs.Tab>
         </Tabs.List>
@@ -88,7 +77,7 @@ export default function AdminMasterPage() {
           <BulkUpdateTab />
         </Tabs.Panel>
         <Tabs.Panel value="database" pt="md">
-          <Card withBorder radius="lg" p="lg" maw={460}>
+          <Card withBorder p="lg" maw={460}>
             <DatabaseSettingsPanel />
           </Card>
         </Tabs.Panel>
@@ -96,15 +85,19 @@ export default function AdminMasterPage() {
           <PrintOptionsTab />
         </Tabs.Panel>
         <Tabs.Panel value="print-settings" pt="md">
-          <Card withBorder radius="lg" p="lg" maw={520}>
+          <Card withBorder p="lg" maw={520}>
             <Text size="sm" c="dimmed" mb="md">
-              This PC's own printers (USB or network), used for direct, silent printing from this browser — see the
-              Print Agent panel in any Print dialog for the per-document version of this.
+              This PC's own printers (USB or network), used for direct, silent printing from this browser. The Print Agent
+              panel in any Print dialog has the per-document version of this.
             </Text>
             <LocalPrinterSetting />
           </Card>
         </Tabs.Panel>
       </Tabs>
+      <style>{`
+        .vt-admin-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+        .vt-admin-tabs .mantine-Tabs-tab { white-space: nowrap; min-height: 44px; flex-shrink: 0; padding-inline: 12px; }
+      `}</style>
     </Stack>
   )
 }
