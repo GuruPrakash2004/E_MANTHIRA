@@ -1,0 +1,31 @@
+<svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="markTitle">
+<title id="markTitle">vTemple gopuram mark</title>
+<defs>
+  <linearGradient id="mCircle" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#7A1F1F"/>
+    <stop offset="100%" stop-color="#4a1010"/>
+  </linearGradient>
+</defs>
+<circle cx="48.0" cy="48.0" r="46" fill="url(#mCircle)"/>
+<circle cx="48.0" cy="48.0" r="46" fill="none" stroke="#D4A437" stroke-width="2.5"/>
+
+<!-- kalasha finial -->
+<rect x="46.5" y="18" width="3" height="8" fill="#D4A437"/>
+<path d="M 43.0,26 Q 43.0,19 48.0,17 Q 53.0,19 53.0,26 Z" fill="#D4A437" stroke="#4a1010" stroke-width="0.5"/>
+<circle cx="48.0" cy="15" r="2.6" fill="#F4E1A6"/>
+
+<path d="M 39.0,33 L 44.0,26 L 52.0,26 L 57.0,33 Z" fill="#4a1010" stroke="#F4E1A6" stroke-width="1" stroke-opacity="0.8"/><line x1="44.0" y1="26" x2="52.0" y2="26" stroke="#F4E1A6" stroke-width="1" opacity="0.6"/><path d="M 33.0,41 L 39.0,33 L 57.0,33 L 63.0,41 Z" fill="#E07B16" stroke="#F4E1A6" stroke-width="1" stroke-opacity="0.8"/><line x1="39.0" y1="33" x2="57.0" y2="33" stroke="#F4E1A6" stroke-width="1" opacity="0.6"/><path d="M 27.0,50 L 33.0,41 L 63.0,41 L 69.0,50 Z" fill="#4a1010" stroke="#F4E1A6" stroke-width="1" stroke-opacity="0.8"/><line x1="33.0" y1="41" x2="63.0" y2="41" stroke="#F4E1A6" stroke-width="1" opacity="0.6"/><path d="M 21.0,60 L 27.0,50 L 69.0,50 L 75.0,60 Z" fill="#E07B16" stroke="#F4E1A6" stroke-width="1" stroke-opacity="0.8"/><line x1="27.0" y1="50" x2="69.0" y2="50" stroke="#F4E1A6" stroke-width="1" opacity="0.6"/>
+
+<!-- base plinth -->
+<path d="M 15.0,72 L 21.0,60 L 75.0,60 L 81.0,72 Z" fill="#4a1010" stroke="#D4A437" stroke-width="1.5"/>
+
+<!-- arched doorway -->
+<path d="M 40.0,72 L 40.0,64 Q 40.0,58.5 48.0,58.5 Q 56.0,58.5 56.0,64 L 56.0,72 Z" fill="#1A0505"/>
+
+<!-- pillars either side of doorway -->
+<rect x="32.0" y="61" width="4" height="11" fill="#E07B16" rx="1"/>
+<rect x="60.0" y="61" width="4" height="11" fill="#E07B16" rx="1"/>
+
+<!-- ground line -->
+<line x1="15.0" y1="72" x2="81.0" y2="72" stroke="#D4A437" stroke-width="2" stroke-linecap="round"/>
+</svg>

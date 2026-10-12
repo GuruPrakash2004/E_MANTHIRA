@@ -1,0 +1,59 @@
+{# Seva receipt — 80mm thermal slip. Mirrors the legacy fmtSeva_3Inc.rpt layout
+   (see vTemple_Analysis/06_vTemple_Overview.pptx slide 6 for the reference
+   printout this was drawn from). The MOCK bridge only has company fields +
+   record_id/selection_formula in context (see print_service/README.md) — the
+   real Crystal service queries TrnHdrSEVA itself and fills every field below;
+   this template renders placeholders for those so the layout can be reviewed
+   and swapped onto real data once the production print service is wired up. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  {# WeasyPrint's `size` validator only accepts 1-2 lengths, a page-size
+     keyword, or `auto`/`portrait`/`landscape` — NOT a length + `auto` mix
+     (see weasyprint/css/validation/properties.py:size). `80mm auto` silently
+     fails validation and falls back to the default A4 page, which is why the
+     receipt used to render pinned in the corner of a full A4 sheet. A fixed
+     generous height keeps the 80mm thermal width while fitting any
+     realistic receipt; real thermal printers/drivers cut the roll to the
+     printed content regardless of the nominal page length. #}
+  @page { size: 80mm 200mm; margin: 3mm; }
+  body { font-family: "Noto Sans", "Noto Sans Kannada", sans-serif; font-size: 11pt; width: 74mm; margin: 0; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  .rule { border-top: 1px solid #000; margin: 3px 0; }
+  table.fields td { padding: 1px 0; vertical-align: top; }
+  table.fields td.label { width: 34%; font-weight: bold; }
+  .kn { font-size: 10pt; }
+  .amount-box { border: 1px solid #000; border-radius: 4px; padding: 4px; text-align: center; font-weight: bold; font-size: 13pt; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <div class="center bold">{{ compname or "TEMPLE NAME" }}</div>
+  <div class="center">{{ add1 or "" }}</div>
+  <div class="center">{{ add2 or "" }}{{ ", " ~ add3 if add3 }}</div>
+  {% if mobno %}<div class="center">Ph: {{ mobno }}</div>{% endif %}
+  <div class="rule"></div>
+  <table style="width:100%"><tr>
+    <td>Date: {{ doc_date or "__/__/____" }}</td>
+    <td style="text-align:right">Receipt No: {{ print_no or record_id }}</td>
+  </tr></table>
+  <div class="rule"></div>
+  <div class="center bold kn">ಸೇವಾ ರಶೀದಿ</div>
+  <table class="fields" style="width:100%">
+    <tr><td class="label">Name</td><td>{{ name or "—" }}</td></tr>
+    <tr><td class="label">Gotra</td><td>{{ gothra or "—" }}</td></tr>
+    <tr><td class="label">Nakshatra</td><td>{{ nakshatra or "—" }}</td></tr>
+    <tr><td class="label">Rashi</td><td>{{ rashi or "—" }}</td></tr>
+    <tr><td class="label">Temple</td><td>{{ sannidhi or "—" }}</td></tr>
+    <tr><td class="label">Seva</td><td class="bold">{{ seva or "—" }}</td></tr>
+  </table>
+  <div class="rule"></div>
+  <div>Seva Date: {{ seva_date or "—" }}</div>
+  <div class="amount-box">₹ {{ amount or "0.00" }}</div>
+  <div style="margin-top:4px">{{ payment_mode or "" }} &middot; Issued by {{ issued_by or "" }}</div>
+  <div class="rule"></div>
+  <div style="font-size:8pt;color:#666">mock preview — record {{ record_id }} · {{ selection_formula }}</div>
+</body>
+</html>

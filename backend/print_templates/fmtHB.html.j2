@@ -1,0 +1,64 @@
+{# Hall booking receipt — A4/A5. Mirrors the legacy fmtHB.rpt layout (see
+   vTemple_Analysis/06_vTemple_Overview.pptx slide 6 for the reference
+   printout this was drawn from). See fmtSeva_3Inc.html.j2 for the note on
+   the mock bridge's limited context (company fields + record_id only). #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A5; margin: 12mm; }
+  body { font-family: "Noto Sans", sans-serif; font-size: 11pt; color: #1a1a1a; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  h1 { font-size: 15pt; margin: 0 0 2px; }
+  .rule { border-top: 2px solid #000; margin: 6px 0; }
+  .banner { background: #eee; text-align: center; font-weight: bold; padding: 4px; font-size: 13pt; }
+  table.hdr { width: 100%; }
+  table.hdr td { vertical-align: top; padding: 1px 0; }
+  table.items { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  table.items th, table.items td { border: 1px solid #999; padding: 4px 6px; font-size: 10pt; }
+  table.items th { background: #f2f2f2; }
+  .totals td { padding: 2px 6px; }
+  .totals .label { text-align: right; }
+  .net { font-weight: bold; font-size: 12pt; }
+</style>
+</head>
+<body>
+  <h1 class="center">{{ compname or "TEMPLE NAME" }}</h1>
+  <div class="center">{{ add1 or "" }}{{ ", " ~ add2 if add2 }}{{ ", " ~ add3 if add3 }}</div>
+  {% if mobno %}<div class="center">Phone No: {{ mobno }}</div>{% endif %}
+  <div class="banner">RECEIPT</div>
+  <table class="hdr">
+    <tr>
+      <td style="width:60%">
+        <div class="bold">Party's name &amp; Address with Mobile No.:</div>
+        <div>{{ customer_name or "—" }}</div>
+        <div>{{ customer_address or "" }}</div>
+        <div>{{ customer_mobile or "" }}</div>
+      </td>
+      <td>
+        <div>Bill Date : {{ doc_date or "" }}</div>
+        <div>Bill No : {{ print_no or record_id }}</div>
+        <div>Dates of Function : {{ start_date or "" }} to {{ end_date or "" }}</div>
+        <div>Name of Function : {{ function_name or "" }}</div>
+      </td>
+    </tr>
+  </table>
+  <div class="bold" style="margin-top:6px">Halls/Rooms Booked:</div>
+  <table class="items">
+    <tr><th>Slno</th><th>Name of the Hall / Room</th><th>Rate</th><th>Hrs.</th><th>Amount</th></tr>
+    <tr><td>1</td><td>{{ hall_name or "—" }}</td><td style="text-align:right">{{ rate or "" }}</td><td>{{ hours or "" }}</td><td style="text-align:right">{{ amount or "0.00" }}</td></tr>
+  </table>
+  <table class="totals" style="width:100%;margin-top:6px">
+    <tr><td class="label" colspan="4">Total Amount :</td><td style="text-align:right">{{ amount or "0.00" }}</td></tr>
+    <tr><td class="label net" colspan="4">NET AMOUNT :</td><td class="net" style="text-align:right">{{ net_pay or "0.00" }}</td></tr>
+  </table>
+  <div style="margin-top:8px">Amount In Words : {{ amount_in_words or "" }}</div>
+  <div class="rule"></div>
+  <div>Received Payment of Rs {{ amount or "0.00" }} by {{ payment_mode or "Cash" }} dated on {{ doc_date or "" }}</div>
+  <div class="center bold" style="margin-top:24px">For {{ compname or "TEMPLE NAME" }}</div>
+  <div class="center" style="margin-top:30px">Authorised Signatory</div>
+  <div style="font-size:8pt;color:#666;margin-top:12px">mock preview — record {{ record_id }} · {{ selection_formula }}</div>
+</body>
+</html>

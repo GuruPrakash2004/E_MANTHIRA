@@ -1,0 +1,52 @@
+{# Seva receipt — A4 office-printer format ("Seva A4 Print" option,
+   fmtSeva_A4.rpt, HP LaserJet 1020). Same fields as the 3-inch thermal slip
+   (fmtSeva_3Inc.html.j2) laid out for a full A4 sheet instead. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 20mm; }
+  body { font-family: "Noto Sans", "Noto Sans Kannada", sans-serif; font-size: 12pt; color: #1a1a1a; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  h1 { font-size: 18pt; margin: 0 0 2px; }
+  .rule { border-top: 2px solid #000; margin: 10px 0; }
+  .banner { background: #eee; text-align: center; font-weight: bold; padding: 6px; font-size: 14pt; }
+  .kn { font-size: 12pt; }
+  table.fields { width: 100%; margin-top: 10px; border-collapse: collapse; }
+  table.fields td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid #ddd; }
+  table.fields td.label { width: 30%; font-weight: bold; background: #fafafa; }
+  .amount-box { border: 1px solid #000; border-radius: 4px; padding: 10px; text-align: center; font-weight: bold; font-size: 16pt; margin-top: 16px; }
+  .sign { margin-top: 60px; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+  <h1 class="center">{{ compname or "TEMPLE NAME" }}</h1>
+  <div class="center">{{ add1 or "" }}{{ ", " ~ add2 if add2 }}{{ ", " ~ add3 if add3 }}</div>
+  {% if mobno %}<div class="center">Ph: {{ mobno }}</div>{% endif %}
+  <div class="banner kn">ಸೇವಾ ರಶೀದಿ &middot; SEVA RECEIPT</div>
+  <table style="width:100%;margin-top:10px"><tr>
+    <td>Date: <b>{{ doc_date or "" }}</b></td>
+    <td style="text-align:right">Receipt No: <b>{{ print_no or record_id }}</b></td>
+  </tr></table>
+  <table class="fields">
+    <tr><td class="label">Name</td><td>{{ name or "—" }}</td></tr>
+    <tr><td class="label">Gothra</td><td>{{ gothra or "—" }}</td></tr>
+    <tr><td class="label">Nakshatra</td><td>{{ nakshatra or "—" }}</td></tr>
+    <tr><td class="label">Rashi</td><td>{{ rashi or "—" }}</td></tr>
+    <tr><td class="label">Temple / Sannidhi</td><td>{{ sannidhi or "—" }}</td></tr>
+    <tr><td class="label">Seva</td><td class="bold">{{ seva or "—" }}</td></tr>
+    <tr><td class="label">Seva Date</td><td>{{ seva_date or "—" }}</td></tr>
+    <tr><td class="label">Payment Mode</td><td>{{ payment_mode or "—" }}</td></tr>
+  </table>
+  <div class="amount-box">₹ {{ amount or "0.00" }}</div>
+  {% if amount_in_words %}<div style="margin-top:6px">Amount In Words: {{ amount_in_words }}</div>{% endif %}
+  <div class="sign">
+    <div>Issued by: {{ issued_by or "" }}</div>
+    <div class="center">Authorised Signatory</div>
+  </div>
+  <div class="rule"></div>
+  <div style="font-size:8pt;color:#666">mock preview — record {{ record_id }} · {{ selection_formula }}</div>
+</body>
+</html>
