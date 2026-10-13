@@ -6,7 +6,7 @@ import dayjs from 'dayjs'
 import { FileSpreadsheet, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import * as mastersApi from '../../api/endpoints/masters'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 import * as tradeApi from '../../api/endpoints/tradeReports'
 import { ReportTable } from '../inventory/ReportParts'
 import { PageHeader } from '../../components/ui/EntryParts'
@@ -68,7 +68,7 @@ export default function StockAgeingPage() {
       </Card>
       <Group justify="flex-end" gap="sm">
         <Button variant="default" onClick={() => { setAsOn(new Date()); setRanges('0-30,31-60,61-90,91-'); setGroupIds([]) }}>Clear</Button>
-        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!(data?.rows || []).length} onClick={() => downloadCsv('Stock Ageing.csv', data.rows, columns.map((c, i) => ({ label: c.label, value: (r) => (i >= 5 ? r.buckets[i - 5] : r[c.key]) })))}>Export to Excel</Button>
+        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!(data?.rows || []).length} onClick={() => downloadXls('Stock Ageing.xls', data.rows, columns.map((c, i) => ({ label: c.label, value: (r) => (i >= 5 ? r.buckets[i - 5] : r[c.key]) })))}>Export to Excel</Button>
         <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>Close</Button>
       </Group>
       <ReportTable

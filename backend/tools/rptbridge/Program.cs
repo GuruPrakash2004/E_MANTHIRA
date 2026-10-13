@@ -143,9 +143,6 @@ namespace RptBridge
             if (req.ContainsKey("formula_values") && req["formula_values"] is Dictionary<string, object>)
                 foreach (var kv in (Dictionary<string, object>)req["formula_values"]) values[kv.Key] = Convert.ToString(kv.Value);
 
-            var shop = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (req.ContainsKey("shop_details") && req["shop_details"] is Dictionary<string, object>)
-                foreach (var kv in (Dictionary<string, object>)req["shop_details"]) shop[kv.Key] = Convert.ToString(kv.Value);
 
             string printer = null; int copies = 1;
             if (path == "/print")
@@ -158,7 +155,7 @@ namespace RptBridge
 
             lock (RenderLock)
             {
-                using (ReportDocument doc = Open(rpt, formula, values, shop))
+                using (ReportDocument doc = Open(rpt, formula, values))
                 {
                     if (path == "/render")
                     {
@@ -167,6 +164,7 @@ namespace RptBridge
                         {
                             var ms = new MemoryStream();
                             s.CopyTo(ms);
+                            foreach (var kv in PaperFacts(doc)) ctx.Response.AddHeader(kv.Key, kv.Value);
                             Send(ctx, 200, "application/pdf", ms.ToArray());
                         }
                     }
@@ -227,7 +225,7 @@ namespace RptBridge
             return full;
         }
 
-        private static ReportDocument Open(string rptPath, string selectionFormula, Dictionary<string, string> values, Dictionary<string, string> shop)
+        private static ReportDocument Open(string rptPath, string selectionFormula, Dictionary<string, string> values)
         {
             var doc = new ReportDocument();
             try
@@ -237,7 +235,6 @@ namespace RptBridge
                 Logon(doc);
                 foreach (ReportDocument sub in doc.Subreports) Logon(sub);
                 SetParameters(doc, values);
-                if (shop != null && shop.Count > 0) FillLabels(doc, shop);
                 if (!string.IsNullOrEmpty(selectionFormula)) doc.RecordSelectionFormula = selectionFormula;
                 return doc;
             }
@@ -266,6 +263,29 @@ namespace RptBridge
             // only for named paper sizes (A4, Letter...); a custom roll size (e.g. the 3-inch receipts) is not a size the PDF printer knows
             if (!Enum.IsDefined(typeof(CrystalDecisions.Shared.PaperSize), doc.PrintOptions.PaperSize)) return;
             try { doc.PrintOptions.PrinterName = _previewPrinter; } catch { }
+        }
+
+        // What the report itself says about its page. "Custom" = a paper size Windows has no name for (the 3-inch roll receipts);
+        // the backend trims such pages to the end of the content. Nothing here changes the report.
+        private static Dictionary<string, string> PaperFacts(ReportDocument doc)
+        {
+            var facts = new Dictionary<string, string>();
+            bool named = Enum.IsDefined(typeof(CrystalDecisions.Shared.PaperSize), doc.PrintOptions.PaperSize);
+            facts["X-Paper-Kind"] = named ? "Named" : "Custom";
+            facts["X-Paper-Name"] = doc.PrintOptions.PaperSize.ToString();
+            facts["X-Orientation"] = doc.PrintOptions.PaperOrientation.ToString();
+            double bottom = 0;
+            try { bottom = doc.PrintOptions.PageMargins.bottomMargin / 20.0; } catch { } // twips -> points
+            facts["X-Margin-Bottom-Pt"] = bottom.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            try
+            {
+                var pm = doc.PrintOptions.PageMargins;
+                Func<double, string> pt = v => (v / 20.0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture); // twips -> points
+                facts["X-Margins-Pt"] = pt(pm.leftMargin) + "," + pt(pm.topMargin) + "," + pt(pm.rightMargin) + "," + pt(bottom * 20.0);
+                facts["X-Content-Size-Pt"] = pt(doc.PrintOptions.PageContentWidth) + "x" + pt(doc.PrintOptions.PageContentHeight);
+            }
+            catch { }
+            return facts;
         }
 
         // Legacy: ServerName = server (or the DB/DSN name when gblnUseODBCinCrystal), DatabaseName = DB, then ApplyLogOnInfo on every table.
@@ -303,87 +323,13 @@ namespace RptBridge
             }
         }
 
-        // ---- label fill ------------------------------------------------------------------------------------------
-        // Some reports print a plain-text label ("PH NO:", "GSTIN No:") with no parameter behind it. For those, once the report is
-        // open, the shop value is appended after the label. Generic rules, never keyed on an object name:
-        //   * the whole text is just the label and ends with ':' or '-' (so "Ph No" beside a database field is left alone);
-        //   * it sits in a header section (report/page header) of the main report;
-        //   * the report declares no parameter for that detail (the parameter already shows it);
-        //   * nothing else starts to its right on the same line (that would be the value, a field or other text).
-        private static readonly KeyValuePair<string, Regex>[] LabelPatterns =
-        {
-            new KeyValuePair<string, Regex>("phone", MakeLabel(@"(ph(one)?|tel(ephone)?)(\.|\s*no\.?|\s*number)?")),
-            new KeyValuePair<string, Regex>("mobile", MakeLabel(@"(mob(ile)?|cell)(\.|\s*no\.?|\s*number)?")),
-            new KeyValuePair<string, Regex>("email", MakeLabel(@"e-?mail(\s*(id|address))?")),
-            new KeyValuePair<string, Regex>("web", MakeLabel(@"(web(site)?|url)")),
-            new KeyValuePair<string, Regex>("gstin", MakeLabel(@"gst(in)?(\s*no\.?|\s*number)?")),
-            new KeyValuePair<string, Regex>("pan", MakeLabel(@"pan(\s*no\.?|\s*number)?")),
-            new KeyValuePair<string, Regex>("cin", MakeLabel(@"cin(\s*no\.?|\s*number)?")),
-        };
-
-        private static readonly Dictionary<string, string[]> ParameterNames = new Dictionary<string, string[]>
-        {
-            { "phone", new[] { "phone", "phno", "tel", "telno", "telephone" } },
-            { "mobile", new[] { "mobile", "mobno", "mobileno" } },
-            { "email", new[] { "email", "emailid" } },
-            { "web", new[] { "web", "website", "url" } },
-            { "gstin", new[] { "gstin", "gstno" } },
-            { "pan", new[] { "pan", "panno" } },
-            { "cin", new[] { "cin", "cinno" } },
-        };
-
-        private static Regex MakeLabel(string body) { return new Regex(@"^\s*" + body + @"\s*[:\-]\s*$", RegexOptions.IgnoreCase); }
-
-        private static void FillLabels(ReportDocument doc, Dictionary<string, string> shop)
-        {
-            var declared = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (ParameterField pf in doc.ParameterFields) if (string.IsNullOrEmpty(pf.ReportName)) declared.Add(pf.Name);
-
-            foreach (Section sec in doc.ReportDefinition.Sections)
-            {
-                if (sec.Kind != AreaSectionKind.ReportHeader && sec.Kind != AreaSectionKind.PageHeader) continue;
-                var all = new List<ReportObject>();
-                foreach (ReportObject o in sec.ReportObjects) all.Add(o);
-
-                foreach (ReportObject o in all)
-                {
-                    TextObject to = o as TextObject;
-                    if (to == null || string.IsNullOrEmpty(to.Text)) continue;
-                    foreach (var lp in LabelPatterns)
-                    {
-                        if (!lp.Value.IsMatch(to.Text)) continue;
-                        string value;
-                        if (!shop.TryGetValue(lp.Key, out value) || string.IsNullOrWhiteSpace(value)) break;
-                        bool hasParameter = false;
-                        foreach (string n in ParameterNames[lp.Key]) if (declared.Contains(n)) { hasParameter = true; break; }
-                        if (hasParameter || SomethingToTheRight(all, o)) break;
-                        to.Text = to.Text.TrimEnd() + " " + value;
-                        break;
-                    }
-                }
-            }
-        }
-
-        // another object in the same section that overlaps the label's line and starts within ~1 inch (1440 twips) after its right edge
-        private static bool SomethingToTheRight(List<ReportObject> all, ReportObject label)
-        {
-            int right = label.Left + label.Width, top = label.Top, bottom = label.Top + label.Height;
-            foreach (ReportObject other in all)
-            {
-                if (ReferenceEquals(other, label)) continue;
-                bool sameLine = other.Top < bottom && other.Top + other.Height > top;
-                if (sameLine && other.Left >= right - 20 && other.Left - right < 1440) return true;
-            }
-            return false;
-        }
-
         // ---- /inspect (catalog of a report: used to build docs/legacy-analysis/rpt-catalog.md) --------------------
 
         private static void Inspect(HttpListenerContext ctx, string rpt)
         {
             lock (RenderLock)
             {
-                using (ReportDocument d = Open(rpt, "", new Dictionary<string, string>(), null))
+                using (ReportDocument d = Open(rpt, "", new Dictionary<string, string>()))
                 {
                     var info = new Dictionary<string, object>();
                     var ps = new List<string>(); foreach (ParameterField pf in d.ParameterFields) ps.Add(pf.Name + "|" + pf.ParameterValueType + "|" + (pf.ReportName ?? ""));
@@ -402,7 +348,7 @@ namespace RptBridge
                         if (to != null && !string.IsNullOrEmpty(to.Text)) texts.Add(o.Name + "|" + to.Text.Replace("\r", " ").Replace("\n", " "));
                     }
                     info["parameters"] = ps; info["formulas"] = fs; info["tables"] = ts; info["subreports"] = subs; info["texts"] = texts;
-                    info["selection"] = d.RecordSelectionFormula; info["paper"] = d.PrintOptions.PaperSize.ToString(); info["orientation"] = d.PrintOptions.PaperOrientation.ToString();
+                    info["selection"] = d.RecordSelectionFormula; info["paper"] = d.PrintOptions.PaperSize.ToString(); info["orientation"] = d.PrintOptions.PaperOrientation.ToString(); info["paper_facts"] = PaperFacts(d);
                     Send(ctx, 200, "application/json", Json.Serialize(info));
                 }
             }

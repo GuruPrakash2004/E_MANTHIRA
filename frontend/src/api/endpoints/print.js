@@ -58,8 +58,19 @@ export function agentDownloadUrl() {
 export const listFormats = (docId) => api.get('/print/options', { params: { doc_id: docId } }).then((r) => r.data)
 
 /** PDF Blob of one record in one format (blank option = the document's first format, like the desktop). */
-export const renderPdf = ({ docId, recordId, optionName }) =>
-  api.post('/print/render', { doc_id: docId, doc_id_value: recordId, option_name: optionName || null }, { responseType: 'blob' }).then((r) => r.data)
+export const renderPdf = ({ docId, recordId, optionName }) => renderPdfWithPage({ docId, recordId, optionName }).then((r) => r.blob)
+
+/** The dialog's preview: { pages: [{ png: base64, w, h }] (points), pdf: base64 } from one render of the original report. */
+export const renderPreview = ({ docId, recordId, optionName }) =>
+  api.post('/print/preview', { doc_id: docId, doc_id_value: recordId, option_name: optionName || null }).then((r) => r.data)
+
+/** Same, plus the page size in points the server fitted it to (a roll receipt is cut at the end of the receipt): { blob, page: { w, h } | null }. */
+export const renderPdfWithPage = ({ docId, recordId, optionName }) =>
+  api.post('/print/render', { doc_id: docId, doc_id_value: recordId, option_name: optionName || null }, { responseType: 'blob' }).then((r) => {
+    const w = Number(r.headers?.['x-page-width-pt'])
+    const h = Number(r.headers?.['x-page-height-pt'])
+    return { blob: r.data, page: w > 0 && h > 0 ? { w, h } : null }
+  })
 
 /** Remember this user's last format for the document. */
 export const savePreference = (docId, optionName) => put('/print/preference', { doc_id: docId, option_name: optionName })

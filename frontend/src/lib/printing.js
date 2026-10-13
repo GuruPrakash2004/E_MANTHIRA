@@ -27,6 +27,13 @@ export async function renderToUrl({ docId, recordId, optionName }) {
   return URL.createObjectURL(blob)
 }
 
+/** One render for the preview pane: the page images (real shape) plus an object URL of the same PDF for Print. */
+export async function renderToPreview({ docId, recordId, optionName }) {
+  const r = await printApi.renderPreview({ docId, recordId, optionName })
+  const bytes = Uint8Array.from(atob(r.pdf), (c) => c.charCodeAt(0))
+  return { url: URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })), pages: r.pages }
+}
+
 /** Remembers the user's choice; failure is harmless. */
 export function rememberFormat(docId, optionName) {
   return printApi.savePreference(docId, optionName).catch(() => {})

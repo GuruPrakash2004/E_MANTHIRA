@@ -10,7 +10,7 @@ import * as tradeApi from '../../api/endpoints/tradeReports'
 import * as reportsApi from '../../api/endpoints/reports'
 import ScaleGrid from '../../components/ui/ScaleGrid'
 import { PageHeader } from '../../components/ui/EntryParts'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
 
 const n2 = (v) => (v == null ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
@@ -123,7 +123,7 @@ export default function PartyOutstandingPage() {
       <Group justify="space-between">
         <Group gap="sm">
           <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!rows.length} onClick={() => window.print()}>Print</Button>
-          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadCsv(`${name} Outstanding.csv`, rows, columns.map((c) => ({ label: c.label, value: (r) => (c.render ? c.render(r) : r[c.key]) })))}>Excel</Button>
+          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls(`${name} Outstanding.xls`, rows, columns.map((c) => ({ label: c.label, value: (r) => (c.render ? c.render(r) : r[c.key]) })))}>Excel</Button>
         </Group>
         <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>Close</Button>
       </Group>

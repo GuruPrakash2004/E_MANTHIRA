@@ -120,9 +120,9 @@ def export_custom_report(crid: int, body: CustomRunBody, conn: Connection = Depe
 
     result = custom_reports_service.run_report(conn, crid=crid, date_filters=body.date_filters, list_filters=body.list_filters)
     return Response(
-        content=custom_reports_service.export_xlsx(result),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="report.xlsx"'},
+        content=custom_reports_service.export_xls(result),
+        media_type="application/vnd.ms-excel",
+        headers={"Content-Disposition": 'attachment; filename="report.xls"'},
     )
 
 
@@ -151,7 +151,7 @@ def email_custom_report(crid: int, body: CustomEmailBody, conn: Connection = Dep
             raise HTTPException(422, f"The below email address is not valid... {a}")
     result = custom_reports_service.run_report(conn, crid=crid, date_filters=body.date_filters, list_filters=body.list_filters)
     name = re.sub(r"[^A-Za-z0-9_ -]", "", result["title"]) or "Report"
-    mail.send_mail(conn, to, body.subject or result["title"], body.message or f"Please find the report {result['title']} attached.", attachment=(f"{name}.xlsx", custom_reports_service.export_xlsx(result)), cc=cc)
+    mail.send_mail(conn, to, body.subject or result["title"], body.message or f"Please find the report {result['title']} attached.", attachment=(f"{name}.xls", custom_reports_service.export_xls(result)), cc=cc)
     return {"message": f"Mail sent to {len(to)} recipient(s)"}
 
 

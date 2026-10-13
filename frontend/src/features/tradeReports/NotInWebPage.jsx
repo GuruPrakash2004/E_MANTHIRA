@@ -82,11 +82,6 @@ const ENTRIES = {
     why: 'A one-time migration tool that reads data from an older version of the software into this database. Run it from the Windows app during a migration; it is not available from the browser.',
     evidence: () => [],
   },
-  'DOWNLOAD LATEST EXE': {
-    form: 'frmUpdateExe',
-    why: 'Downloads a new copy of the Windows program. The web version updates itself for everyone, so there is nothing to download.',
-    evidence: () => [],
-  },
 }
 
 export default function NotInWebPage() {

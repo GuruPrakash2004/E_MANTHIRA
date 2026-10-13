@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { FileSpreadsheet, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 import * as tradeApi from '../../api/endpoints/tradeReports'
 import { ReportTable } from '../inventory/ReportParts'
 import { PageHeader } from '../../components/ui/EntryParts'
@@ -48,7 +48,7 @@ export default function StockLevelPage() {
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 4 }}>
             <Group justify="flex-end" gap="sm">
-              <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!(data?.rows || []).length} onClick={() => downloadCsv(`${template}.csv`, data.rows, data.columns.map((c, i) => ({ label: c, value: (r) => r[i] })))}>Excel</Button>
+              <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!(data?.rows || []).length} onClick={() => downloadXls(`${template}.xls`, data.rows, data.columns.map((c, i) => ({ label: c, value: (r) => r[i] })))}>Excel</Button>
               <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>Close</Button>
             </Group>
           </Grid.Col>

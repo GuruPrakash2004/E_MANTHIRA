@@ -8,7 +8,7 @@ import dayjs from 'dayjs'
 import { api } from '../../api/api'
 import ScaleGrid from '../../components/ui/ScaleGrid'
 import { PageHeader } from '../../components/ui/EntryParts'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
 
 const n2 = (v) => (v == null ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
@@ -95,7 +95,7 @@ export function DailySalesPage() {
       <Filters s={s} daily />
       <ScaleGrid columns={columns} rows={rows} loading={s.loading} emptyTitle={r ? 'No sales in this period' : 'Press View'} emptyHint={r ? undefined : 'Choose the dates and press View.'} />
       <Group>
-        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadCsv('Daily Sales Report.csv', rows, columns.map((c) => ({ label: c.label, value: (x) => (c.render ? c.render(x) : x[c.key]) })))}>Export to Excel</Button>
+        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls('Daily Sales Report.xls', rows, columns.map((c) => ({ label: c.label, value: (x) => (c.render ? c.render(x) : x[c.key]) })))}>Export to Excel</Button>
       </Group>
     </Stack>
   )
@@ -125,7 +125,7 @@ export function ProductSalesPage() {
       <Filters s={s} />
       <ScaleGrid columns={columns} rows={rows} loading={s.loading} emptyTitle={r ? 'No sales in this period' : 'Press View'} emptyHint={r ? undefined : 'Choose the dates and press View.'} />
       <Group>
-        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadCsv('Product Sales Summary.csv', rows, columns.map((c) => ({ label: c.label, value: (x) => (c.render ? c.render(x) : x[c.key]) })))}>Export to Excel</Button>
+        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls('Product Sales Summary.xls', rows, columns.map((c) => ({ label: c.label, value: (x) => (c.render ? c.render(x) : x[c.key]) })))}>Export to Excel</Button>
       </Group>
     </Stack>
   )

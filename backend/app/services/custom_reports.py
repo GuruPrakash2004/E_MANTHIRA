@@ -205,23 +205,17 @@ def run_report(conn: Connection, *, crid: int, date_filters: list[dict] | None =
     }
 
 
-def export_xlsx(result: dict) -> bytes:
-    from openpyxl import Workbook
+def export_xls(result: dict) -> bytes:
+    from app.utils.xls import build_xls
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = (result["title"] or "Report")[:31].replace("/", "-")
-    ws.append([result["title"]])
+    rows: list[list] = [[result["title"]]]
     if result["period_text"] or result["filter_text"]:
-        ws.append([f"{result['period_text']} {result['filter_text']}".strip()])
-    ws.append([c["caption"] for c in result["columns"]])
-    for r in result["rows"]:
-        ws.append([v.isoformat(sep=" ") if isinstance(v, (datetime, date)) else (float(v) if hasattr(v, "as_tuple") else v) for v in r])
+        rows.append([f"{result['period_text']} {result['filter_text']}".strip()])
+    rows.append([c["caption"] for c in result["columns"]])
+    rows.extend(list(r) for r in result["rows"])
     if result["totals"]:
-        ws.append(["Grand Total" if i == 0 else result["totals"].get(c["key"]) for i, c in enumerate(result["columns"])])
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+        rows.append(["Grand Total" if i == 0 else result["totals"].get(c["key"]) for i, c in enumerate(result["columns"])])
+    return build_xls(result["title"] or "Report", rows)
 
 
 # ---------------------------------------------------------------- Assign Rights (UtlReportsCRRights)

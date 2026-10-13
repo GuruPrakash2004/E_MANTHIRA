@@ -9,7 +9,7 @@ import { notifications } from '@mantine/notifications'
 import * as reportsApi from '../../api/endpoints/reports'
 import EmptyState from '../../components/ui/EmptyState'
 import { formatINR, isoDate } from '../../utils/format'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 
 const d = (v) => (v ? dayjs(v).format('DD/MM/YYYY') : '')
 const m = (v) => (v == null ? '' : formatINR(v))
@@ -74,7 +74,7 @@ export default function HallVoucherPanel() {
           <Button color="kumkum" leftSection={<Eye size={16} />} loading={run.isPending} disabled={!from || !to} onClick={() => run.mutate()}>
             View
           </Button>
-          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!result?.rows?.length} onClick={() => downloadCsv('Hall Booking With Voucher Detail.csv', result.rows, COLUMNS)}>
+          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!result?.rows?.length} onClick={() => downloadXls('Hall Booking With Voucher Detail.xls', result.rows, COLUMNS)}>
             Export to Excel
           </Button>
           <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>

@@ -84,7 +84,7 @@ def send_mail(conn: Connection, to: list[str], subject: str, body: str, attachme
     msg.set_content(body)
     if attachment:
         ext = attachment[0].rsplit(".", 1)[-1].lower()
-        subtype = {"xlsx": "vnd.openxmlformats-officedocument.spreadsheetml.sheet", "csv": "csv"}.get(ext, "pdf")
+        subtype = {"xls": "vnd.ms-excel", "csv": "csv"}.get(ext, "pdf")
         msg.add_attachment(attachment[1], maintype="text" if ext == "csv" else "application", subtype=subtype, filename=attachment[0])
     port = int(cfg["port"] or 587)
     try:

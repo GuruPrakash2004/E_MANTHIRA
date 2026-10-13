@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Download, FileText, Printer } from 'lucide-react'
 import * as printApi from '../api/endpoints/print'
 import { agentNow, detectAgent, getRememberedPrinter, rememberPrinter, warmAgent } from '../lib/localPrint'
-import { loadFormats, pickFormat, printErrorMessage, printInBrowser, printOnServer, printOnThisPc, renderToUrl, rememberFormat } from '../lib/printing'
+import { loadFormats, pickFormat, printErrorMessage, printInBrowser, printOnServer, printOnThisPc, renderToPreview, renderToUrl, rememberFormat } from '../lib/printing'
 
 const BROWSER = 'browser'
 const SERVER = 'server'
@@ -20,6 +20,7 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
   const [target, setTarget] = useState(null) // 'browser' | 'server' | 'pc:<printer>'
   const [targetTouched, setTargetTouched] = useState(false)
   const [pdfUrl, setPdfUrl] = useState(null)
+  const [pages, setPages] = useState([]) // [{ png, w, h }]: the report's pages at their real shape (points)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [printing, setPrinting] = useState(false)
@@ -90,12 +91,14 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
     setLoading(true)
     setError('')
     setPdfUrl(null)
-    renderToUrl({ docId, recordId, optionName: selected })
-      .then((url) => {
+    setPages([])
+    renderToPreview({ docId, recordId, optionName: selected })
+      .then(({ url, pages: shown }) => {
         if (cancelled) return URL.revokeObjectURL(url)
         if (urlRef.current) URL.revokeObjectURL(urlRef.current)
         urlRef.current = url
         setPdfUrl(url)
+        setPages(shown)
       })
       .catch(async (err) => !cancelled && setError(await printErrorMessage(err)))
       .finally(() => !cancelled && setLoading(false))
@@ -216,6 +219,11 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
                         <Text size="xs" c="dimmed" ff="monospace" truncate>
                           {f.rpt_file}
                         </Text>
+                        {!f.available && (
+                          <Text size="xs" c="red">
+                            This report file is not in the RPT folder.
+                          </Text>
+                        )}
                         {f.printer_name && (
                           <Text size="xs" c="dimmed">
                             Printer: {f.printer_name}
@@ -268,7 +276,7 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
               Up/Down format · Enter print · Esc close
             </Text>
           </Group>
-          <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', alignItems: 'stretch', justifyContent: 'center', padding: '0.75rem' }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '0.75rem' }}>
             {loading && <Loader mt="xl" color="kumkum" />}
             {!loading && error && (
               <Alert color="red" variant="light" icon={<AlertTriangle size={18} />} title="Could not prepare the print" maw={520} mt="xl" style={{ alignSelf: 'flex-start' }}>
@@ -276,7 +284,18 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
               </Alert>
             )}
             {!loading && !error && pdfUrl && (
-              <iframe title="Print preview" src={`${pdfUrl}#toolbar=0&navpanes=0&view=Fit`} style={{ width: '100%', height: '100%', minHeight: 0, border: 'none', background: 'var(--vt-surface)', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }} />
+              // The report's own page(s) as images: A4 stays A4, a 3-inch receipt stays a narrow slip cut at the end of the receipt.
+              // 1.5 px per point (about 108 dpi) keeps text readable; a wide page shrinks to the pane, never stretches.
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: '100%' }}>
+                {pages.map((p, i) => (
+                  <img
+                    key={i}
+                    alt={`Page ${i + 1} of ${format?.rpt_file || 'the report'}`}
+                    src={`data:image/png;base64,${p.png}`}
+                    style={{ width: p.w * 1.5, maxWidth: '100%', height: 'auto', background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', display: 'block' }}
+                  />
+                ))}
+              </div>
             )}
             {!loading && !error && !pdfUrl && (
               <Text c="dimmed" mt="xl">

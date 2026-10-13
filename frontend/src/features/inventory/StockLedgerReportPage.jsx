@@ -10,7 +10,7 @@ import * as inventoryApi from '../../api/endpoints/inventory'
 import ItemListPicker from './ItemListPicker'
 import ScaleGrid from '../../components/ui/ScaleGrid'
 import { PageHeader } from '../../components/ui/EntryParts'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
 
 const q2 = (v) => (v == null ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
@@ -103,7 +103,7 @@ export default function StockLedgerReportPage() {
       )}
 
       <Group justify="space-between">
-        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!result?.rows?.length} onClick={() => downloadCsv('Stock Ledger.csv', result.rows, columns.map((c) => ({ label: c.label, value: (r) => (c.key === 'doc_date' ? (r.doc_date ? dayjs(r.doc_date).format('DD/MM/YYYY') : '') : r[c.key]) })))}>
+        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!result?.rows?.length} onClick={() => downloadXls('Stock Ledger.xls', result.rows, columns.map((c) => ({ label: c.label, value: (r) => (c.key === 'doc_date' ? (r.doc_date ? dayjs(r.doc_date).format('DD/MM/YYYY') : '') : r[c.key]) })))}>
           Export to Excel
         </Button>
         <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>Close</Button>

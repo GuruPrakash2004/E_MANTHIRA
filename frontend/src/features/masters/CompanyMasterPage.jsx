@@ -14,6 +14,7 @@ import { isFieldHidden, isFieldMandatory } from '../../utils/docFieldConditions'
 import EmptyState from '../../components/ui/EmptyState'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
+import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
 
 const COMPANY_DOC_ID = 17 // DocID 17 = Company; MstComp is a single row (CompID 1)
@@ -136,14 +137,8 @@ function DocumentsTab() {
     }
   }
   function onExport() {
-    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    const csv = ['File Type,File Name,Remarks', ...files.map((f) => [fileExt(f.AFileName), shownName(f.AFileName), f.FileDesc || f.ADescription || ''].map(esc).join(','))].join('\r\n')
-    const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'company-documents.csv'
-    a.click()
-    URL.revokeObjectURL(url)
+    const rows = files.map((f) => [fileExt(f.AFileName), shownName(f.AFileName), f.FileDesc || f.ADescription || ''])
+    downloadXls('company-documents.xls', rows, ['File Type', 'File Name', 'Remarks'].map((label, i) => ({ label, value: (r) => r[i] })))
   }
 
   return (

@@ -355,7 +355,8 @@ on('POST', '/masters/:doc/import', ({ db, p }) => {
   const rows = ['Sample row A', 'Sample row B', 'Sample row C'].map((n, i) => ({ row: i + 2, status: i === 2 ? 'error' : 'ok', id: m ? Math.max(...m.rows.map((r) => r[m.meta.id_col])) + i + 1 : 0, message: 'Code already exists' }))
   return { created: 2, failed: 1, rows }
 })
-on('GET', '/masters/:doc/import-template', () => new Blob(['Code,Name\n'], { type: 'text/csv' }))
+on('GET', '/masters/:doc/import-template', () => new Blob(['xls'], { type: 'application/vnd.ms-excel' }))
+on('POST', '/export/xls', () => new Blob(['xls'], { type: 'application/vnd.ms-excel' }))
 on('GET', '/masters/:doc/:row/attachments', ({ db, p }) => db.attachments[`${p[0]}:${p[1]}`] || [])
 on('POST', '/masters/:doc/:row/attachments', ({ db, p, body }) => {
   const file = body?.get?.('file')
@@ -645,7 +646,8 @@ on('PUT', '/bulk-update/:id/rows', ({ db, p, body }) => {
 
 // printing
 on('GET', '/print/options', ({ q }) => DEMO_PRINT_OPTIONS_BY_DOC(Number(q.doc_id)).map((o) => ({ ...o, selected: o.preferred, printer_name: o.direct_printer_name })))
-on('POST', '/print/render', ({ body }) => demoPdfBlob(`${DOC_NAMES[body.doc_id] || 'Document'} #${body.doc_id_value}`))
+on('POST', '/print/render', ({ body }) => demoPdfBlob(`${DOC_NAMES[body.doc_id] || 'Document'} #${body.doc_id_value}`)) // demo has no page-size headers: the preview falls back to a full-width frame
+on('POST', '/print/preview', ({ body }) => ({ format: body.option_name || '', pdf: 'JVBERi0xLjEKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqIDIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iaiAzIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgMjAwIDIwMF0+PmVuZG9iagp0cmFpbGVyPDwvUm9vdCAxIDAgUj4+CiUlRU9G', pages: [{ png: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', w: 595, h: 842 }] })) // demo: a blank A4 stand-in
 on('PUT', '/print/preference', () => ({ message: 'Saved' }))
 on('POST', '/print/print', ({ body }) => ({ message: 'Demo: nothing was sent to a printer', printer_name: body.printer_name || '', copies: body.copies || 1 }))
 on('GET', '/print/:doc/options', ({ p }) => DEMO_PRINT_OPTIONS_BY_DOC(Number(p[0])))
@@ -729,7 +731,7 @@ on('POST', '/utilities/authorise/:id', ({ db, p, body }) => {
 })
 const screenDocs = (db) => (db.screenDocs ||= [
   { doc_id: 1, screen: 'Item Master', group: 'User guide', file: 'item-master-guide.pdf', remarks: 'How to add items', available: false },
-  { doc_id: 2, screen: 'Item Master', group: 'Formats', file: 'item-import-format.xlsx', remarks: 'Import layout', available: false },
+  { doc_id: 2, screen: 'Item Master', group: 'Formats', file: 'item-import-format.xls', remarks: 'Import layout', available: false },
 ])
 on('GET', '/utilities/screen-docs/screens', ({ db }) => [...new Set(['Item Master', 'Seva Entry', 'Donation Entry', ...screenDocs(db).map((d) => d.screen)])].sort().map((c) => ({ caption: c, count: screenDocs(db).filter((d) => d.screen === c).length })))
 on('GET', '/utilities/screen-docs', ({ db, q }) => screenDocs(db).filter((d) => d.screen === q.screen).map((d, i) => ({ ...d, sl_no: i + 1 })))

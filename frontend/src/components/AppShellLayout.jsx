@@ -89,7 +89,6 @@ const CAPTION_ROUTE = {
   'Barcode Ammendment': '/not-in-web?c=Barcode%20Ammendment',
   'Voice Command Alternatives': '/not-in-web?c=Voice%20Command%20Alternatives',
   'Import Legacy Data': '/not-in-web?c=Import%20Legacy%20Data',
-  'DOWNLOAD LATEST EXE': '/not-in-web?c=DOWNLOAD%20LATEST%20EXE',
 }
 
 function routeFor(item) {
@@ -129,7 +128,7 @@ const EXTRA_SEARCH_LINKS = [
   { caption: 'Subsidiary Reports', to: '/reports?tab=catalog', group: 'Reports', keywords: 'catalog subsidiary' },
   { caption: 'PDF Generator', to: '/reports/pdf-generator', group: 'Reports', keywords: 'pdf bulk receipts print' },
   { caption: 'Audit Trail', to: '/audit-trail', group: 'Administration', adminOnly: true, keywords: 'log history who changed' },
-  { caption: 'Import from Excel', to: '/settings/import-excel', group: 'Administration', adminOnly: true, keywords: 'upload xlsx bulk import' },
+  { caption: 'Import from Excel', to: '/settings/import-excel', group: 'Administration', adminOnly: true, keywords: 'upload xls bulk import' },
   { alias: true, caption: 'Admin Master', to: '/settings/admin-master', group: 'Administration', adminOnly: true, keywords: 'settings administration' },
   { alias: true, caption: 'Users', to: '/settings/admin-master', group: 'Admin Master', adminOnly: true, keywords: 'user accounts password reset add staff' },
   { caption: 'Roles & Rights', to: '/settings/admin-master?tab=roles', group: 'Admin Master', adminOnly: true, keywords: 'permissions security access role' },

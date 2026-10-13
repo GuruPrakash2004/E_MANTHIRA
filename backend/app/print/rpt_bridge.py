@@ -1,13 +1,15 @@
 """
 Bridge client — sends a `PrintJob` (app/print/rpt_print.py) to the print service over HTTP and returns the PDF / confirms
-the print. The backend never opens a .rpt; the bridge (a Windows .NET exe with the Crystal runtime, or the fallback mock)
-owns that. Contract: POST /render -> application/pdf, POST /print -> 200, GET /health.
+the print. The backend never opens a .rpt; the bridge (a Windows .NET exe with the Crystal runtime) owns that. There is no
+fallback renderer: no bridge, no printout. Contract: POST /render -> application/pdf, POST /print -> 200, GET /health.
 
 Every call carries the shared key in `X-Rpt-Bridge-Key` (RPT_BRIDGE_KEY), uses a short connect timeout so a dead bridge
 fails fast, and a longer read timeout because Crystal can take a while on a big report. Any failure is turned into plain
 advice by `friendly_error()`; the raw text is logged, not shown to the counter staff.
 """
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import logging
 import re
@@ -141,22 +143,43 @@ def health() -> dict:
         return {"ok": False, "reason": _raise(exc).detail}
 
 
-def render(job: PrintJob, record_data: dict | None = None) -> bytes:
-    """POST /render — returns the PDF bytes."""
+@dataclass(frozen=True)
+class Rendered:
+    """The bridge's PDF plus what the .rpt itself says about its paper (Named = A4 / Letter ..., Custom = roll size)."""
+
+    pdf: bytes
+    paper_kind: str = "Named"
+    paper_name: str = ""
+    orientation: str = ""
+    bottom_margin_pt: float = 0.0
+
+
+def render(job: PrintJob) -> Rendered:
+    """POST /render — the PDF exported from the original .rpt, with the paper facts from its response headers."""
     try:
         resp = httpx.post(
             f"{_base_url()}/render",
-            json={**job.to_bridge_payload(), "record_data": record_data or {}, "format": "pdf"},
+            json={**job.to_bridge_payload(), "format": "pdf"},
             headers=_headers(),
             timeout=_timeout(),
         )
         resp.raise_for_status()
-        return resp.content
+        try:
+            margin = float(resp.headers.get("X-Margin-Bottom-Pt", "0") or 0)
+        except ValueError:
+            margin = 0.0
+        return Rendered(
+            pdf=resp.content,
+            paper_kind=resp.headers.get("X-Paper-Kind", "Named"),
+            paper_name=resp.headers.get("X-Paper-Name", ""),
+            orientation=resp.headers.get("X-Orientation", ""),
+            bottom_margin_pt=margin,
+        )
     except Exception as exc:  # noqa: BLE001
         raise _raise(exc) from exc
 
 
-def print_to_printer(job: PrintJob, record_data: dict | None = None) -> None:
+def print_to_printer(job: PrintJob) -> None:
     """POST /print — the bridge sends the job to `job.printer_name` (legacy operation "D"), `job.copies` copies."""
     if not job.printer_name:
         raise HTTPException(
@@ -166,7 +189,7 @@ def print_to_printer(job: PrintJob, record_data: dict | None = None) -> None:
     try:
         resp = httpx.post(
             f"{_base_url()}/print",
-            json={**job.to_bridge_payload(), "record_data": record_data or {}, "printer_name": job.printer_name, "copies": job.copies},
+            json={**job.to_bridge_payload(), "printer_name": job.printer_name, "copies": job.copies},
             headers=_headers(),
             timeout=_timeout(),
         )

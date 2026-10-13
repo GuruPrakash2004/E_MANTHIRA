@@ -8,7 +8,7 @@ import * as metaApi from '../../api/endpoints/meta'
 import * as excelImportApi from '../../api/endpoints/excelImport'
 import EmptyState from '../../components/ui/EmptyState'
 import UtilityBanner from '../../components/ui/UtilityBanner'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 
 const INFO_ROWS = [
   ['Data Type', 'data_type'],
@@ -47,7 +47,7 @@ export default function ImportFromExcelPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `import_template_${docId}.xlsx`
+      a.download = `import_template_${docId}.xls`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
@@ -127,9 +127,9 @@ export default function ImportFromExcelPage() {
             <FileInput
               className="vt-field-required"
               label="Select Excel File"
-              placeholder="Choose the filled-in .xlsx file"
+              placeholder="Choose the filled-in .xls file"
               leftSection={<FileSpreadsheet size={16} />}
-              accept=".xlsx,.xls"
+              accept=".xls"
               value={file}
               onChange={(f) => {
                 setFile(f)
@@ -209,7 +209,7 @@ export default function ImportFromExcelPage() {
                 variant="default"
                 leftSection={<FileSpreadsheet size={16} />}
                 disabled={!loaded?.rows?.length}
-                onClick={() => downloadCsv(`${docName || 'import'}.csv`, loaded.rows, loaded.columns.map((c) => ({ label: c.label, value: (r) => r[c.key] })))}
+                onClick={() => downloadXls(`${docName || 'import'}.xls`, loaded.rows, loaded.columns.map((c) => ({ label: c.label, value: (r) => r[c.key] })))}
               >
                 Export to excel
               </Button>

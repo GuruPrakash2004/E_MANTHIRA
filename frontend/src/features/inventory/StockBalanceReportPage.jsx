@@ -9,7 +9,7 @@ import * as inventoryApi from '../../api/endpoints/inventory'
 import ItemListPicker from './ItemListPicker'
 import ScaleGrid from '../../components/ui/ScaleGrid'
 import { PageHeader } from '../../components/ui/EntryParts'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
 import dayjs from 'dayjs'
 
@@ -122,7 +122,7 @@ export default function StockBalanceReportPage() {
 
       <Group justify="space-between" wrap="wrap">
         <Group gap="sm">
-          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadCsv('Stock Balance.csv', rows, columns.map((c) => ({ label: c.label, value: (r) => (c.num ? (r[c.key] == null ? '' : Number(r[c.key]).toFixed(2)) : r[c.key]) })))}>Excel</Button>
+          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls('Stock Balance.xls', rows, columns.map((c) => ({ label: c.label, value: (r) => (c.num ? (r[c.key] == null ? '' : Number(r[c.key]).toFixed(2)) : r[c.key]) })))}>Excel</Button>
           <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!rows.length} onClick={() => window.print()}>Print</Button>
           <Checkbox color="kumkum" label="Do Not Show Items With Zero Balance" checked={hideZero} onChange={(e) => setHideZero(e.currentTarget.checked)} />
         </Group>

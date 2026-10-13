@@ -16,6 +16,7 @@ import LookupSelect from '../../components/LookupSelect'
 import StatCard from '../../components/ui/StatCard'
 import EmptyState from '../../components/ui/EmptyState'
 import { formatINR } from '../../utils/format'
+import { downloadXls } from '../../utils/xls'
 
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
 const SEVA_DOC_ID = 1263
@@ -36,31 +37,6 @@ function SubsidiaryReportsCatalog({ onOpenTab }) {
 }
 
 const money = (v) => formatINR(v)
-
-function toCsv(rows, columns) {
-  const header = columns.map((c) => c.label).join(',')
-  const lines = rows.map((r) =>
-    columns
-      .map((c) => {
-        const v = c.value ? c.value(r) : r[c.key]
-        const s = v == null ? '' : String(v)
-        return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s
-      })
-      .join(',')
-  )
-  return [header, ...lines].join('\r\n')
-}
-
-function downloadCsv(filename, rows, columns) {
-  const csv = toCsv(rows, columns)
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
 
 const PRESETS = [
   { label: 'Today', range: () => [dayjs(), dayjs()] },
@@ -208,7 +184,7 @@ function ReportPanel({ runFn, columns, filename, withSevaFilters = true, extraSu
 
   return (
     <Stack gap="lg">
-      <FilterCard actions={<RunButtons loading={loading} onRun={onRun} canExport={Boolean(result?.rows?.length)} onExport={() => downloadCsv(filename, result.rows, columns)} />}>
+      <FilterCard actions={<RunButtons loading={loading} onRun={onRun} canExport={Boolean(result?.rows?.length)} onExport={() => downloadXls(filename, result.rows, columns)} />}>
         <DateRange from={fromDate} to={toDate} onFrom={setFromDate} onTo={setToDate} />
         {withSevaFilters && (
           <>
@@ -575,16 +551,16 @@ export default function ReportsPage() {
         </Tabs.List>
 
         <Tabs.Panel value="complete-day" pt="md">
-          <ReportPanel runFn={reportsApi.runCompleteDay} columns={collectionColumns} filename="complete-day.csv" extraSummary={(r) => <CollectionSummary result={r} />} />
+          <ReportPanel runFn={reportsApi.runCompleteDay} columns={collectionColumns} filename="complete-day.xls" extraSummary={(r) => <CollectionSummary result={r} />} />
         </Tabs.Panel>
         <Tabs.Panel value="collection" pt="md">
-          <ReportPanel runFn={reportsApi.runCollection} columns={collectionColumns} filename="detailed-collection.csv" extraSummary={(r) => <CollectionSummary result={r} />} />
+          <ReportPanel runFn={reportsApi.runCollection} columns={collectionColumns} filename="detailed-collection.xls" extraSummary={(r) => <CollectionSummary result={r} />} />
         </Tabs.Panel>
         <Tabs.Panel value="seva-issue" pt="md">
-          <ReportPanel runFn={reportsApi.runSevaIssue} columns={sevaIssueColumns} filename="seva-issue.csv" />
+          <ReportPanel runFn={reportsApi.runSevaIssue} columns={sevaIssueColumns} filename="seva-issue.xls" />
         </Tabs.Panel>
         <Tabs.Panel value="donations" pt="md">
-          <ReportPanel runFn={reportsApi.runDonations} columns={donationColumns} filename="donations.csv" withSevaFilters={false} />
+          <ReportPanel runFn={reportsApi.runDonations} columns={donationColumns} filename="donations.xls" withSevaFilters={false} />
         </Tabs.Panel>
         <Tabs.Panel value="general-ledger" pt="md">
           <PartyGLPanel />

@@ -54,6 +54,23 @@ def master_core_lookup(
     return master_layouts.lookup_options(conn, doc_id, field_code, search)
 
 
+# Fixed-path GETs must come BEFORE /{doc_id}/{row_id}, which would otherwise swallow them (422).
+@router.get("/{doc_id}/import-template")
+def download_import_template(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_ADD))):
+    content = excel_import_service.build_template(conn, doc_id)
+    meta = masters_service.get_meta(conn, doc_id)
+    return Response(
+        content=content,
+        media_type="application/vnd.ms-excel",
+        headers={"Content-Disposition": f'attachment; filename="{meta.short_form}_import_template.xls"'},
+    )
+
+
+@router.get("/{doc_id}/import-fields")
+def import_fields(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_ADD))):
+    return excel_import_service.field_info(conn, doc_id)
+
+
 @router.get("/{doc_id}/{row_id}")
 def get_master_row(doc_id: int, row_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_VIEW))):
     meta = masters_service.get_meta(conn, doc_id)
@@ -83,22 +100,6 @@ def delete_master_row(doc_id: int, row_id: int, user: CurrentUser = Depends(requ
 
 
 # ---- Import from Excel — port of frmUtlImportXL, masters only (see app/services/excel_import.py) ----
-
-
-@router.get("/{doc_id}/import-template")
-def download_import_template(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_ADD))):
-    content = excel_import_service.build_template(conn, doc_id)
-    meta = masters_service.get_meta(conn, doc_id)
-    return Response(
-        content=content,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{meta.short_form}_import_template.xlsx"'},
-    )
-
-
-@router.get("/{doc_id}/import-fields")
-def import_fields(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_ADD))):
-    return excel_import_service.field_info(conn, doc_id)
 
 
 @router.post("/{doc_id}/import-preview")

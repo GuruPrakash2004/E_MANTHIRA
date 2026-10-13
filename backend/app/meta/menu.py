@@ -52,6 +52,10 @@ RIGHT_OPT5 = 12
 DEFAULT_RIGHTS = "000000000000"  # deny-by-default, same fallback as legacy
 
 
+# MstMenu is shared with the legacy EXE, so its rows stay; these captions just never reach the web sidebar.
+WEB_HIDDEN_CAPTIONS = {"DOWNLOAD LATEST EXE"}
+
+
 def get_menu_tree(conn: Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         text(
@@ -78,6 +82,7 @@ def get_menu_tree(conn: Connection) -> list[dict[str, Any]]:
             "shortcut": (r["SCKeys"] or "").strip(),
         }
         for r in rows
+        if (r["MenuItemCaption"] or "").strip().upper() not in WEB_HIDDEN_CAPTIONS
     ]
 
 

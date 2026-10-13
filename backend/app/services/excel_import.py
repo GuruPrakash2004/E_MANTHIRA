@@ -18,14 +18,12 @@ old app writes" is safer served by those documents' own dedicated screens.
 """
 from __future__ import annotations
 
-import io
-
 from fastapi import HTTPException, status
-from openpyxl import Workbook, load_workbook
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.services import masters as masters_service
+from app.utils.xls import build_xls, read_xls
 
 
 def _import_columns(conn: Connection, meta: masters_service.MasterMeta) -> list[tuple[str, str]]:
@@ -49,14 +47,8 @@ def _import_columns(conn: Connection, meta: masters_service.MasterMeta) -> list[
 def build_template(conn: Connection, doc_id: int) -> bytes:
     meta = masters_service.get_meta(conn, doc_id)
     columns = _import_columns(conn, meta)
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "DataSheet"  # matches the legacy convention (frmUtlImportXL requires this exact sheet name)
-    ws.append([caption for _, caption in columns])
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+    # sheet name matches the legacy convention (frmUtlImportXL requires this exact sheet name)
+    return build_xls("DataSheet", [[caption for _, caption in columns]])
 
 
 def parse_rows(conn: Connection, doc_id: int, file_bytes: bytes) -> list[tuple[int, dict]]:
@@ -66,19 +58,13 @@ def parse_rows(conn: Connection, doc_id: int, file_bytes: bytes) -> list[tuple[i
     columns = _import_columns(conn, meta)
     col_names = [c for c, _ in columns]
 
-    try:
-        wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Could not read the Excel file: {exc}") from exc
-
-    sheet_name = "DataSheet" if "DataSheet" in wb.sheetnames else wb.sheetnames[0]
-    ws = wb[sheet_name]
+    sheet = read_xls(file_bytes, "DataSheet")
 
     parsed = []
-    for excel_row_num, raw_row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        if raw_row is None or all(v is None or str(v).strip() == "" for v in raw_row):
+    for excel_row_num, raw_row in enumerate(sheet[1:], start=2):
+        if all(v == "" for v in raw_row):
             continue  # skip blank trailing rows
-        values = {col: ("" if v is None else str(v).strip()) for col, v in zip(col_names, raw_row)}
+        values = {col: v for col, v in zip(col_names, raw_row)}
         parsed.append((excel_row_num, values))
     return parsed
 

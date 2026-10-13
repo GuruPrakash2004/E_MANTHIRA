@@ -8,6 +8,7 @@ import { isoDate } from '../../utils/format'
 import * as hallApi from '../../api/endpoints/hall'
 import StatCard from '../../components/ui/StatCard'
 import EmptyState from '../../components/ui/EmptyState'
+import { downloadXls } from '../../utils/xls'
 import { SectionCard } from '../../components/ui/EntryParts'
 
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
@@ -74,16 +75,9 @@ export default function HallStatusPage() {
   const todayInRange = !dayjs(today).isBefore(range.from, 'day') && !dayjs(today).isAfter(range.to, 'day')
   const fmt = (iso) => dayjs(iso).format('DD/MM/YYYY')
   function onExport() {
-    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const head = ['Date', ...rows.map((r) => r.hall.HALLNAME)]
     const lines = days.map((d) => [fmt(d.format('YYYY-MM-DD')), ...rows.map((r) => (r.byDay[d.format('YYYY-MM-DD')] ? `Booked ${r.byDay[d.format('YYYY-MM-DD')].PrintHBNO || ''}`.trim() : ''))])
-    const csv = [head, ...lines].map((l) => l.map(esc).join(',')).join('\r\n')
-    const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `hall-status-${monthStart}-to-${rangeEnd}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadXls(`hall-status-${monthStart}-to-${rangeEnd}.xls`, lines, head.map((label, i) => ({ label, value: (r) => r[i] })))
   }
 
   return (

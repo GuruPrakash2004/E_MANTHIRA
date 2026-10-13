@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import * as reportsApi from '../../api/endpoints/reports'
 import ScaleGrid from '../../components/ui/ScaleGrid'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
 
 const n2 = (v) => (v == null || v === '' ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
@@ -113,7 +113,7 @@ export default function PartyGLPanel() {
       <Group justify="space-between" wrap="wrap">
         <Group gap="sm">
           <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!rows.length} onClick={() => window.print()}>Print</Button>
-          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadCsv('General Ledger.csv', rows, columns.map((c) => ({ label: c.label, value: (r) => (c.render ? c.render(r) : r[c.key]) })))}>Excel</Button>
+          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls('General Ledger.xls', rows, columns.map((c) => ({ label: c.label, value: (r) => (c.render ? c.render(r) : r[c.key]) })))}>Excel</Button>
           <Checkbox color="kumkum" label="Do Not Show the Party having Zero value" checked={hideZero} onChange={(e) => setHideZero(e.currentTarget.checked)} />
         </Group>
         <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>Close</Button>

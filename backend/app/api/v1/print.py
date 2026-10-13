@@ -7,6 +7,7 @@ finds them and hands off the selection to the real print service).
 """
 from __future__ import annotations
 
+import base64
 import io
 import zipfile
 from datetime import date
@@ -17,7 +18,7 @@ from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn
 from app.core.security import CurrentUser, get_current_user
-from app.print import pdf_generator, print_agent, print_prefs, record_data, rpt_bridge, rpt_print, voucher_print
+from app.print import page_fit, pdf_generator, print_agent, print_prefs, rpt_bridge, rpt_print, voucher_print
 from app.print.rpt_registry import get_option, list_options
 
 router = APIRouter(prefix="/print", tags=["print"])
@@ -27,8 +28,14 @@ def _job(conn: Connection, doc_id: int, doc_id_value: int | None, *, doc_no: str
     return rpt_print.build_job(conn, doc_id, doc_id_value, doc_no=doc_no, option_name=option_name, ctrl_click=ctrl_click, copies=copies)
 
 
+def _render_fitted(job: rpt_print.PrintJob) -> tuple[bytes, page_fit.Page]:
+    """The .rpt's PDF at the report's own page size (roll formats cut at the end of the receipt, see page_fit.py)."""
+    r = rpt_bridge.render(job)
+    return page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt)
+
+
 def _render(conn: Connection, job: rpt_print.PrintJob) -> bytes:
-    return rpt_bridge.render(job, record_data.record_data_for(conn, job.doc_id, job.doc_id_value))
+    return _render_fitted(job)[0]
 
 
 @router.get("/options")
@@ -81,12 +88,30 @@ def render_pdf(body: PrintRequest, conn: Connection = Depends(get_conn), _: Curr
     """The document as a PDF (rendered by the bridge from the original .rpt)."""
     with voucher_print.print_lock_for(conn, body.doc_id):  # vouchers print from scratch tables refilled per print
         job = _job(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
-        pdf = _render(conn, job)
+        pdf, page = _render_fitted(job)
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{body.doc_id}-{job.doc_id_value}.pdf"', "X-Print-Format": job.option_name},
+        headers={
+            "Content-Disposition": f'inline; filename="{body.doc_id}-{job.doc_id_value}.pdf"',
+            "X-Print-Format": job.option_name,
+            "X-Page-Width-Pt": str(page.width_pt),
+            "X-Page-Height-Pt": str(page.height_pt),
+            "Access-Control-Expose-Headers": "X-Print-Format, X-Page-Width-Pt, X-Page-Height-Pt",
+        },
     )
+
+
+@router.post("/preview")
+def render_preview(body: PrintRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """
+    What the print dialog shows: the report's pages as PNG images at their real shape (no PDF-viewer chrome, so nothing is
+    stretched or framed), plus the same PDF (base64) for the browser's Print. One render of the original .rpt.
+    """
+    with voucher_print.print_lock_for(conn, body.doc_id):
+        job = _job(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
+        pdf, _page = _render_fitted(job)
+    return {"format": job.option_name, "pdf": base64.b64encode(pdf).decode("ascii"), "pages": print_agent.pdf_to_pages(pdf)}
 
 
 @router.put("/preference")
@@ -105,7 +130,7 @@ def print_to_server_printer(body: DirectPrintRequest, conn: Connection = Depends
         job = _job(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click, copies=body.copies)
         if body.printer_name and body.printer_name.strip():
             job.printer_name = body.printer_name.strip()
-        rpt_bridge.print_to_printer(job, record_data.record_data_for(conn, job.doc_id, job.doc_id_value))
+        rpt_bridge.print_to_printer(job)
     return {"message": "Sent to printer", "printer_name": job.printer_name, "copies": job.copies}
 
 
@@ -276,5 +301,5 @@ def print_direct(doc_id: int, option_name: str, record_id: int, conn: Connection
     """Silent print straight to the option's configured printer (no browser dialog) — for the thermal counter."""
     with voucher_print.print_lock_for(conn, doc_id):
         job = _job(conn, doc_id, record_id, option_name=option_name)
-        rpt_bridge.print_to_printer(job, record_data.record_data_for(conn, doc_id, record_id))
+        rpt_bridge.print_to_printer(job)
     return {"message": "Sent to printer"}

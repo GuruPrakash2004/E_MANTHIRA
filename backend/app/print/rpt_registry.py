@@ -8,8 +8,7 @@ filenames anywhere in code.
 
 The app NEVER renders a .rpt itself (they are encrypted Crystal Reports
 binaries — see doc 09 finding N10). Rendering always goes through the
-external Crystal print service (see print/crystal_client.py and
-backend/print_service/README.md) — this is the ONLY supported print engine
+print bridge (see print/rpt_bridge.py and tools/rptbridge/README.md) — this is the ONLY supported print engine
 (CLAUDE.md rule set by the user: "use the crystal service method only").
 """
 from __future__ import annotations
@@ -55,6 +54,19 @@ def scan_rpt_files() -> dict[str, str]:
     return {p.name.lower(): str(p) for p in d.glob("*.rpt")}
 
 
+def normalize_rpt_name(raw: str | None) -> str:
+    """The file name a print option points at, as the legacy viewer builds it: trimmed at the ends only, `.rpt` added
+    when the name has no extension (an inner space, as in `fmtGrpSeva_A4 .rpt`, is part of the name)."""
+    name = (raw or "").strip()
+    return name if not name or name.lower().endswith(".rpt") else name + ".rpt"
+
+
+def find_rpt(raw: str | None) -> str | None:
+    """Path of the EXACT file the option names (case-insensitive, as on Windows) - never a similar name, never a prefix."""
+    name = normalize_rpt_name(raw)
+    return scan_rpt_files().get(name.lower()) if name else None
+
+
 def list_options(conn: Connection, doc_id: int) -> list[PrintOption]:
     rows = conn.execute(
         text(
@@ -79,7 +91,7 @@ def list_options(conn: Connection, doc_id: int) -> list[PrintOption]:
                 option_order=r["OptionOrder"],
                 option_name=r["OptionName"],
                 rpt_file=rpt_name,
-                rpt_available=rpt_name.lower() in available,
+                rpt_available=bool(rpt_name) and normalize_rpt_name(rpt_name).lower() in available,
                 selection_formula=r["SelFormula"] or "",
                 default_print=(r["DefaultPrint"] or "N").strip().upper() == "Y",
                 direct_printer_name=(r["DirectPrinterName"] or "").strip() or None,
@@ -100,5 +112,4 @@ def get_option(conn: Connection, doc_id: int, option_name: str) -> PrintOption:
 
 
 def resolve_rpt_path(option: PrintOption) -> str | None:
-    files = scan_rpt_files()
-    return files.get(option.rpt_file.lower())
+    return find_rpt(option.rpt_file)

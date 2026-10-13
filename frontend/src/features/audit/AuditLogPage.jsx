@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 import * as auditApi from '../../api/endpoints/audit'
 import ScaleGrid from '../../components/ui/ScaleGrid'
 import { PageHeader } from '../../components/ui/EntryParts'
-import { downloadCsv } from '../../utils/csv'
+import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
 
 /**
@@ -85,7 +85,7 @@ export default function AuditLogPage() {
 
       <Group justify="space-between">
         <Group gap="sm">
-          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!shown.length} onClick={() => downloadCsv('Audit Log.csv', shown, columns.map((c) => ({ label: c.label, value: (r) => (c.render ? c.render(r) : r[c.key]) })))}>Excel</Button>
+          <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!shown.length} onClick={() => downloadXls('Audit Log.xls', shown, columns.map((c) => ({ label: c.label, value: (r) => (c.render ? c.render(r) : r[c.key]) })))}>Excel</Button>
           <Button variant={frozen ? 'filled' : 'default'} color="kumkum" leftSection={<Pin size={16} />} onClick={() => setFrozen((f) => !f)} aria-pressed={frozen}>{frozen ? 'UnFreeze' : 'Freeze'}</Button>
         </Group>
         <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>Close</Button>

@@ -10,7 +10,7 @@ Legacy rules reproduced here, in the same order:
   1. one `UtlOption` row: `select top 1 * ... where DocID=? [and OptionName=?] order by OptionOrder`
   2. file          = <RPT folder> + CrptFileName   (".rpt" appended when missing)
   3. selection     = Replace(Trim(SelFormula), "`", "'") + " " + <record id>     (SelFormula ends with "=")
-  4. parameters    = (+ the shop details under common names, step 6; the option's own values win) FormulasFld / FormulasVal split on ";" pairwise; each FormulasVal is "Table.Column" and the value
+  4. parameters    = FormulasFld / FormulasVal split on ";" pairwise (only these - no extra values are added); each FormulasVal is "Table.Column" and the value
                      is the first row of `Select Column from Table` (company data = single-row MstComp)
   5. operation     = ClickOperation, or CtrlClickOperation when Ctrl-clicked; blank means "P" (preview)
   6. copies/printer= NoOfCopies / Trim(DirectPrinterName) (a caller may override the copies, like `argNoOfPrints`)
@@ -26,8 +26,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.core.db import limit_clause
-from app.print import shop_details, voucher_print
-from app.print.rpt_registry import scan_rpt_files
+from app.print import voucher_print
+from app.print.rpt_registry import find_rpt, normalize_rpt_name
 
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 OPERATIONS = {"P": "preview", "D": "direct print", "F": "export to folder", "E": "e-mail"}
@@ -47,21 +47,14 @@ class PrintJob:
     printer_name: str = ""
     after_save_action: str = ""
     additional_selection_formula: str = ""
-    shop: dict[str, str] = field(default_factory=dict)  # canonical shop details (step 6); the bridge also uses them to fill labels
-
-    def _formula_values(self) -> dict[str, str]:
-        own = {k.lower() for k in self.parameters}  # the bridge matches names case-insensitively, so drop shadowed shop names
-        generic = {k: v for k, v in shop_details.parameter_values(self.shop).items() if k.lower() not in own}
-        return {**generic, **self.parameters}
 
     def to_bridge_payload(self) -> dict:
         """The body the bridge's /render and /print endpoints take (the contract in print_service/README.md)."""
         return {
             "rpt_path": self.rpt_path,
             "selection_formula": self.selection_formula,
-            # the print option's own values win over the generic shop-detail names
-            "formula_values": self._formula_values(),
-            "shop_details": self.shop,
+            # exactly what the print option lists (FormulasFld / FormulasVal), nothing added: the report is printed as designed
+            "formula_values": self.parameters,
             "record_id": str(self.doc_id_value),
         }
 
@@ -149,10 +142,8 @@ def build_job(
     if opt is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"No print option{f' {option_name!r}' if option_name else ''} for document {doc_id}")
 
-    rpt_file = _clean(opt["CrptFileName"])
-    if ".RPT" not in rpt_file.upper():
-        rpt_file += ".rpt"
-    found = scan_rpt_files().get(rpt_file.lower())
+    rpt_file = normalize_rpt_name(opt["CrptFileName"])
+    found = find_rpt(rpt_file)
     rpt_path = str(Path(found).resolve()) if found else None  # absolute: the bridge may run with a different working folder
     if rpt_path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Report file '{rpt_file}' was not found in the RPT folder")
@@ -175,5 +166,4 @@ def build_job(
         printer_name=_clean(opt["DirectPrinterName"]),
         after_save_action=_clean(opt["AfterSaveAction"]),
         additional_selection_formula=_clean(opt["AddnlSelFormula"]).replace("`", "'"),
-        shop=shop_details.labelled_values(conn),
     )

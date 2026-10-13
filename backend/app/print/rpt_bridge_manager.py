@@ -8,7 +8,7 @@ On Windows, when that exe exists and the operator has not pointed the app at the
 and tells `rpt_bridge` which URL/key to use. The key travels in the child's environment, never on its command line.
 
 No exe (or not Windows, or RPT_BRIDGE_AUTOSTART=0, or an explicit RPT_BRIDGE_URL) -> nothing is launched and the
-client keeps using the configured URL, i.e. CRYSTAL_SERVICE_URL / the mock bridge (`print_service/mock_bridge.py`).
+client keeps using the configured URL (RPT_BRIDGE_URL / CRYSTAL_SERVICE_URL); if nothing answers there, printing reports that the bridge is not running.
 Switches: RPT_BRIDGE_URL (external bridge, no autostart), RPT_BRIDGE_KEY, RPT_BRIDGE_AUTOSTART=0, RPT_FOLDER.
 """
 from __future__ import annotations
