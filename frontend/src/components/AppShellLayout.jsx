@@ -201,7 +201,7 @@ export default function AppShellLayout() {
 
   // Every screen starts with the cursor already in its first field — no
   // page has to wire this itself, see useAutoFocusFirstField.js.
-  useAutoFocusFirstField(mainRef, [location.pathname])
+  useAutoFocusFirstField(mainRef, [location.pathname, location.search]) // search: a ?tab= switch is a new screen too
   const isAdmin = user?.user_code?.toUpperCase() === 'ADMIN'
 
   useEffect(() => {
