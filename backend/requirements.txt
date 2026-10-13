@@ -3,7 +3,7 @@ uvicorn[standard]==0.30.6
 pydantic==2.9.2
 pydantic-settings==2.5.2
 SQLAlchemy==2.0.35
-pymssql==2.3.2
+pymssql==2.4.4
 PyMySQL==1.1.1  # for DB_ENGINE=mysql (fresh sample schema, local dev)
 # pyodbc is optional — only needed if DB_ENGINE=pyodbc (Windows/prod with the
 # real ODBC Driver 18 installed). It needs unixODBC headers to build on
