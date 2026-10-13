@@ -7,3 +7,4 @@ export const getLookup = (docId, fieldCode, search) => get(`/meta/lookup/${docId
 export const getLedgers = (search) => get('/meta/ledgers', { params: search ? { search } : undefined })
 export const getMenuSettings = () => get('/meta/menu/settings')
 export const setMenuVisibility = (menuItemId, show) => put(`/meta/menu/${menuItemId}/visibility`, { show })
+export const navigateDoc = (docId, params) => get(`/meta/docs/${docId}/nav`, { params })

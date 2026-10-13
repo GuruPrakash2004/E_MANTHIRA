@@ -1,4 +1,4 @@
-import { api, download, post, put } from '../api'
+import { api, download, get, post, put } from '../api'
 
 export const getPrintOptions = (docId) => api.get(`/print/${docId}/options`).then((r) => r.data)
 
@@ -51,3 +51,26 @@ export function agentDownloadUrl() {
   const base = api.defaults.baseURL.replace(/\/$/, '')
   return `${base}/print/agent?origin=${encodeURIComponent(window.location.origin)}`
 }
+
+// ---- Print API v2 (roadmap step 8): job builder + bridge on the server. Feature code goes through lib/printing.js.
+
+/** Formats for a document: [{option_name, rpt_file, available, default, preferred, selected, printer_name, copies, after_save_action}]. */
+export const listFormats = (docId) => api.get('/print/options', { params: { doc_id: docId } }).then((r) => r.data)
+
+/** PDF Blob of one record in one format (blank option = the document's first format, like the desktop). */
+export const renderPdf = ({ docId, recordId, optionName }) =>
+  api.post('/print/render', { doc_id: docId, doc_id_value: recordId, option_name: optionName || null }, { responseType: 'blob' }).then((r) => r.data)
+
+/** Remember this user's last format for the document. */
+export const savePreference = (docId, optionName) => put('/print/preference', { doc_id: docId, option_name: optionName })
+
+/** Direct print on the print service's PC (printer blank = the option's own). */
+export const printOnServer = ({ docId, recordId, optionName, printerName, copies }) =>
+  post('/print/print', { doc_id: docId, doc_id_value: recordId, option_name: optionName || null, printer_name: printerName || null, copies: copies || null })
+
+/** PDF Generator (legacy form flow): documents with print types, parties, records, then download the ticked ones. */
+export const bulkDocuments = () => get('/print/bulk/documents')
+export const bulkParties = (docId) => get(`/print/bulk/${docId}/parties`)
+export const bulkRecords = (docId, params) => get(`/print/bulk/${docId}/records`, { params })
+export const bulkDownloadSelected = (docId, optionName, recordIds) =>
+  api.post(`/print/bulk/${docId}/${encodeURIComponent(optionName)}/download`, { record_ids: recordIds }, { responseType: 'blob' }).then((r) => r.data)

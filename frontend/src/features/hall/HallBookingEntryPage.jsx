@@ -1,6 +1,6 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
-import { ActionIcon, Button, Grid, Group, Kbd, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { ActionIcon, Button, Grid, Group, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
 import { CalendarRange, Plus, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -135,10 +135,6 @@ export default function HallBookingEntryPage() {
               Quick receipt for hall booking, corpus fund and other venue bookings
             </Text>
           </div>
-        </Group>
-        <Group gap={6} visibleFrom="sm" c="dimmed">
-          <Kbd size="xs">Alt+S</Kbd>
-          <Text size="xs">Save</Text>
         </Group>
       </Group>
 

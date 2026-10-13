@@ -48,7 +48,7 @@
   <div class="bold" style="margin-top:6px">Halls/Rooms Booked:</div>
   <table class="items">
     <tr><th>Slno</th><th>Name of the Hall / Room</th><th>Rate</th><th>Hrs.</th><th>Amount</th></tr>
-    <tr><td>1</td><td>{{ hall_name or "—" }}</td><td style="text-align:right">{{ rate or "" }}</td><td>{{ hours or "" }}</td><td style="text-align:right">{{ amount or "0.00" }}</td></tr>
+    {% for l in lines %}<tr><td>{{ l.slno }}</td><td>{{ l.name or hall_name }}</td><td style="text-align:right">{{ l.rate }}</td><td>{{ l.hrs }}</td><td style="text-align:right">{{ l.amount }}</td></tr>{% else %}<tr><td>1</td><td>{{ hall_name or "—" }}</td><td style="text-align:right">{{ rate or "" }}</td><td>{{ hours or "" }}</td><td style="text-align:right">{{ amount or "0.00" }}</td></tr>{% endfor %}
   </table>
   <table class="totals" style="width:100%;margin-top:6px">
     <tr><td class="label" colspan="4">Total Amount :</td><td style="text-align:right">{{ amount or "0.00" }}</td></tr>

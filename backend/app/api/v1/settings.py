@@ -31,3 +31,36 @@ def put_setting_value(body: SetValueRequest, user: CurrentUser = Depends(get_cur
     with with_transaction() as conn:
         settings_service.set_value(conn, set_group=body.group, set_name=body.name, set_value=body.value)
     return {"message": "Updated"}
+
+
+class SettingItem(BaseModel):
+    group: str
+    name: str
+    value: str = ""
+
+
+@router.put("/bulk")
+def put_settings_bulk(items: list[SettingItem], user: CurrentUser = Depends(get_current_user)):
+    if user.user_code.upper() != "ADMIN":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only ADMIN can change Global Settings")
+    with with_transaction() as conn:
+        n = settings_service.save_many(conn, [i.model_dump() for i in items])
+    return {"message": "Updated successfully.", "updated": n}
+
+
+class NewSetting(BaseModel):
+    group: str = ""
+    name: str
+    caption: str
+    value: str = ""
+    remarks: str = ""
+    hide: bool = False
+
+
+@router.post("", status_code=201)
+def post_setting(body: NewSetting, user: CurrentUser = Depends(get_current_user)):
+    if user.user_code.upper() != "ADMIN":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only ADMIN can add a setting")
+    with with_transaction() as conn:
+        settings_service.create_setting(conn, group=body.group, name=body.name, caption=body.caption, value=body.value, remarks=body.remarks, hide=body.hide)
+    return {"message": f"'{body.name.strip()}' added successfully."}

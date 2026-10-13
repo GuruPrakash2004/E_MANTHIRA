@@ -1,6 +1,6 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
-import { ActionIcon, Button, Grid, Group, Kbd, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { ActionIcon, Button, Grid, Group, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
 import { Gift, HandCoins, Plus, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -9,7 +9,13 @@ import * as donationApi from '../../api/endpoints/donation'
 import * as metaApi from '../../api/endpoints/meta'
 import LookupSelect from '../../components/LookupSelect'
 import PrintPickerModal from '../../components/PrintPickerModal'
+import { handleAfterSave } from '../../lib/printing'
 import DynamicField from '../../components/DynamicField'
+import usePrefixes from '../../hooks/usePrefixes'
+import { useHotkeys } from 'react-hotkeys-hook'
+import DonorHistoryModal from './DonorHistoryModal'
+import DocNavBar from '../../components/ui/DocNavBar'
+import { useLocation } from 'react-router-dom'
 import useDocFields from '../../hooks/useDocFields'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
@@ -55,6 +61,10 @@ export default function DonationReceiptPage() {
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
   const [printFor, setPrintFor] = useState(null)
+  const [donorOpen, setDonorOpen] = useState(false)
+  const [viewId, setViewId] = useState(null)
+  const [viewNo, setViewNo] = useState('')
+  const [donorLimit, setDonorLimit] = useState('')
 
   const { byCode: fieldMeta } = useDocFields(DOC_ID)
   const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, form[key]]))
@@ -95,17 +105,85 @@ export default function DonationReceiptPage() {
     }
   }
 
-  const { data: prefixes } = useQuery({ queryKey: ['prefixes', DOC_ID], queryFn: () => metaApi.getPrefixes(DOC_ID) })
+  const { data: prefixes } = usePrefixes(DOC_ID)
+  // "Donation for <prefix>" on a Hall Booking opens this screen with the booking's details filled in (legacy FillHBEHdrData).
+  const location = useLocation()
+  useEffect(() => {
+    const p = location.state?.prefill
+    if (p) setForm((f) => ({ ...f, ...p }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state])
   const { data: recent, refetch, isLoading: recentLoading } = useQuery({
     queryKey: ['donations', 'recent'],
     queryFn: () => donationApi.listDonations({ top: 15 }),
   })
 
   useEffect(() => {
-    if (prefixes?.length && !form.prefix) {
+    if (prefixes?.length && !form.prefix && !location.state?.prefill) {
       setForm((f) => ({ ...f, prefix: prefixes[0] }))
     }
   }, [prefixes])
+
+  // Show Donor: copy the chosen earlier donor's details and first seva line (legacy btnShowDonars_Click)
+  function applyDonor(r) {
+    setForm((f) => ({ ...f, donor: r.DONOR || '', address: r.ADDRESS || '', contact_no: r.CONTACTNO || '', reference_no: r.REFNO || f.reference_no, pan_no: r.PANNO || f.pan_no }))
+    if (r.SEVAID) setLines((ls) => (ls.length ? ls.map((l, i) => (i === 0 ? { ...l, seva_id: r.SEVAID } : l)) : [{ seva_id: r.SEVAID, amount: 0 }]))
+    setDonorOpen(false)
+  }
+
+  // Map a saved TrnHdrDONREC row (+ lines) into the entry form
+  function fillFromDonation(l, withMeta = false) {
+    setForm((f) => ({
+      ...f,
+      donor: l.DONOR || '',
+      contact_no: l.CONTACTNO || '',
+      address: l.ADDRESS || '',
+      pan_no: l.PANNO || '',
+      reference_no: l.REFNO || '',
+      payment_mode: l.PAYMNTMODE || f.payment_mode,
+      ledger_id: l.LEDGER ?? f.ledger_id,
+      cash_bank_ledger_id: l.LEDID ?? f.cash_bank_ledger_id,
+      amount: Number(l.TOTAMT) || 0,
+      remarks: l.RMKS || '',
+      ...(withMeta ? { hb_id: l.HBID || '', doc_date: l.DONRECDate ? new Date(l.DONRECDate) : f.doc_date, bank_name: l.BANKNAME || '', cheque_no: l.CHEQUENO || '' } : {}),
+    }))
+    setLines((l.lines || []).map((x) => ({ seva_id: x.SEVAID || '', amount: Number(x.AMOUNT) || 0 })))
+  }
+
+  // F6 loads the last receipt so it can be re-entered (legacy: Add mode)
+  async function loadLastEntry() {
+    try {
+      const l = await donationApi.lastDonation()
+      if (!l) return notifications.show({ message: 'No previous entry found', color: 'yellow' })
+      fillFromDonation(l)
+      notifications.show({ message: `Loaded last entry ${l.PrintDONRECNO || l.DONRECNO}`, color: 'teal' })
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not load the last entry', color: 'red' })
+    }
+  }
+
+  // Record navigation: show a saved receipt read-only; New goes back to a blank entry
+  async function viewRecord(id) {
+    try {
+      const l = await donationApi.getDonation(id)
+      fillFromDonation(l, true)
+      setViewId(id)
+      setViewNo(l.PrintDONRECNO || l.DONRECNO)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not open that record', color: 'red' })
+    }
+  }
+  function startNew() {
+    setViewId(null)
+    setViewNo('')
+    setLines([])
+    setForm((f) => ({ ...f, donor: '', contact_no: '', address: '', pan_no: '', reference_no: '', remarks: '', amount: 0, hb_id: '', doc_date: new Date() }))
+  }
+  async function findDonations(q) {
+    const rows = await donationApi.listDonations({ search: q, top: 30 })
+    return rows.map((r) => ({ id: r.DONRECID, label: r.PrintDONRECNO || r.DONRECNO, sub: `${r.DONOR || ''} ${r.CONTACTNO || ''}`.trim() }))
+  }
+  useHotkeys('f6', (e) => { e.preventDefault(); if (!viewId) loadLastEntry() }, { enableOnFormTags: true }, [viewId])
 
   function set(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -143,7 +221,7 @@ export default function DonationReceiptPage() {
       }
       const result = await donationApi.createDonation(body)
       setLastSaved(result)
-      setPrintFor(result.donrec_id)
+      handleAfterSave({ docId: DOC_ID, recordId: result.donrec_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setForm((f) => ({
         ...f,
@@ -186,19 +264,10 @@ export default function DonationReceiptPage() {
             </Text>
           </div>
         </Group>
-        <Group gap="md" visibleFrom="sm" c="dimmed">
-          <Group gap={6}>
-            <Kbd size="xs">Alt+S</Kbd>
-            <Text size="xs">Save</Text>
-          </Group>
-          <Group gap={6}>
-            <Kbd size="xs">Alt+P</Kbd>
-            <Text size="xs">Print last</Text>
-          </Group>
-        </Group>
       </Group>
 
       <EntryLayout
+        viewing={Boolean(viewId)}
         main={
           <>
         <Stack gap="lg">
@@ -220,7 +289,13 @@ export default function DonationReceiptPage() {
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6 }}>
-            <TextInput label={caption('DONOR', 'Donor Name')} required={mandatory('DONOR')} value={form.donor} onChange={(e) => set('donor', e.currentTarget.value)} />
+            <Group gap="xs" align="flex-end" wrap="nowrap">
+              <TextInput style={{ flex: 1 }} label={caption('DONOR', 'Donor Name')} required={mandatory('DONOR')} value={form.donor} onChange={(e) => set('donor', e.currentTarget.value)} />
+              <NumberInput aria-label="Show No. of records" placeholder="Nos" w={70} min={0} hideControls value={donorLimit} onChange={setDonorLimit} />
+              <Button variant="light" color="kumkum" onClick={() => setDonorOpen(true)}>
+                Show Donor
+              </Button>
+            </Group>
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6 }}>
             <TextInput
@@ -371,6 +446,7 @@ export default function DonationReceiptPage() {
           words={form.amount}
           warning={splitMismatch ? 'Seva split does not add up to the amount.' : null}
           saving={saving}
+          saveDisabled={Boolean(viewId)}
           onSave={onSave}
         />
         {lastSaved && (
@@ -398,6 +474,8 @@ export default function DonationReceiptPage() {
         }
       />
 
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} search={findDonations} />
+      <DonorHistoryModal opened={donorOpen} onClose={() => setDonorOpen(false)} onPick={applyDonor} initialName={form.donor} limit={Number(donorLimit) || 0} />
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Donation Receipt" />
     </Stack>
   )

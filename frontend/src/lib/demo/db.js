@@ -57,7 +57,7 @@ export function getDb() {
     attachments: {},
     welcome: { enabled: true },
     stock: buildStock(masters),
-    nextId: { seva: 9100, donation: 7100, hall: 5100, hbe: 6200, pay: 3100, rcpt: 4600, sa: 900, si: 950, pb: 990, pv: 1000, bom: 500, rcptHall: 4900, master: 1000, audit: 500 },
+    nextId: { seva: 9100, donation: 7100, hall: 5100, hbe: 6200, pay: 3100, jnr: 3600, exp: 3800, rcpt: 4600, sa: 900, si: 950, pb: 990, pv: 1000, bom: 500, rcptHall: 4900, master: 1000, audit: 500 },
   }
   return db
 }

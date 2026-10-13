@@ -79,3 +79,6 @@ def save_rights(conn: Connection, role_id: int, items: list[dict]) -> None:
                 text("UPDATE MstRoleRights SET RoleRights = :v WHERE RoleID = :r AND MenuItemID = :m"),
                 {"r": role_id, "m": menu_item_id, "v": encoded},
             )
+    from app.meta import menu as meta_menu
+
+    meta_menu.invalidate()

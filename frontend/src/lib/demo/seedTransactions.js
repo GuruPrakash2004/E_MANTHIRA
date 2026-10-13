@@ -17,7 +17,7 @@ const PAY = ['Cash', 'Cash', 'UPI', 'Cash', 'Card', 'Cheque']
 
 export function buildTransactions(masters) {
   const r = rng(7)
-  const db = { sevas: [], donations: [], hall: [], hbe: [], payVch: [], rcptVch: [], sa: [], si: [], pb: [], pv: [], bom: [], audit: [], panchanga: [], seq: {} }
+  const db = { sevas: [], donations: [], hall: [], hbe: [], payVch: [], jnrVch: [], exp: [], rcptVch: [], sa: [], si: [], pb: [], pv: [], bom: [], audit: [], panchanga: [], seq: {} }
 
   // ---- Sevas: ~5 today, the rest spread over the last 12 days
   let n = 0

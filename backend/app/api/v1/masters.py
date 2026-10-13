@@ -29,6 +29,31 @@ def list_master(
     return {"meta": meta.__dict__, "rows": masters_service.list_rows(conn, meta, search=search, top=top)}
 
 
+@router.get("/{doc_id}/layout")
+def get_master_layout(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_VIEW))):
+    """Built-in fields beyond Code/Name for masters like Item, Supplier and State City Country (served, not hard-coded in the UI)."""
+    from app.meta import master_layouts
+
+    from app.services import master_extras
+
+    meta = masters_service.get_meta(conn, doc_id)
+    layout = master_layouts.get_layout(conn, doc_id, meta.table)
+    if layout["panels"]:  # party masters: DsgrModule.TITLECASE(prefix) + " Code" / " Name" (e.g. "Supp Code")
+        layout["code_caption"] = layout["code_caption"] or f"{meta.short_form.title()} Code"
+        layout["name_caption"] = layout["name_caption"] or f"{meta.short_form.title()} Name"
+    layout["options"] = master_extras.get_options(conn, meta)  # Options menu entries (Approve when AuthReq, Attach Seva on Sannidhi)
+    return layout
+
+
+@router.get("/{doc_id}/core-lookup/{field_code}")
+def master_core_lookup(
+    doc_id: int, field_code: str, search: str = "", conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_VIEW))
+):
+    from app.meta import master_layouts
+
+    return master_layouts.lookup_options(conn, doc_id, field_code, search)
+
+
 @router.get("/{doc_id}/{row_id}")
 def get_master_row(doc_id: int, row_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_VIEW))):
     meta = masters_service.get_meta(conn, doc_id)
@@ -71,9 +96,19 @@ def download_import_template(doc_id: int, conn: Connection = Depends(get_conn), 
     )
 
 
+@router.get("/{doc_id}/import-fields")
+def import_fields(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_ADD))):
+    return excel_import_service.field_info(conn, doc_id)
+
+
+@router.post("/{doc_id}/import-preview")
+def import_preview(doc_id: int, file: UploadFile = File(...), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_ADD))):
+    return excel_import_service.preview(conn, doc_id, file.file.read())
+
+
 @router.post("/{doc_id}/import")
-async def import_from_excel(doc_id: int, file: UploadFile = File(...), user: CurrentUser = Depends(require_right_from_path(RIGHT_ADD))):
-    content = await file.read()
+def import_from_excel(doc_id: int, file: UploadFile = File(...), user: CurrentUser = Depends(require_right_from_path(RIGHT_ADD))):
+    content = file.file.read()
     return excel_import_service.import_rows(doc_id, content, user.user_code)
 
 

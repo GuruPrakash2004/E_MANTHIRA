@@ -24,8 +24,8 @@ def list_halls(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(ge
 
 
 @router.get("/{hall_id}/availability")
-def availability(hall_id: int, from_date: date = Query(...), months: int = 6, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
-    return hall_service.availability_calendar(conn, hall_id=hall_id, from_date=from_date, months=months)
+def availability(hall_id: int, from_date: date = Query(...), months: int = 6, to_date: date | None = None, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    return hall_service.availability_calendar(conn, hall_id=hall_id, from_date=from_date, months=months, to_date=to_date)
 
 
 class HallBookingCreateRequest(BaseModel):
@@ -75,7 +75,7 @@ def list_bookings(
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(hall_service.DOC_ID, RIGHT_VIEW)),
 ):
-    sql = "SELECT HBID, HBNO, PrintHBNO, HBDate, TYPE, NMEOFFUNC, NETPAY, BALAMT, Cancelled FROM TrnHdrHB WHERE HBDate BETWEEN :fs AND :fe"
+    sql = "SELECT HBID, HBNO, PrintHBNO, HBDate, TYPE, NMEOFFUNC, NETPAY, BALAMT, Cancelled, CONPRS, CONTACTNO, ADDRESS, PAN, REFNO FROM TrnHdrHB WHERE HBDate BETWEEN :fs AND :fe"
     params: dict = {"fs": fy.start_date, "fe": fy.end_date}
     if search:
         sql += " AND (HBNO LIKE :q OR NMEOFFUNC LIKE :q OR CONTACTNO LIKE :q)"
@@ -111,3 +111,14 @@ def cancel_booking(hb_id: int, body: CancelRequest, user: CurrentUser = Depends(
     with with_transaction() as conn:
         hall_service.cancel(conn, hb_id=hb_id, reason=body.reason, user_code=user.user_code)
     return {"message": "Cancelled Hall Booking Successfully!"}
+
+
+@router.delete("/bookings/{hb_id}/receipts/{receipt_id}")
+def delete_receipt(hb_id: int, receipt_id: int, user: CurrentUser = Depends(require_right(hall_service.DOC_ID, RIGHT_EDIT))):
+    with with_transaction() as conn:
+        return hall_service.delete_receipt(conn, hb_id=hb_id, receipt_id=receipt_id, user_code=user.user_code)
+
+
+@router.get("/booking-options")
+def booking_options(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    return hall_service.booking_options(conn)

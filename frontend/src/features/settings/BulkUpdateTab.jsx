@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Checkbox, Grid, Group, Select, Stack, Table, Text, TextInput } from '@mantine/core'
-import { Save, Search, ListChecks } from 'lucide-react'
+import { Save, Search, ListChecks, PencilRuler } from 'lucide-react'
+import UtilityBanner from '../../components/ui/UtilityBanner'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { SectionCard } from '../../components/ui/EntryParts'
 import EmptyState from '../../components/ui/EmptyState'
@@ -82,6 +83,17 @@ export default function BulkUpdateTab() {
 
   return (
     <Stack>
+      <UtilityBanner
+        title="Bulk Master Update"
+        subtitle="Change a column across many records at once."
+        heading={definition?.doc_name || 'Choose a definition'}
+        sub="Bulk update"
+        facts={[
+          { label: 'definitions', value: definitions ? definitions.length : '-' },
+          { label: 'records loaded', value: rows ? rows.length : 0 },
+        ]}
+        emblem={<PencilRuler size={60} color="#F4E1A6" strokeWidth={1.4} />}
+      />
       <SectionCard title="What to update" hint="Pick a definition, narrow down the records, then edit the columns that allow it.">
         <Select
           label="Bulk update definition"

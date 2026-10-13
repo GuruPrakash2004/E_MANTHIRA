@@ -1,7 +1,8 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
 import { ActionIcon, Button, Card, Group, Modal, Skeleton, Stack, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
-import { CalendarDays, ChevronLeft, ChevronRight, MoonStar } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, FileSpreadsheet, MoonStar } from 'lucide-react'
+import { downloadCsv } from '../../utils/csv'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -92,6 +93,9 @@ export default function PanchangaPage() {
           <ActionIcon variant="light" color="kumkum" size={40} aria-label="Next month" onClick={() => setMonth((m) => m.add(1, 'month'))}>
             <ChevronRight size={18} />
           </ActionIcon>
+          <Button variant="default" size="sm" leftSection={<FileSpreadsheet size={16} />} disabled={events.length === 0} onClick={() => downloadCsv(`Panchanga ${month.format('MMM YYYY')}.csv`, events, [{ label: 'Date', value: (e) => dayjs(e.date).format('DD/MM/YYYY') }, { label: 'Day', value: (e) => dayjs(e.date).format('dddd') }, { label: 'Event Name', key: 'name' }])}>
+            Export to Excel
+          </Button>
           <Button variant="default" size="sm" disabled={isThisMonth} onClick={() => setMonth(dayjs().startOf('month'))}>
             This month
           </Button>

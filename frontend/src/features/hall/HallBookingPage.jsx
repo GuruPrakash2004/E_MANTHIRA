@@ -1,16 +1,19 @@
 import { useState } from 'react'
-import { ActionIcon, Grid, Group, Kbd, NumberInput, Select, Stack, Text, TextInput, Title } from '@mantine/core'
+import { Button, Grid, Group, Menu, NumberInput, Select, Stack, Text, TextInput, Title } from '@mantine/core'
 import { DateTimePicker } from '@mantine/dates'
 import { notifications } from '@mantine/notifications'
-import { Building, Receipt } from 'lucide-react'
+import { Building, ChevronDown } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as hallApi from '../../api/endpoints/hall'
 import LookupSelect from '../../components/LookupSelect'
 import PrintPickerModal from '../../components/PrintPickerModal'
+import { handleAfterSave } from '../../lib/printing'
 import DynamicField from '../../components/DynamicField'
 import useDocFields from '../../hooks/useDocFields'
 import { isFieldHidden, isFieldMandatory, fieldCaption } from '../../utils/docFieldConditions'
 import HallPaymentPanel from './HallPaymentPanel'
+import DocNavBar from '../../components/ui/DocNavBar'
+import { useNavigate } from 'react-router-dom'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
 import { formatINR } from '../../utils/format'
@@ -55,6 +58,10 @@ export default function HallBookingPage() {
   const [lastSaved, setLastSaved] = useState(null)
   const [printFor, setPrintFor] = useState(null)
   const [paymentFor, setPaymentFor] = useState(null)
+  const [viewId, setViewId] = useState(null)
+  const [viewNo, setViewNo] = useState('')
+  const navigate = useNavigate()
+  const { data: hbOptions = [] } = useQuery({ queryKey: ['hall-booking-options'], queryFn: hallApi.bookingOptions, staleTime: 5 * 60_000 })
 
   const { byCode: fieldMeta } = useDocFields(DOC_ID)
   const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, form[key]]))
@@ -112,7 +119,7 @@ export default function HallBookingPage() {
       }
       const result = await hallApi.createBooking(body)
       setLastSaved(result)
-      setPrintFor(result.hb_id)
+      handleAfterSave({ docId: DOC_ID, recordId: result.hb_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setExtra({})
       queryClient.invalidateQueries({ queryKey: ['hall-bookings'] })
@@ -123,6 +130,49 @@ export default function HallBookingPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // Record navigation: show a saved booking read-only; New goes back to a blank entry
+  async function viewRecord(id) {
+    try {
+      const b = await hallApi.getBooking(id)
+      setForm((f) => ({
+        ...f,
+        booking_type: b.TYPE || f.booking_type,
+        hall_id: b.HALLID ?? '',
+        function_name: b.NMEOFFUNC || '',
+        contact_person: b.CONPRS || '',
+        contact_no: b.CONTACTNO || '',
+        mobile: b.MOBNO || '',
+        address: b.ADDRESS || '',
+        email: b.EMAILID || '',
+        pan: b.PAN || '',
+        remarks: b.RMKS || '',
+        amount: Number(b.AMOUNT) || 0,
+        cgst_pct: Number(b.CGSTPER) || 0,
+        sgst_pct: Number(b.SGSTPER) || 0,
+        deposit: Number(b.SDEPAMT) || 0,
+        ledger_id: b.LEDGER ?? f.ledger_id,
+        cash_bank_ledger_id: b.LEDID ?? f.cash_bank_ledger_id,
+      }))
+      setStartAt(b.HBSTARTDT ? new Date(b.HBSTARTDT) : null)
+      setEndAt(b.HBENDDT ? new Date(b.HBENDDT) : null)
+      setViewId(id)
+      setViewNo(b.PrintHBNO || b.HBNO)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not open that record', color: 'red' })
+    }
+  }
+  function startNew() {
+    setViewId(null)
+    setViewNo('')
+    setStartAt(null)
+    setEndAt(null)
+    setForm((f) => ({ ...f, hall_id: '', function_name: '', contact_person: '', contact_no: '', mobile: '', address: '', email: '', pan: '', remarks: '', amount: 0, deposit: 0 }))
+  }
+  async function findBookings(q) {
+    const rows = await hallApi.listBookings({ search: q, top: 30 })
+    return rows.map((r) => ({ id: r.HBID, label: r.PrintHBNO || r.HBNO, sub: `${r.NMEOFFUNC || ''} ${r.CONTACTNO || ''}`.trim() }))
   }
 
   useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.hb_id) })
@@ -139,19 +189,10 @@ export default function HallBookingPage() {
             </Text>
           </div>
         </Group>
-        <Group gap="md" visibleFrom="sm" c="dimmed">
-          <Group gap={6}>
-            <Kbd size="xs">Alt+S</Kbd>
-            <Text size="xs">Save</Text>
-          </Group>
-          <Group gap={6}>
-            <Kbd size="xs">Alt+P</Kbd>
-            <Text size="xs">Print last</Text>
-          </Group>
-        </Group>
       </Group>
 
       <EntryLayout
+        viewing={Boolean(viewId)}
         main={
           <Stack gap="lg">
             <SectionCard title="Booking" hint="Which hall, for what function, and when.">
@@ -260,6 +301,7 @@ export default function HallBookingPage() {
               total={formatINR(net)}
               words={net}
               saving={saving}
+              saveDisabled={Boolean(viewId)}
               onSave={onSave}
             />
             {lastSaved && (
@@ -283,9 +325,29 @@ export default function HallBookingPage() {
                 printLabel: `Print ${b.PrintHBNO}`,
                 onPrint: () => setPrintFor(b.HBID),
                 extra: (
-                  <ActionIcon variant="light" color="gold" size={36} aria-label={`Add payment to ${b.PrintHBNO}`} onClick={() => setPaymentFor(b.HBID)}>
-                    <Receipt size={16} />
-                  </ActionIcon>
+                  <Menu position="bottom-end" withinPortal>
+                    <Menu.Target>
+                      <Button size="compact-sm" variant="light" color="gold" c="var(--vt-badge-ink)" rightSection={<ChevronDown size={14} />} aria-label={`Options for ${b.PrintHBNO}`}>
+                        Options
+                      </Button>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                      {hbOptions.map((o) => (
+                        <Menu.Item
+                          key={o.name}
+                          onClick={() => {
+                            if (o.kind === 'receipt-info') return setPaymentFor(b.HBID)
+                            // Donation for <prefix>: open a new Donation Receipt carrying this booking's contact details
+                            navigate('/donations', {
+                              state: { prefill: { prefix: o.prefix, hb_id: b.HBID, donor: b.CONPRS || '', contact_no: b.CONTACTNO || '', address: b.ADDRESS || '', pan_no: b.PAN || '', reference_no: o.prefix === 'SLV' ? '' : b.REFNO || '' } },
+                            })
+                          }}
+                        >
+                          {o.label}
+                        </Menu.Item>
+                      ))}
+                    </Menu.Dropdown>
+                  </Menu>
                 ),
               })}
             />
@@ -293,6 +355,7 @@ export default function HallBookingPage() {
         }
       />
 
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} search={findBookings} />
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Hall Booking Receipt" />
       <HallPaymentPanel hbId={paymentFor} onClose={() => setPaymentFor(null)} />
     </Stack>

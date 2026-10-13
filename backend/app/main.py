@@ -4,12 +4,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.gzip_mw import SelectiveGZipMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import audit, auth, bulk_update, company, db_settings, display, donations, hall_booking_entry, halls, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, users, vouchers, welcome
+from app.api.v1 import doc_actions, mail_settings, master_extras, audit, auth, bulk_update, company, db_settings, display, donations, expense, hall_booking_entry, halls, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, trading_reports, users, utilities, vouchers, welcome
 from app.core.config import get_settings
 from app.core.db import get_engine, healthcheck, with_transaction
 from app.core.audit import ensure_schema
+from app.print import rpt_bridge_manager
 from app.print.print_prefs import ensure_schema as ensure_print_prefs_schema
 
 
@@ -27,13 +29,18 @@ async def lifespan(app: FastAPI):
             ensure_print_prefs_schema(conn)
     except Exception as exc:  # noqa: BLE001
         print(f"[startup] DB not reachable yet ({exc}) — server is still up; fix via Database Settings.")
-    yield
+    rpt_bridge_manager.start()  # real Crystal bridge, when RptBridge.exe exists (Windows); otherwise the configured/mock service
+    try:
+        yield
+    finally:
+        rpt_bridge_manager.stop()
     get_engine().dispose()
 
 
 settings = get_settings()
 app = FastAPI(title="vTemple Web API", version="0.1.0", lifespan=lifespan)
 
+app.add_middleware(SelectiveGZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.frontend_origin_list,
@@ -46,11 +53,16 @@ app.include_router(db_settings.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(meta.router, prefix=settings.api_prefix)
 app.include_router(masters.router, prefix=settings.api_prefix)
+app.include_router(master_extras.router, prefix=settings.api_prefix)
+app.include_router(mail_settings.router, prefix=settings.api_prefix)
+app.include_router(doc_actions.router, prefix=settings.api_prefix)
 app.include_router(sevas.router, prefix=settings.api_prefix)
 app.include_router(halls.router, prefix=settings.api_prefix)
 app.include_router(hall_booking_entry.router, prefix=settings.api_prefix)
 app.include_router(donations.router, prefix=settings.api_prefix)
 app.include_router(vouchers.router, prefix=settings.api_prefix)
+app.include_router(expense.router, prefix=settings.api_prefix)
+app.include_router(trading_reports.router, prefix=settings.api_prefix)
 app.include_router(print_router.router, prefix=settings.api_prefix)
 app.include_router(print_options.router, prefix=settings.api_prefix)
 app.include_router(roles.router, prefix=settings.api_prefix)
@@ -64,6 +76,7 @@ app.include_router(bulk_update.router, prefix=settings.api_prefix)
 app.include_router(inventory.router, prefix=settings.api_prefix)
 app.include_router(audit.router, prefix=settings.api_prefix)
 app.include_router(welcome.router, prefix=settings.api_prefix)
+app.include_router(utilities.router, prefix=settings.api_prefix)
 
 
 @app.get("/health")

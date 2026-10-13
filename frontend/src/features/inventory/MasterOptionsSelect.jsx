@@ -22,6 +22,7 @@ export default function MasterOptionsSelect({ docId, label, ariaLabel, required,
       required={required}
       searchable
       clearable
+      clearButtonProps={{ 'aria-label': `Clear ${label || ariaLabel || 'selection'}` }}
       data={options}
       value={value !== '' && value != null ? String(value) : null}
       onChange={(v) => onChange(v === null ? '' : Number(v))}

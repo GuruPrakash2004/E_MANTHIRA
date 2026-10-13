@@ -127,18 +127,67 @@ def donations(conn: Connection, *, from_date: date, to_date: date) -> dict:
     return {"rows": rows, "total_count": len(rows), "total_amount": sum(float(r["TOTAMT"] or 0) for r in rows)}
 
 
-def hall_booking_with_voucher(conn: Connection, *, from_date: date, to_date: date) -> dict:
-    """Hall Booking with Voucher Detail (doc 07 §5.8) — `vw_HBRcpt` already joins booking + receipt + linked donation."""
-    sql = """
-        SELECT HBSTARTDT, HBENDDT, HBDate, PrintHBNO, NMEOFFUNC, CONPRS, CONTACTNO, MOBNO,
-               AMOUNT, CGSTAMT, SGSTAMT, RCPTVCHNO, RCPTVCHDate, RCPTTYPE, TOTCR, VCHTYP, BALAMT, printdonrecno
-        FROM vw_HBRcpt
-        WHERE HBDate >= :from_date AND HBDate < :to_date_excl AND (Cancelled IS NULL OR Cancelled <> 'Y')
-        ORDER BY HBDate, PrintHBNO
+def hall_booking_with_voucher(conn: Connection, *, from_date: date, to_date: date, hb_ids: list[int] | None = None) -> dict:
+    """Hall Booking With Voucher Detail — port of legacy frmRptVIRNew.
+
+    One block per hall booking that has receipt vouchers (TrnHdrRCPTVCH.HBID): Amount = total received + balance,
+    followed by its receipt vouchers and linked donation receipts. `hb_ids` is the legacy "Select Invoice" subset.
+    Cancelled bookings are listed (flagged), as in the old report.
     """
-    params = {"from_date": from_date, "to_date_excl": _next_day(to_date)}
-    rows = [dict(r) for r in conn.execute(text(sql), params).mappings().all()]
-    return {"rows": rows, "total_count": len(rows), "total_amount": sum(float(r["TOTCR"] or 0) for r in rows)}
+    params: dict = {"from_date": from_date, "to_date": to_date}
+    sel = ""
+    if hb_ids:
+        names = {f"h{i}": int(v) for i, v in enumerate(hb_ids)}
+        sel = " AND hb.HBID IN (" + ",".join(f":{n}" for n in names) + ")"
+        params.update(names)
+    head = conn.execute(
+        text(
+            "SELECT hb.HBID, hb.HBENDDT, hb.HBSTARTDT, hb.HBDate, hb.PrintHBNO, hb.NMEOFFUNC, hb.CONPRS, hb.CONTACTNO, hb.MOBNO, "
+            "SUM(h.TotCR) + ISNULL(hb.BALAMT, 0) AS AMOUNT, hb.Cancelled, ISNULL(hb.BALAMT, 0) AS BALAMT "
+            "FROM TrnHdrRCPTVCH h INNER JOIN TrnHdrHB hb ON h.HBID = hb.HBID "
+            "WHERE hb.HBDate >= :from_date AND hb.HBDate <= :to_date" + sel + " "
+            "GROUP BY hb.HBID, hb.HBENDDT, hb.HBSTARTDT, hb.HBDate, hb.PrintHBNO, hb.NMEOFFUNC, hb.CONPRS, hb.CONTACTNO, hb.MOBNO, hb.Cancelled, hb.BALAMT "
+            "ORDER BY hb.HBDate, hb.PrintHBNO"
+        ),
+        params,
+    ).mappings().all()
+    rows: list[dict] = []
+    tot_amount = tot_cr = tot_don = 0.0
+    for h in head:
+        base = {k: h[k] for k in ("HBID", "HBENDDT", "HBSTARTDT", "HBDate", "PrintHBNO", "NMEOFFUNC", "CONPRS", "CONTACTNO", "MOBNO", "AMOUNT", "Cancelled", "BALAMT")}
+        tot_amount += float(h["AMOUNT"] or 0)
+        rcpts = conn.execute(
+            text("SELECT RCPTVCHNO, RCPTVCHDate, RCPTTYPE, TOTCR, VCHTYP FROM TrnHdrRCPTVCH WHERE HBID = :i ORDER BY RCPTVCHDate, RCPTVCHID"), {"i": h["HBID"]}
+        ).mappings().all()
+        dons = conn.execute(
+            text("SELECT PREFIX, PRINTDONRECNO, TOTAMT FROM TrnHdrDONREC WHERE HBID = :i ORDER BY DONRECID"), {"i": h["HBID"]}
+        ).mappings().all()
+        n = max(len(rcpts), len(dons), 1)
+        for i in range(n):
+            row = dict(base) if i == 0 else {k: None for k in base} | {"HBID": h["HBID"]}
+            row["first"] = i == 0
+            if i < len(rcpts):
+                r = rcpts[i]
+                row.update(RCPTVCHNO=r["RCPTVCHNO"], RCPTVCHDate=r["RCPTVCHDate"], RCPTTYPE=r["RCPTTYPE"], TOTCR=r["TOTCR"], VCHTYP=r["VCHTYP"])
+                tot_cr += float(r["TOTCR"] or 0)
+            if i < len(dons):
+                d = dons[i]
+                row.update(PREFIX=d["PREFIX"], PRINTDONRECNO=d["PRINTDONRECNO"], DONAMT=d["TOTAMT"])
+                tot_don += float(d["TOTAMT"] or 0)
+            rows.append(row)
+    return {"rows": rows, "total_count": len(head), "total_amount": tot_amount, "total_received": tot_cr, "total_donation": tot_don}
+
+
+def hall_booking_vouchers_pick(conn: Connection, *, from_date: date, to_date: date) -> list[dict]:
+    """The "Select Invoice" list: hall bookings (with receipts) in the period."""
+    rows = conn.execute(
+        text(
+            "SELECT DISTINCT hb.HBID AS id, hb.PrintHBNO AS no, hb.HBDate AS date, hb.NMEOFFUNC AS func FROM TrnHdrHB hb "
+            "INNER JOIN TrnHdrRCPTVCH h ON h.HBID = hb.HBID WHERE hb.HBDate >= :f AND hb.HBDate <= :t ORDER BY hb.HBDate, hb.PrintHBNO"
+        ),
+        {"f": from_date, "t": to_date},
+    ).mappings().all()
+    return [dict(r) for r in rows]
 
 
 def _next_day(d: date) -> date:

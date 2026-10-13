@@ -1,5 +1,5 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ActionIcon,
   Badge,
@@ -11,6 +11,7 @@ import {
   SegmentedControl,
   Select,
   Skeleton,
+  Checkbox,
   Stack,
   Switch,
   Table,
@@ -18,7 +19,8 @@ import {
   TextInput,
   Textarea,
 } from '@mantine/core'
-import { SquarePen, Key, Plus, Trash2, Search, Users, UserCheck, UserX } from 'lucide-react'
+import { Camera, SquarePen, Key, Plus, Trash2, Search, Users, UserCheck, UserX } from 'lucide-react'
+import { DateInput } from '@mantine/dates'
 import StatCard from '../../components/ui/StatCard'
 import EmptyState from '../../components/ui/EmptyState'
 import { notifications } from '@mantine/notifications'
@@ -27,6 +29,7 @@ import * as mastersApi from '../../api/endpoints/masters'
 import * as usersApi from '../../api/endpoints/users'
 import useDocFields from '../../hooks/useDocFields'
 import { fieldCaption } from '../../utils/docFieldConditions'
+import { isoDate } from '../../utils/format'
 
 const USER_DOC_ID = 18
 const ROLE_DOC_ID = 1160
@@ -38,6 +41,12 @@ const EMPTY_FORM = {
   mobile: '',
   email: '',
   designation: '',
+  department: '',
+  chkDob: false,
+  dob: null,
+  pwdResetDt: new Date(),
+  password: '',
+  confirm: '',
   inactive: false,
   inactiveRmks: '',
 }
@@ -62,7 +71,19 @@ export default function UsersTab() {
     queryFn: () => mastersApi.listMaster(ROLE_DOC_ID),
   })
 
+  const { data: fs } = useQuery({ queryKey: ['user-form-settings'], queryFn: usersApi.formSettings })
   const { byCode: fieldMeta } = useDocFields(USER_DOC_ID)
+  const [photoKey, setPhotoKey] = useState(0)
+  const [photoUrl, setPhotoUrl] = useState(null)
+  useEffect(() => {
+    let url = null
+    let live = true
+    setPhotoUrl(null)
+    if (editingId && modalOpen) {
+      usersApi.imageBlob(editingId).then((b) => { if (live) { url = URL.createObjectURL(b); setPhotoUrl(url) } }).catch(() => {})
+    }
+    return () => { live = false; if (url) URL.revokeObjectURL(url) }
+  }, [editingId, photoKey, modalOpen])
   const caption = (code, fallback) => fieldCaption(fieldMeta[code], fallback)
   const rows = data?.rows || []
   const roles = (roleData?.rows || []).filter((r) => r.ROLEID !== 0)
@@ -92,6 +113,12 @@ export default function UsersTab() {
       mobile: row.Mobileno || '',
       email: row.EmailID || '',
       designation: row.DESIGNATION || '',
+      department: row.Department || '',
+      chkDob: (row.ChkDOB || 'N').toUpperCase() === 'Y',
+      dob: row.DOB ? new Date(row.DOB) : null,
+      pwdResetDt: row.PwdResetDt ? new Date(row.PwdResetDt) : new Date(),
+      password: '',
+      confirm: '',
       inactive: (row.Inactive || 'N').toUpperCase() === 'Y',
       inactiveRmks: row.InactiveRmks || '',
     })
@@ -99,6 +126,19 @@ export default function UsersTab() {
   }
 
   async function onSave() {
+    const bad = (msg) => notifications.show({ message: msg, color: 'red' })
+    if (!form.code.trim()) return bad('User Code should not be blank!!')
+    if (!form.name.trim()) return bad('User Name should not be blank!!')
+    if (!fs?.ad_auth) {
+      if (!editingId && !form.password.trim()) return bad('Password should not be blank!!')
+      if (form.password || form.confirm) {
+        if (!form.confirm.trim()) return bad('Confirm Password should not be blank!!')
+        if (form.password.toUpperCase() !== form.confirm.toUpperCase()) return bad('Confirm Password should be same as password!!')
+      }
+    }
+    if (form.inactive && !form.inactiveRmks.trim()) return bad('Reason for InActive!')
+    if (form.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) return bad('EmailID is not valid!!')
+    if (!fs?.user_based && !form.roleId) return bad('Role Name should not be blank!!')
     setSaving(true)
     try {
       const values = {
@@ -108,14 +148,21 @@ export default function UsersTab() {
         Mobileno: form.mobile.trim(),
         EmailID: form.email.trim(),
         DESIGNATION: form.designation.trim(),
+        Department: form.department.trim(),
+        ChkDOB: form.chkDob ? 'Y' : 'N',
+        DOB: form.chkDob && form.dob ? isoDate(form.dob) : null,
+        PwdResetDt: isoDate(form.pwdResetDt || new Date()),
         Inactive: form.inactive ? 'Y' : 'N',
         InactiveRmks: form.inactiveRmks.trim(),
       }
+      let uid = editingId
       if (editingId) {
         await mastersApi.updateMasterRow(USER_DOC_ID, editingId, values)
       } else {
-        await mastersApi.createMasterRow(USER_DOC_ID, values)
+        const created = await mastersApi.createMasterRow(USER_DOC_ID, values)
+        uid = created?.UserID ?? created?.id
       }
+      if (form.password && uid) await usersApi.setPassword(uid, form.password)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setModalOpen(false)
       queryClient.invalidateQueries({ queryKey: ['master', USER_DOC_ID] })
@@ -252,35 +299,74 @@ export default function UsersTab() {
         )}
       </Card>
 
-      <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Edit User' : 'Add User'} size="lg">
+      <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'User Master - Edit' : 'User Master - New'} size="xl">
         <Stack>
-          <TextInput label="User Code" required value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.currentTarget.value }))} />
-          <TextInput label="User Name" required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.currentTarget.value }))} />
-          <Select label="Role" data={roleOptions} value={form.roleId} onChange={(v) => setForm((f) => ({ ...f, roleId: v || '' }))} clearable />
-          <TextInput label="Mobile No" value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.currentTarget.value }))} />
-          <TextInput label="Email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.currentTarget.value }))} />
-          <TextInput label={caption('DESIGNATION', 'Designation')} value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.currentTarget.value }))} />
-          <Switch label="Inactive" checked={form.inactive} onChange={(e) => setForm((f) => ({ ...f, inactive: e.currentTarget.checked }))} />
-          {form.inactive && (
-            <Textarea
-              label="Inactive Remarks"
-              required
-              value={form.inactiveRmks}
-              onChange={(e) => setForm((f) => ({ ...f, inactiveRmks: e.currentTarget.value }))}
-            />
-          )}
-          {!editingId && (
-            <Text size="xs" c="dimmed">
-              Set the initial password afterwards with the key button on the user row.
-            </Text>
-          )}
+          <Group align="flex-start" wrap="wrap" gap="lg">
+            <Stack gap="sm" style={{ flex: '1 1 320px' }}>
+              <TextInput className="vt-field-required" label="User Code" required value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.currentTarget.value }))} />
+              <TextInput className="vt-field-required" label="User Name" required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.currentTarget.value }))} />
+              <TextInput label="Department" value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.currentTarget.value }))} />
+              <Group align="flex-end" gap="sm">
+                <Checkbox color="kumkum" label="DOB" checked={form.chkDob} onChange={(e) => setForm((f) => ({ ...f, chkDob: e.currentTarget.checked }))} mb={8} />
+                <DateInput aria-label="Date of birth" valueFormat="DD/MM/YYYY" disabled={!form.chkDob} value={form.dob} onChange={(v) => setForm((f) => ({ ...f, dob: v }))} maxDate={new Date()} w={160} />
+              </Group>
+              <TextInput label="Email ID" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.currentTarget.value }))} />
+              <TextInput label="Mobile No" value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.currentTarget.value }))} />
+              {!fs?.user_based && <Select className="vt-field-required" label="Role" required data={roleOptions} value={form.roleId} onChange={(v) => setForm((f) => ({ ...f, roleId: v || '' }))} clearable />}
+              <TextInput label={caption('DESIGNATION', 'Designation')} value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.currentTarget.value }))} />
+              {!fs?.ad_auth && (
+                <>
+                  <PasswordInput className="vt-field-required" label="Password" required={!editingId} autoComplete="new-password" description={editingId ? 'Leave blank to keep the current password' : undefined} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.currentTarget.value }))} />
+                  <PasswordInput className="vt-field-required" label="Confirm Password" required={!editingId} autoComplete="new-password" value={form.confirm} onChange={(e) => setForm((f) => ({ ...f, confirm: e.currentTarget.value }))} />
+                  {fs?.pwd_rules && (
+                    <Text size="xs" c="dimmed">
+                      Password rules: min length {fs.rules.min_len}, alphabets {fs.rules.min_alpha}, numeric {fs.rules.min_numeric}, special characters {fs.rules.min_spl}, lower case {fs.rules.min_lower}, upper case {fs.rules.min_upper}.
+                    </Text>
+                  )}
+                  <DateInput label="Password Reset" valueFormat="DD/MM/YYYY" value={form.pwdResetDt} onChange={(v) => setForm((f) => ({ ...f, pwdResetDt: v }))} w={180} />
+                </>
+              )}
+              <Switch label="Inactive" checked={form.inactive} onChange={(e) => setForm((f) => ({ ...f, inactive: e.currentTarget.checked }))} />
+              {form.inactive && <Textarea className="vt-field-required" label="Inactive Remarks" required value={form.inactiveRmks} onChange={(e) => setForm((f) => ({ ...f, inactiveRmks: e.currentTarget.value }))} />}
+            </Stack>
+            <Stack gap="xs" align="center" style={{ flex: '0 0 190px' }}>
+              <div style={{ width: 170, height: 190, border: '1px solid var(--vt-line)', borderRadius: 12, background: 'var(--vt-sandal)', display: 'grid', placeItems: 'center', overflow: 'hidden', textAlign: 'center', padding: 8 }}>
+                {photoUrl ? <img src={photoUrl} alt="User" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Text size="xs" c="dimmed">{editingId ? 'Click below to add user image' : 'Save the user first, then add the image'}</Text>}
+              </div>
+              {editingId && (
+                <Group gap="xs">
+                  <Button component="label" size="compact-sm" variant="light" color="kumkum" leftSection={<Camera size={14} />}>
+                    Add image
+                    <input
+                      hidden
+                      type="file"
+                      accept="image/jpeg"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0]
+                        e.target.value = ''
+                        if (!f) return
+                        try {
+                          await usersApi.uploadImage(editingId, f)
+                          setPhotoKey((k) => k + 1)
+                          notifications.show({ message: 'Image updated', color: 'teal' })
+                        } catch (err) {
+                          notifications.show({ message: err?.response?.data?.detail || 'Could not update the image', color: 'red' })
+                        }
+                      }}
+                    />
+                  </Button>
+                  {photoUrl && (
+                    <Button size="compact-sm" variant="default" onClick={async () => { await usersApi.deleteImage(editingId); setPhotoKey((k) => k + 1) }}>
+                      Remove
+                    </Button>
+                  )}
+                </Group>
+              )}
+            </Stack>
+          </Group>
           <Group justify="flex-end" mt="sm">
-            <Button variant="default" onClick={() => setModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button color="kumkum" loading={saving} onClick={onSave}>
-              Save
-            </Button>
+            <Button variant="default" onClick={() => setModalOpen(false)}>Cancel</Button>
+            <Button color="kumkum" loading={saving} onClick={onSave}>Save</Button>
           </Group>
         </Stack>
       </Modal>

@@ -26,19 +26,28 @@ def _connect_with_fallback(settings, **engine_kwargs) -> tuple[Engine, str]:
     keeping the first that can actually run a query — pyodbc first, then
     pymssql (see config.py's docstring for why). Raises the last error if
     none of them work."""
-    last_exc: Exception | None = None
-    for driver_name, url in settings.sqlalchemy_url_candidates:
+    errors: list[str] = []
+    for driver_name, url_or_factory in _candidates(settings):
         engine: Engine | None = None
         try:
+            url = url_or_factory() if callable(url_or_factory) else url_or_factory
             engine = create_engine(url, **engine_kwargs)
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             return engine, driver_name
         except Exception as exc:  # noqa: BLE001 — try the next candidate
-            last_exc = exc
+            errors.append(f"{driver_name}: {str(exc).splitlines()[0][:200]}")
             if engine is not None:
                 engine.dispose()
-    raise last_exc  # every candidate failed — surface the last driver's error
+    raise RuntimeError(" | ".join(errors) or "no database driver available")
+
+
+def _candidates(settings):
+    """Candidate URLs, built lazily so a missing pyodbc/driver only fails
+    that candidate (and falls through to pymssql) instead of everything."""
+    if settings.is_mysql:
+        return [("mysql", settings.sqlalchemy_url)]
+    return [("pyodbc", lambda: settings._pyodbc_url), ("pymssql", lambda: settings._pymssql_url)]
 
 
 def get_engine() -> Engine:
@@ -46,7 +55,7 @@ def get_engine() -> Engine:
     if _engine is None:
         settings = get_settings()
         _engine, _engine_driver = _connect_with_fallback(
-            settings, pool_pre_ping=True, pool_size=10, max_overflow=10, future=True
+            settings, pool_pre_ping=True, pool_size=10, max_overflow=10, pool_recycle=1800, pool_timeout=15, future=True
         )
     return _engine
 
@@ -61,6 +70,9 @@ def reset_engine() -> None:
     """Drop the cached engine so the next get_engine() rebuilds from current
     settings — used after the Database Settings panel changes the DB target."""
     global _engine, _engine_driver
+    from app.core import cache
+
+    cache.clear()  # cached metadata belongs to the old database
     if _engine is not None:
         _engine.dispose()
     _engine = None

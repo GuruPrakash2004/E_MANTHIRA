@@ -1,0 +1,25 @@
+{% extends "_base.html.j2" %}
+{% block page %}A5{% endblock %}
+{% block margin %}12mm{% endblock %}
+{% block body %}
+  <div class="banner">DONATION RECEIPT</div>
+  <table style="width:100%;margin-top:6px"><tr>
+    <td>Receipt No: <b>{{ print_no or record_id }}</b></td>
+    <td class="right">Date: <b>{{ doc_date }}</b></td>
+  </tr></table>
+  <table style="width:100%;margin-top:6px">
+    <tr><td style="width:28%" class="bold">Received from</td><td>{{ donor or "-" }}</td></tr>
+    {% if address %}<tr><td class="bold">Address</td><td>{{ address }}</td></tr>{% endif %}
+    {% if contact_no %}<tr><td class="bold">Contact No</td><td>{{ contact_no }}</td></tr>{% endif %}
+    {% if pan %}<tr><td class="bold">PAN</td><td>{{ pan }}</td></tr>{% endif %}
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-top:8px">
+    <tr><th style="width:12%">Sl</th><th>Particulars</th><th style="width:25%">Amount (Rs)</th></tr>
+    {% for l in lines %}<tr><td class="c">{{ l.slno }}</td><td class="c">{{ l.particulars }}</td><td class="c right">{{ l.amount }}</td></tr>{% endfor %}
+    <tr><td class="c right bold" colspan="2">Total</td><td class="c right bold">{{ amount }}</td></tr>
+  </table>
+  <div style="margin-top:6px">Amount in words: <b>{{ amount_in_words }}</b></div>
+  <div>Paid by <b>{{ payment_mode or "Cash" }}</b>{% if cheque_no %} - Cheque {{ cheque_no }}{% if cheque_date %} dated {{ cheque_date }}{% endif %}{% if bank_name %} - {{ bank_name }}{% endif %}{% endif %}{% if ref_no %} - Ref {{ ref_no }}{% endif %}</div>
+  {% if remarks %}<div>Remarks: {{ remarks }}</div>{% endif %}
+  <table style="width:100%;margin-top:26px"><tr><td>Issued by: {{ issued_by }}</td><td class="right bold">For {{ compname or "TEMPLE NAME" }}</td></tr></table>
+{% endblock %}

@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { Select } from '@mantine/core'
-import { useQuery } from '@tanstack/react-query'
+import { useDebouncedValue } from '@mantine/hooks'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import * as metaApi from '../api/endpoints/meta'
 
 /**
@@ -11,16 +12,20 @@ import * as metaApi from '../api/endpoints/meta'
  * `ledgerPicker` for the generic MstLed picker used by voucher screens
  * whose Dr/Cr lines aren't tied to one specific document field.
  */
-export default function LookupSelect({ docId, field, ledgerPicker, label, ariaLabel, required, value, onChange, disabled }) {
-  const [search, setSearch] = useState('')
+function LookupSelect({ docId, field, ledgerPicker, label, ariaLabel, required, value, onChange, disabled, error }) {
+  const [typed, setTyped] = useState('')
+  // One request per pause in typing, not one per keystroke.
+  const [search] = useDebouncedValue(typed, 250)
 
   const { data, isLoading } = useQuery({
     queryKey: ledgerPicker ? ['lookup-ledgers', search] : ['lookup', docId, field, search],
     queryFn: () => (ledgerPicker ? metaApi.getLedgers(search) : metaApi.getLookup(docId, field, search)),
     enabled: ledgerPicker ? true : Boolean(docId && field),
+    placeholderData: keepPreviousData,
+    staleTime: search ? 30_000 : 5 * 60_000, // the unfiltered list rarely changes
   })
 
-  const options = (data || []).map((o) => ({ value: String(o.value), label: o.label }))
+  const options = useMemo(() => (data || []).map((o) => ({ value: String(o.value), label: o.label })), [data])
 
   return (
     <Select
@@ -28,15 +33,19 @@ export default function LookupSelect({ docId, field, ledgerPicker, label, ariaLa
       aria-label={ariaLabel}
       required={required}
       disabled={disabled}
+      error={error}
       searchable
       clearable
+      clearButtonProps={{ 'aria-label': `Clear ${label || ariaLabel || 'selection'}` }}
       data={options}
       value={value !== '' && value != null ? String(value) : null}
       onChange={(v) => onChange(v === null ? '' : Number(v))}
-      onSearchChange={setSearch}
+      onSearchChange={setTyped}
       nothingFoundMessage={isLoading ? 'Loading...' : 'No matches'}
       placeholder="Search..."
       comboboxProps={{ withinPortal: true }}
     />
   )
 }
+
+export default memo(LookupSelect)

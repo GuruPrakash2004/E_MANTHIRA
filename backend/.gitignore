@@ -30,3 +30,6 @@ Thumbs.db
 
 # Uploaded welcome video (runtime data)
 welcome_media/
+
+# Screen Documents uploads (Utilities > Screen Docs)
+screen_docs/

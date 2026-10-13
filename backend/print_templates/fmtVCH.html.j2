@@ -1,0 +1,17 @@
+{% extends "_base.html.j2" %}
+{% block body %}
+  <div class="banner">{{ voucher_title or "VOUCHER" }}</div>
+  <table style="width:100%;margin-top:6px"><tr>
+    <td>Voucher No: <b>{{ print_no or record_id }}</b></td>
+    <td class="right">Date: <b>{{ doc_date }}</b></td>
+  </tr></table>
+  {% if voucher_type %}<div>Mode: <b>{{ voucher_type }}</b>{% if cheque_no or cheque_dd_no %} - Cheque/DD {{ cheque_no or cheque_dd_no }}{% if cheque_date %} dated {{ cheque_date }}{% endif %}{% endif %}</div>{% endif %}
+  <table style="width:100%;border-collapse:collapse;margin-top:8px">
+    <tr><th style="width:8%">Sl</th><th>Account Head</th><th style="width:20%">Debit (Rs)</th><th style="width:20%">Credit (Rs)</th></tr>
+    {% for l in lines %}<tr><td class="c">{{ l.slno }}</td><td class="c">{{ l.ledger }}</td><td class="c right">{{ l.debit }}</td><td class="c right">{{ l.credit }}</td></tr>{% endfor %}
+    <tr><td class="c right bold" colspan="2">Total</td><td class="c right bold">{{ total_dr }}</td><td class="c right bold">{{ total_cr }}</td></tr>
+  </table>
+  <div style="margin-top:6px">Narration: {{ narration or "-" }}</div>
+  <div>Amount in words: <b>{{ amount_in_words }}</b></div>
+  <table style="width:100%;margin-top:40px"><tr><td>Prepared by: {{ issued_by }}</td><td class="center">Checked by</td><td class="right">Authorised by</td></tr></table>
+{% endblock %}

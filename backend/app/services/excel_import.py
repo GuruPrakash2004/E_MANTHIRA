@@ -113,3 +113,46 @@ def import_rows(doc_id: int, file_bytes: bytes, user_code: str) -> dict:
             results.append({"row": excel_row_num, "status": "error", "message": str(exc)[:200]})
 
     return {"created": created, "failed": len(results) - created, "rows": results}
+
+
+def field_info(conn: Connection, doc_id: int) -> list[dict]:
+    """The legacy info grid under the document picker: one entry per template column with its data type, whether it is
+    mandatory / a foreign key / unique, its maximum length and default."""
+    meta = masters_service.get_meta(conn, doc_id)
+    widths = {
+        r[0].lower(): r[1]
+        for r in conn.execute(text("SELECT COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = :t"), {"t": meta.table})
+    }
+    out = [
+        {"name": f"{meta.short_form} Code", "data_type": "Text", "mandatory": "Y", "foreign_key": "", "max_length": widths.get(meta.code_col.lower()), "unique": "Y", "example": "", "default": ""},
+        {"name": f"{meta.short_form} Name", "data_type": "Text", "mandatory": "Y", "foreign_key": "", "max_length": widths.get(meta.name_col.lower()), "unique": "N", "example": "", "default": ""},
+    ]
+    rows = conn.execute(
+        text(
+            "SELECT FldCode, FldCaption, FldDataType, FldDataWidth, FldBlnMandatory, FldUnique, FldBlnComboData, FldCmbTblName, FldDefStdDefault "
+            "FROM UtlDocDsgrFlds WHERE DocID = :d AND FLdBlnHide <> 'Y' AND FldCode NOT IN (:c, :n) ORDER BY FldSection, FldOrderBy"
+        ),
+        {"d": doc_id, "c": meta.code_col, "n": meta.name_col},
+    ).mappings().all()
+    for r in rows:
+        out.append(
+            {
+                "name": r["FldCaption"] or r["FldCode"],
+                "data_type": (r["FldDataType"] or "").strip(),
+                "mandatory": "Y" if (r["FldBlnMandatory"] or "").strip().upper() == "Y" else "N",
+                "foreign_key": (r["FldCmbTblName"] or "").strip() if (r["FldBlnComboData"] or "").strip().upper() == "Y" else "",
+                "max_length": r["FldDataWidth"] or widths.get((r["FldCode"] or "").lower()),
+                "unique": "Y" if (r["FldUnique"] or "").strip().upper() == "Y" else "N",
+                "example": "",
+                "default": (r["FldDefStdDefault"] or "").strip(),
+            }
+        )
+    return out
+
+
+def preview(conn: Connection, doc_id: int, file_bytes: bytes) -> dict:
+    """Load from Excel: the rows the file holds (nothing is written) so they can be reviewed before importing."""
+    meta = masters_service.get_meta(conn, doc_id)
+    columns = _import_columns(conn, meta)
+    rows = parse_rows(conn, doc_id, file_bytes)
+    return {"columns": [{"key": c, "label": cap} for c, cap in columns], "total": len(rows), "rows": [{"row": n, **v} for n, v in rows[:1000]]}

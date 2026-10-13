@@ -13,8 +13,8 @@ from sqlalchemy.engine import Connection
 
 def list_settings(conn: Connection, *, is_admin: bool) -> list[dict]:
     sql = "SELECT SetGroup, SetName, SetValue, SetCaption, Remarks, HideSetting, DropDownList, Mandatory, DataType FROM UtlGSettings"
-    if not is_admin:
-        sql += " WHERE (HideSetting IS NULL OR HideSetting <> 'Y')"
+    # the legacy Global Settings screen lists only HideSetting <> 'Y' rows, for ADMIN too
+    sql += " WHERE (HideSetting IS NULL OR HideSetting <> 'Y')"
     sql += " ORDER BY SetGroup, SetName"
     rows = conn.execute(text(sql)).mappings().all()
     return [
@@ -42,3 +42,32 @@ def set_value(conn: Connection, *, set_group: str, set_name: str, set_value: str
         from fastapi import HTTPException, status
 
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Setting not found")
+
+
+def save_many(conn: Connection, items: list[dict]) -> int:
+    """Legacy UpdateValDtl: update the value of every edited row (matched by group + name)."""
+    n = 0
+    for it in items:
+        set_value(conn, set_group=it["group"], set_name=it["name"], set_value=(it.get("value") or "").strip())
+        n += 1
+    return n
+
+
+def create_setting(conn: Connection, *, group: str, name: str, caption: str, value: str, remarks: str, hide: bool) -> None:
+    """Legacy "Add": a new UtlGSettings row (FldCode / SetName must be unique, caption required)."""
+    from fastapi import HTTPException, status
+
+    from app.legacy.tables import insert_row
+
+    name, caption = (name or "").strip(), (caption or "").strip()
+    if not name:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "FldCode should not be blank!!!")
+    if not caption:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "FldCaption should not be blank!!!")
+    if conn.execute(text("SELECT 1 FROM UtlGSettings WHERE SetName = :n"), {"n": name}).first():
+        raise HTTPException(status.HTTP_409_CONFLICT, "FldCode already exists...")
+    insert_row(
+        conn,
+        "UtlGSettings",
+        {"SetGroup": (group or "").strip(), "SetName": name, "SetValue": (value or "").strip(), "SetCaption": caption, "Remarks": (remarks or "").strip(), "HideSetting": "Y" if hide else "N"},
+    )

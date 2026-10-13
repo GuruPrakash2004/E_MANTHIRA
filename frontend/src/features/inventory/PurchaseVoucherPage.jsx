@@ -13,6 +13,8 @@ import dayjs from 'dayjs'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard, PageHeader } from '../../components/ui/EntryParts'
 import { formatINR, isoDate } from '../../utils/format'
+import DocNavBar from '../../components/ui/DocNavBar'
+import { getVoucher } from '../../api/endpoints/voucher'
 
 const DOC_ID = 1272
 const EMPTY_LINES = [
@@ -35,6 +37,8 @@ export default function PurchaseVoucherPage() {
   const [lines, setLines] = useState(EMPTY_LINES)
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
+  const [viewId, setViewId] = useState(null) // a saved voucher being looked at (read-only)
+  const [viewInfo, setViewInfo] = useState(null)
 
   const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['purchase-vouchers', 'recent'], queryFn: () => inventoryApi.listPurchaseVouchers({ top: 15 }) })
   const { data: bills } = useQuery({ queryKey: ['purchase-bills', 'unvouchered'], queryFn: () => inventoryApi.listPurchaseBills({ top: 100 }) })
@@ -59,7 +63,36 @@ export default function PurchaseVoucherPage() {
   const totalCr = lines.reduce((s, l) => s + (Number(l.cr_amt) || 0), 0)
   const balanced = Math.round(totalDr * 100) === Math.round(totalCr * 100) && totalDr > 0
 
+  async function viewRecord(id) {
+    try {
+      const r = await getVoucher('purchase', id)
+      const h = r.header
+      setVoucherDate(h.PURVCHDate ? new Date(h.PURVCHDate) : new Date())
+      setCrPeriod(h.CRPERIOD || 0)
+      setPbId('')
+      setLines(r.lines.map((l) => ({ ac_led_id: String(l.ac_led_id), dr_amt: l.dr_amt, cr_amt: l.cr_amt })))
+      setViewId(id)
+      setViewInfo({ no: h.PrintPURVCHNO || h.PURVCHNO, trnType: h.TRNTYPE, trnId: h.TRNID })
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not open that voucher', color: 'red' })
+    }
+  }
+  function startNew() {
+    setViewId(null)
+    setViewInfo(null)
+    setVoucherDate(new Date())
+    setCrPeriod(0)
+    setPbId('')
+    setLines(EMPTY_LINES)
+  }
+  async function findVouchers(q) {
+    const rows = await inventoryApi.listPurchaseVouchers({ top: 200 })
+    const t = (q || '').toLowerCase()
+    return rows.filter((r) => !t || String(r.PrintPURVCHNO).toLowerCase().includes(t)).map((r) => ({ id: r.PURVCHID, label: r.PrintPURVCHNO, sub: `Credit period ${r.CRPERIOD} days` }))
+  }
+
   async function onSave() {
+    if (viewId) return
     if (!balanced) {
       notifications.show({ message: 'Debit and Credit totals are NOT matching!', color: 'red' })
       return
@@ -100,8 +133,18 @@ export default function PurchaseVoucherPage() {
       <PageHeader title="Purchase Voucher" subtitle="Post the accounting for a purchase, optionally linked to a bill" />
 
       <EntryLayout
+        viewing={Boolean(viewId)}
         main={
           <Stack gap="lg">
+            {viewInfo && (
+              <SectionCard title="Header Info" hint="How this voucher was created.">
+                <Grid>
+                  <Grid.Col span={{ base: 12, sm: 4 }}><Text size="xs" c="dimmed">Voucher No</Text><Text fw={600}>{viewInfo.no}</Text></Grid.Col>
+                  <Grid.Col span={{ base: 12, sm: 4 }}><Text size="xs" c="dimmed">TRN Type</Text><Text fw={600} style={{ color: 'var(--vt-readonly-ink)' }}>{viewInfo.trnType}</Text></Grid.Col>
+                  <Grid.Col span={{ base: 12, sm: 4 }}><Text size="xs" c="dimmed">TRN ID</Text><Text fw={600} style={{ color: 'var(--vt-readonly-ink)' }}>{viewInfo.trnId}</Text></Grid.Col>
+                </Grid>
+              </SectionCard>
+            )}
             <SectionCard title="Voucher details" hint="Date, credit period and the purchase bill this voucher settles.">
               <Grid>
                 <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
@@ -206,7 +249,8 @@ export default function PurchaseVoucherPage() {
               saveLabel="Save"
               saveIcon={Save}
               saving={saving}
-              onSave={onSave}
+              onSave={viewId ? undefined : onSave}
+              saveDisabled={Boolean(viewId)}
             />
             {lastSaved && <SavedPanel lines={[`Voucher ${lastSaved.purvch_no}`]} />}
             <RecentCard
@@ -221,6 +265,7 @@ export default function PurchaseVoucherPage() {
           </>
         }
       />
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewInfo?.no} onLoad={viewRecord} onNew={startNew} search={findVouchers} />
     </Stack>
   )
 }

@@ -33,6 +33,7 @@ from app.services import receipt as receipt_service
 from app.utils.amount_in_words import amount_in_words
 
 DOC_ID = 1281
+DONATION_DOC_ID = 1261
 TABLE = "TrnHdrHB"
 NO_COLUMN = "HBNO"
 HALL_RECEIPT_PREFIX = "ANP"  # legacy hard-codes this for hall receipts
@@ -91,9 +92,9 @@ def check_availability(conn: Connection, *, hall_id: int, start_date: date, end_
     return count == 0
 
 
-def availability_calendar(conn: Connection, *, hall_id: int, from_date: date, months: int = 6) -> list[dict]:
+def availability_calendar(conn: Connection, *, hall_id: int, from_date: date, months: int = 6, to_date: date | None = None) -> list[dict]:
     """Returns one row per booked (non-cancelled) day in the window, for the calendar UI."""
-    to_date = from_date + timedelta(days=months * 31)
+    to_date = to_date or (from_date + timedelta(days=months * 31))
     rows = conn.execute(
         text(
             """
@@ -236,7 +237,7 @@ def get(conn: Connection, hb_id: int) -> dict:
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Hall booking not found")
     receipts = conn.execute(
-        text("SELECT RCPTVCHID, RCPTVCHNO, PrintRCPTVCHNO, RCPTVCHDate, TOTCR, RCPTTYPE, Cancelled FROM TrnHdrRCPTVCH WHERE HBID = :id ORDER BY RCPTVCHID"),
+        text("SELECT RCPTVCHID, RCPTVCHNO, PrintRCPTVCHNO, RCPTVCHDate, TOTCR, TOTDR, RCPTTYPE, VCHTYP, NARR, Cancelled FROM TrnHdrRCPTVCH WHERE HBID = :id ORDER BY RCPTVCHID"),
         {"id": hb_id},
     ).mappings().all()
     result = dict(row)
@@ -337,3 +338,49 @@ def cancel(conn: Connection, *, hb_id: int, reason: str, user_code: str) -> None
     for _ in range(open_count):
         receipt_service.void_receipt_by_narr(conn, row["HBNO"], reverse_ledger=True)
     audit.record(conn, entity="Hall Booking", entity_id=hb_id, action="C", user_code=user_code, details=reason)
+
+
+def delete_receipt(conn: Connection, *, hb_id: int, receipt_id: int, user_code: str) -> dict:
+    """
+    Receipt Info > delete (frmTrnHBE.btnDelRec_Click): reverse what the receipt added to the booking, then remove the
+    receipt voucher and its accounting rows. Same write-set as the legacy form, in one transaction.
+    """
+    rcpt = conn.execute(
+        text("SELECT RCPTVCHID, RCPTVCHNO, TOTDR, RCPTTYPE FROM TrnHdrRCPTVCH WHERE RCPTVCHID = :r AND HBID = :h"), {"r": receipt_id, "h": hb_id}
+    ).mappings().first()
+    if rcpt is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Receipt not found for this booking")
+    booking = conn.execute(text("SELECT * FROM TrnHdrHB WHERE HBID = :id"), {"id": hb_id}).mappings().first()
+    if booking is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hall booking not found")
+    amt = float(rcpt["TOTDR"] or 0)
+    kind = (rcpt["RCPTTYPE"] or "").strip().upper()
+    updates: dict = {"BALAMT": round(float(booking["BALAMT"] or 0) + amt, 2)}
+    if kind == "ADV":
+        updates.update({"ADV": round(float(booking["ADV"] or 0) - amt, 2), "PAYMNTMODE": "", "REFNO": ""})
+    elif kind == "PARTIAL":
+        updates.update({"PMT2": round(float(booking["PMT2"] or 0) - amt, 2), "PAYMODE2": "", "REFNO3": ""})
+    else:
+        updates.update({"FULLPAIDAMT": round(float(booking["FULLPAIDAMT"] or 0) - amt, 2), "PAYMODE": "", "REF2": ""})
+    update_row(conn, "TrnHdrHB", "HBID", hb_id, updates)
+    conn.execute(text("DELETE FROM TrnHdrRCPTVCH WHERE RCPTVCHID = :r"), {"r": receipt_id})
+    conn.execute(text("DELETE FROM TrnDtlRCPTVCH WHERE RCPTVCHID = :r"), {"r": receipt_id})
+    acc = conn.execute(text("SELECT AccID FROM TrnHdrACC WHERE TrnID = :r AND DocType = 'RCPTVCH'"), {"r": receipt_id}).scalar()
+    if acc:
+        for tbl in ("TrnHdrACC", "TrnDtlACC", "TrnDtlACCAdj"):
+            conn.execute(text(f"DELETE FROM {tbl} WHERE AccID = :a"), {"a": acc})
+    audit.record(conn, entity="Hall Booking Receipt", entity_id=hb_id, action="D", user_code=user_code, details=f"{rcpt['RCPTVCHNO']} {amt}")
+    return {"balance": updates["BALAMT"]}
+
+
+def booking_options(conn: Connection) -> list[dict]:
+    """
+    Options menu entries of the Hall Booking screen besides its print formats (UtlOption): Receipt Info, and one
+    "Donation for <prefix>" per document-number prefix of the Donation Receipt document (legacy: NMM / SLV).
+    """
+    from app.meta.numbering import resolve_prefix
+
+    opts = [{"name": "Receipt Info", "label": "Receipt Info", "kind": "receipt-info"}]
+    for prefix in resolve_prefix(conn, doc_id=DONATION_DOC_ID, field_values={}):
+        opts.append({"name": f"Donation for {prefix}", "label": f"Donation for {prefix}", "kind": "donation", "prefix": prefix})
+    return opts

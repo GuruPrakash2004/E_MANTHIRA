@@ -37,8 +37,15 @@ def writable_columns(t: Table) -> set[str]:
 
 
 def _filter(t: Table, values: Mapping[str, Any]) -> dict[str, Any]:
-    allowed = writable_columns(t)
-    return {k: v for k, v in values.items() if k in allowed}
+    # SQL Server column names are case-insensitive, and the legacy schema is inconsistent about case (PartyId vs
+    # PartyID), so match case-insensitively and write under the table's real column name.
+    allowed = {c.lower(): c for c in writable_columns(t)}
+    out: dict[str, Any] = {}
+    for k, v in values.items():
+        real = allowed.get(k.lower())
+        if real is not None:
+            out[real] = v
+    return out
 
 
 def insert_row(conn: Connection, table_name: str, values: Mapping[str, Any], returning: str | None = None):

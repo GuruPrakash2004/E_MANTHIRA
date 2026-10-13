@@ -191,3 +191,11 @@ body {
 .vt-softvent-link:hover { transform: translateY(-2px) scale(1.04); filter: brightness(1.15); }
 .vt-softvent-link:focus-visible { outline: 2px solid #f4e1a6; outline-offset: 4px; }
 @media (prefers-reduced-motion: reduce) { .vt-softvent-link { transition: none; } .vt-softvent-link:hover { transform: none; } }
+
+/* Field convention carried over from the legacy screens: red caption = mandatory, blue = read-only. */
+:root { --vt-required-ink: var(--mantine-color-red-7); --vt-readonly-ink: #2f5d8a; }
+:root[data-mantine-color-scheme='dark'] { --vt-required-ink: var(--mantine-color-red-4); --vt-readonly-ink: #8fb8e6; }
+.vt-fld-required .mantine-InputWrapper-label { color: var(--vt-required-ink); }
+.vt-fld-readonly .mantine-InputWrapper-label,
+.vt-fld-readonly .mantine-Input-input { color: var(--vt-readonly-ink); }
+.vt-field-required .mantine-InputWrapper-label { color: var(--vt-required-ink); }

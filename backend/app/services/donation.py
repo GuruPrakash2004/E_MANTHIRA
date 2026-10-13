@@ -214,7 +214,9 @@ def get(conn: Connection, donrec_id: int) -> dict:
     row = conn.execute(text("SELECT * FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Donation Receipt not found")
-    return dict(row)
+    out = dict(row)
+    out["lines"] = [dict(r) for r in conn.execute(text("SELECT SEVAID, SEVANME, AMOUNT FROM TrnDtlDONREC WHERE DONRECID = :i ORDER BY SlNo"), {"i": donrec_id}).mappings().all()]
+    return out
 
 
 def list_recent(conn: Connection, *, fy: FinancialYear, search: str = "", top: int = 50) -> list[dict]:
@@ -254,3 +256,33 @@ def delete(conn: Connection, *, donrec_id: int, user_code: str) -> None:
     conn.execute(text("DELETE FROM TrnDtlDONREC WHERE DONRECID = :id"), {"id": donrec_id})
     conn.execute(text("DELETE FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id})
     audit.record(conn, entity="Donation Receipt Entry", entity_id=donrec_id, action="D", user_code=user_code)
+
+
+def donor_history(conn: Connection, *, name: str = "", top: int = 0) -> list[dict]:
+    """
+    Show Donor (frmTrnDONREC.btnShowDonars_Click): earlier donation receipts (ShowRec='Y'), newest first, one row per
+    detail line, optionally narrowed to donors starting with `name` and limited to the newest `top` rows.
+    """
+    from app.core.db import limit_clause
+
+    sql = """
+        SELECT h.DONRECID, h.DONRECNO, h.PrintDONRECNO, h.DONRECDate, h.DONOR, h.CONTACTNO, h.ADDRESS, h.REFNO, h.PANNO, d.SEVANME, d.SEVAID
+        FROM TrnHdrDONREC h JOIN TrnDtlDONREC d ON h.DONRECID = d.DONRECID
+        WHERE h.ShowRec = 'Y'
+    """
+    params: dict = {}
+    if name.strip():
+        sql += " AND h.DONOR LIKE :q"
+        params["q"] = f"{name.strip()}%"
+    sql += f" ORDER BY h.DONRECID DESC, h.DONOR {limit_clause(top if top > 0 else 500)}"
+    return [dict(r) for r in conn.execute(text(sql), params).mappings().all()]
+
+
+def last_entry(conn: Connection) -> dict | None:
+    """F6 in Add mode: the most recent receipt (max DONRECID) with its detail lines, to be re-entered."""
+    last = conn.execute(text("SELECT MAX(DONRECID) FROM TrnHdrDONREC")).scalar()
+    if not last:
+        return None
+    out = get(conn, int(last))
+    out["lines"] = [dict(r) for r in conn.execute(text("SELECT SEVAID, SEVANME, AMOUNT FROM TrnDtlDONREC WHERE DONRECID = :i ORDER BY SlNo"), {"i": int(last)}).mappings().all()]
+    return out

@@ -48,6 +48,11 @@ class SevaCreateRequest(BaseModel):
     doc_date: date
     is_regular: bool = False
     prasada: bool = False
+    add1: str | None = None
+    add2: str | None = None
+    add3: str | None = None
+    add4: str | None = None
+    mobile_no: str | None = None
     extra_fields: dict = {}
 
 
@@ -58,6 +63,64 @@ class CancelRequest(BaseModel):
 @router.get("/devotee")
 def devotee_lookup(mobile: str, name: str | None = None, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return seva_service.lookup_devotee(conn, mobile=mobile, name=name)
+
+
+class GroupGenerateRequest(BaseModel):
+    grp_id: int
+    seva_id: int
+    member_ids: list[int]
+    # everything the entry form supplies for every generated seva
+    payment_mode: str
+    bank_name: str | None = None
+    cheque_no: str | None = None
+    cheque_date: date | None = None
+    reference_no: str | None = None
+    ledger_id: int
+    cash_bank_ledger_id: int
+    voucher_type: str
+    timing_text: str | None = None
+    dates: list[SevaDateIn]
+    doc_date: date
+    extra_fields: dict = {}
+
+
+@router.get("/group-seva/groups")
+def group_seva_groups(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_VIEW))):
+    return seva_service.group_sevas(conn)
+
+
+@router.get("/group-seva/{grp_id}/members")
+def group_seva_members(grp_id: int, seva_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_VIEW))):
+    return seva_service.group_members(conn, grp_id=grp_id, seva_id=seva_id)
+
+
+@router.post("/group-seva/generate", status_code=201)
+def group_seva_generate(
+    body: GroupGenerateRequest,
+    fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_ADD)),
+):
+    template = seva_service.SevaInput(
+        sannidhi_id=0, seva_id=body.seva_id, mobile="", name="", name_kn=None, gothra_id=None, nakshatra_id=None, rashi_id=None,
+        name2=None, nakshatra2_id=None, rashi2_id=None, timing_text=body.timing_text, payment_mode=body.payment_mode, bank_name=body.bank_name,
+        cheque_no=body.cheque_no, cheque_date=body.cheque_date, reference_no=body.reference_no, address=None, ledger_id=body.ledger_id,
+        cash_bank_ledger_id=body.cash_bank_ledger_id, voucher_type=body.voucher_type, rate=0,
+        dates=[seva_service.SevaDate(perform_date=d.perform_date, remarks=d.remarks) for d in body.dates],
+        doc_date=body.doc_date, extra_fields=body.extra_fields,
+    )
+    with with_transaction() as conn:
+        created = seva_service.generate_group(conn, grp_id=body.grp_id, seva_id=body.seva_id, member_ids=body.member_ids, template=template, fy=fy, user_code=user.user_code)
+    return {"created": created}
+
+
+@router.get("/regular-devotees")
+def regular_devotees(name: str = "", top: int = Query(0, ge=0, le=500), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_VIEW))):
+    return seva_service.regular_devotees(conn, name=name, top=top)
+
+
+@router.get("/last")
+def last_seva(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_VIEW))):
+    return seva_service.last_entry(conn)
 
 
 @router.get("")

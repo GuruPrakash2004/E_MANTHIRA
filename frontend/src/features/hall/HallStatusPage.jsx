@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
-import { ActionIcon, Button, Card, Group, SimpleGrid, Skeleton, Stack, Table, Text, Title, Tooltip } from '@mantine/core'
-import { Building, CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, DoorOpen } from 'lucide-react'
+import { Button, Card, Group, SimpleGrid, Skeleton, Stack, Table, Text, Title, Tooltip } from '@mantine/core'
+import { DateInput } from '@mantine/dates'
+import { Building, CalendarCheck, CalendarDays, DoorOpen, FileDown, Search } from 'lucide-react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
+import { isoDate } from '../../utils/format'
 import * as hallApi from '../../api/endpoints/hall'
 import StatCard from '../../components/ui/StatCard'
 import EmptyState from '../../components/ui/EmptyState'
@@ -13,23 +15,31 @@ const BOOKED = 'var(--mantine-color-kumkum-7)'
 
 /** Legacy Hall Status report (frmRptRoomStatus): grid of halls x days. Booked cells are maroon, today's column is gold. */
 export default function HallStatusPage() {
-  const [month, setMonth] = useState(dayjs().startOf('month'))
-  const monthStart = month.format('YYYY-MM-DD')
+  // Legacy: pick a From / To date range, press View. Default is the current month.
+  const [draft, setDraft] = useState({ from: dayjs().startOf('month').toDate(), to: dayjs().endOf('month').toDate() })
+  const [range, setRange] = useState({ from: dayjs().startOf('month'), to: dayjs().endOf('month') })
+  const monthStart = range.from.format('YYYY-MM-DD')
+  const rangeEnd = range.to.format('YYYY-MM-DD')
+  function onView() {
+    if (!draft.from || !draft.to) return
+    if (dayjs(draft.to).isBefore(dayjs(draft.from), 'day')) return
+    setRange({ from: dayjs(draft.from).startOf('day'), to: dayjs(draft.to).startOf('day') })
+  }
   const today = dayjs().format('YYYY-MM-DD')
 
   const { data: halls, isLoading: hallsLoading } = useQuery({ queryKey: ['halls'], queryFn: hallApi.listHalls })
 
   const availabilityQueries = useQueries({
     queries: (halls || []).map((h) => ({
-      queryKey: ['hall-availability', h.HALLID, monthStart],
-      queryFn: () => hallApi.getAvailability(h.HALLID, monthStart, 1),
+      queryKey: ['hall-availability', h.HALLID, monthStart, rangeEnd],
+      queryFn: () => hallApi.getAvailability(h.HALLID, monthStart, 1, rangeEnd),
       enabled: Boolean(halls),
     })),
   })
   const loading = hallsLoading || availabilityQueries.some((q) => q.isLoading)
 
-  const daysInMonth = month.daysInMonth()
-  const days = Array.from({ length: daysInMonth }, (_, i) => month.add(i, 'day'))
+  const dayCount = Math.min(Math.max(range.to.diff(range.from, 'day') + 1, 1), 366)
+  const days = Array.from({ length: dayCount }, (_, i) => range.from.add(i, 'day'))
 
   // Per hall: day -> booking row; plus a flat list of bookings (consecutive days of one booking merged).
   const { rows, bookings, bookedDays, bookedToday } = useMemo(() => {
@@ -61,8 +71,20 @@ export default function HallStatusPage() {
   }, [halls, availabilityQueries.map((q) => q.dataUpdatedAt).join(',')])
 
   const hallCount = (halls || []).length
-  const isThisMonth = month.isSame(dayjs(), 'month')
+  const todayInRange = !dayjs(today).isBefore(range.from, 'day') && !dayjs(today).isAfter(range.to, 'day')
   const fmt = (iso) => dayjs(iso).format('DD/MM/YYYY')
+  function onExport() {
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const head = ['Date', ...rows.map((r) => r.hall.HALLNAME)]
+    const lines = days.map((d) => [fmt(d.format('YYYY-MM-DD')), ...rows.map((r) => (r.byDay[d.format('YYYY-MM-DD')] ? `Booked ${r.byDay[d.format('YYYY-MM-DD')].PrintHBNO || ''}`.trim() : ''))])
+    const csv = [head, ...lines].map((l) => l.map(esc).join(',')).join('\r\n')
+    const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `hall-status-${monthStart}-to-${rangeEnd}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <Stack gap="lg" className="vt-rise">
@@ -76,26 +98,22 @@ export default function HallStatusPage() {
             </Text>
           </div>
         </Group>
-        <Group gap="xs">
-          <ActionIcon variant="light" color="kumkum" size={40} aria-label="Previous month" onClick={() => setMonth((m) => m.subtract(1, 'month'))}>
-            <ChevronLeft size={18} />
-          </ActionIcon>
-          <Text fw={700} w={150} ta="center" aria-live="polite" style={{ fontFamily: 'Marcellus, Georgia, serif', fontSize: 20 }}>
-            {month.format('MMMM YYYY')}
-          </Text>
-          <ActionIcon variant="light" color="kumkum" size={40} aria-label="Next month" onClick={() => setMonth((m) => m.add(1, 'month'))}>
-            <ChevronRight size={18} />
-          </ActionIcon>
-          <Button variant="default" size="sm" disabled={isThisMonth} onClick={() => setMonth(dayjs().startOf('month'))}>
-            This month
+        <Group gap="xs" align="flex-end" wrap="wrap">
+          <DateInput label="From" valueFormat="DD/MM/YYYY" value={draft.from} onChange={(v) => setDraft((d) => ({ ...d, from: v }))} w={150} />
+          <DateInput label="To" valueFormat="DD/MM/YYYY" value={draft.to} onChange={(v) => setDraft((d) => ({ ...d, to: v }))} w={150} minDate={draft.from || undefined} />
+          <Button color="kumkum" leftSection={<Search size={16} />} onClick={onView}>
+            View
+          </Button>
+          <Button variant="default" leftSection={<FileDown size={16} />} disabled={loading || hallCount === 0} onClick={onExport}>
+            Export to Excel
           </Button>
         </Group>
       </Group>
 
       <SimpleGrid cols={{ base: 1, xs: 3 }}>
         <StatCard label="Halls" value={hallCount} icon={Building} footer="Configured halls and rooms" loading={hallsLoading} />
-        <StatCard label="Booked hall-days" value={bookedDays} icon={CalendarCheck} tone="dark" footer={`In ${month.format('MMMM')}`} loading={loading} />
-        <StatCard label="Booked today" value={isThisMonth ? bookedToday : '-'} icon={DoorOpen} footer={isThisMonth ? `${Math.max(hallCount - bookedToday, 0)} free today` : 'Shown for the current month'} loading={loading} />
+        <StatCard label="Booked hall-days" value={bookedDays} icon={CalendarCheck} tone="dark" footer={`${fmt(monthStart)} to ${fmt(rangeEnd)}`} loading={loading} />
+        <StatCard label="Booked today" value={todayInRange ? bookedToday : '-'} icon={DoorOpen} footer={todayInRange ? `${Math.max(hallCount - bookedToday, 0)} free today` : 'Today is outside this range'} loading={loading} />
       </SimpleGrid>
 
       <Card withBorder p="lg">
@@ -126,76 +144,53 @@ export default function HallStatusPage() {
         ) : hallCount === 0 ? (
           <EmptyState icon={Building} title="No halls configured" hint="Add halls in the Hall master and they will appear here." />
         ) : (
-          <Table.ScrollContainer minWidth={760}>
-            <Table withColumnBorders style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+          <Table.ScrollContainer minWidth={520} mah={560}>
+            <Table withColumnBorders stickyHeader>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th style={{ position: 'sticky', left: 0, zIndex: 2, background: 'var(--vt-gold-chip)', minWidth: 150 }}>Hall</Table.Th>
-                  {days.map((d) => {
-                    const isToday = d.format('YYYY-MM-DD') === today
-                    const weekend = d.day() === 0 || d.day() === 6
-                    return (
-                      <Table.Th
-                        key={d.format('D')}
-                        style={{
-                          textAlign: 'center',
-                          minWidth: 32,
-                          padding: '4px 2px',
-                          background: isToday ? 'var(--mantine-color-gold-3)' : undefined,
-                          color: weekend && !isToday ? 'var(--vt-accent)' : undefined,
-                        }}
-                      >
-                        <div className="vt-num">{d.format('D')}</div>
-                        <div style={{ fontSize: 10, fontWeight: 500, opacity: 0.75 }}>{d.format('dd')}</div>
-                      </Table.Th>
-                    )
-                  })}
+                  <Table.Th style={{ background: 'var(--vt-gold-chip)', width: 130 }}>Date</Table.Th>
+                  {rows.map(({ hall }) => (
+                    <Table.Th key={hall.HALLID} style={{ background: 'var(--vt-gold-chip)', textAlign: 'center' }}>
+                      {hall.HALLNAME}
+                    </Table.Th>
+                  ))}
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {rows.map(({ hall, byDay }) => (
-                  <Table.Tr key={hall.HALLID}>
-                    <Table.Td style={{ position: 'sticky', left: 0, zIndex: 1, background: 'var(--vt-surface)', fontWeight: 600, whiteSpace: 'nowrap' }}>{hall.HALLNAME}</Table.Td>
-                    {days.map((d) => {
-                      const iso = d.format('YYYY-MM-DD')
-                      const booking = byDay[iso]
-                      const isToday = iso === today
-                      const cell = (
-                        <Table.Td
-                          key={iso}
-                          aria-label={booking ? `${hall.HALLNAME}, ${fmt(iso)}: booked ${booking.PrintHBNO || ''}` : undefined}
-                          style={{
-                            textAlign: 'center',
-                            padding: 0,
-                            height: 36,
-                            background: booking ? BOOKED : isToday ? 'var(--vt-gold-chip)' : undefined,
-                            color: booking ? '#FBF6EC' : undefined,
-                          }}
-                        >
-                          {booking ? '●' : ''}
-                        </Table.Td>
-                      )
-                      return booking ? (
-                        <Tooltip key={iso} label={`${booking.PrintHBNO || ''}${booking.NMEOFFUNC ? ` · ${booking.NMEOFFUNC}` : ''}`} withArrow>
-                          {cell}
-                        </Tooltip>
-                      ) : (
-                        cell
-                      )
-                    })}
-                  </Table.Tr>
-                ))}
+                {days.map((d) => {
+                  const iso = d.format('YYYY-MM-DD')
+                  const isToday = iso === today
+                  return (
+                    <Table.Tr key={iso}>
+                      <Table.Td className="vt-num" style={{ fontWeight: 600, background: isToday ? 'var(--vt-gold-chip)' : undefined }}>
+                        {fmt(iso)} <Text span size="xs" c="dimmed">{d.format('ddd')}</Text>
+                      </Table.Td>
+                      {rows.map(({ hall, byDay }) => {
+                        const booking = byDay[iso]
+                        return booking ? (
+                          <Tooltip key={hall.HALLID} label={`${booking.PrintHBNO || ''}${booking.NMEOFFUNC ? ` \u00b7 ${booking.NMEOFFUNC}` : ''}`} withArrow>
+                            <Table.Td aria-label={`${hall.HALLNAME}, ${fmt(iso)}: booked ${booking.PrintHBNO || ''}`} style={{ textAlign: 'center', background: BOOKED, color: '#FBF6EC', fontWeight: 600 }}>
+                              Booked
+                            </Table.Td>
+                          </Tooltip>
+                        ) : (
+                          <Table.Td key={hall.HALLID} style={{ background: isToday ? 'var(--vt-gold-chip)' : undefined }} />
+                        )
+                      })}
+                    </Table.Tr>
+                  )
+                })}
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
         )}
       </Card>
 
-      <SectionCard title="Bookings this month" hint="The same bookings as a list, with their dates.">
+      <SectionCard title="Bookings in this range" hint="The same bookings as a list, with their dates.">
         {loading ? (
           <Skeleton height={60} radius="md" />
         ) : bookings.length === 0 ? (
-          <EmptyState icon={CalendarDays} title="No bookings this month" hint="Bookings made in Hall Booking will show up here." />
+          <EmptyState icon={CalendarDays} title="No bookings in this range" hint="Bookings made in Hall Booking will show up here." />
         ) : (
           <Table.ScrollContainer minWidth={520}>
             <Table>

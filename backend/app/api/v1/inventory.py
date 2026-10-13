@@ -282,3 +282,92 @@ def stock_ledger_report(
     _: CurrentUser = Depends(get_current_user),
 ):
     return inv.stock_ledger_report(conn, item_id=item_id, loc_id=loc_id, from_date=from_date, to_date=to_date)
+
+
+# ---- Item Quick Referencer / History — port of frmRptStkRef ----
+
+
+@router.get("/item-referencer/items")
+def referencer_items(q: str = Query(""), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    from app.services import item_referencer
+
+    return item_referencer.search_items(conn, q)
+
+
+@router.get("/item-referencer/{item_id}")
+def referencer_item(item_id: int, conn: Connection = Depends(get_conn), fy: FinancialYear = Depends(get_user_fy), _: CurrentUser = Depends(get_current_user)):
+    from fastapi import HTTPException
+
+    from app.services import item_referencer
+
+    info = item_referencer.item_info(conn, item_id, fy)
+    if info is None:
+        raise HTTPException(404, "Item not found")
+    return info
+
+
+@router.get("/item-referencer/{item_id}/transactions")
+def referencer_transactions(
+    item_id: int,
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    doc_name: str | None = Query(None),
+    conn: Connection = Depends(get_conn),
+    _: CurrentUser = Depends(get_current_user),
+):
+    from app.services import item_referencer
+
+    return item_referencer.history(conn, item_id, from_date, to_date, doc_name)
+
+
+# ---- Stock Ledger / Stock Balance (legacy frmRptStockLed / frmRptStockBal) ----
+
+
+def _csv_ints(v: str | None) -> list[int]:
+    return [int(x) for x in v.split(",") if x.strip().lstrip("-").isdigit()] if v else []
+
+
+@router.get("/reports/lookups")
+def stock_report_lookups(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    from app.services import stock_reports
+
+    return {"locations": stock_reports.locations(conn), "item_groups": stock_reports.item_groups(conn), **stock_reports.balance_info(conn)}
+
+
+@router.get("/reports/stock-ledger")
+def stock_ledger_multi(
+    from_date: date,
+    to_date: date,
+    item_ids: str | None = None,
+    group_ids: str | None = None,
+    loc_id: int | None = None,
+    conn: Connection = Depends(get_conn),
+    fy: FinancialYear = Depends(get_user_fy),
+    _: CurrentUser = Depends(get_current_user),
+):
+    from app.services import stock_reports
+
+    ids = _csv_ints(item_ids)
+    if group_ids:
+        ids += stock_reports.items_in_groups(conn, _csv_ints(group_ids))
+    return stock_reports.ledger(conn, fy=fy, from_date=from_date, to_date=to_date, item_ids=sorted(set(ids)), loc_id=loc_id)
+
+
+@router.get("/reports/stock-balance")
+def stock_balance_multi(
+    from_date: date,
+    to_date: date,
+    item_ids: str | None = None,
+    group_ids: str | None = None,
+    loc_id: int | None = None,
+    show_value: bool = False,
+    hide_zero: bool = True,
+    conn: Connection = Depends(get_conn),
+    fy: FinancialYear = Depends(get_user_fy),
+    _: CurrentUser = Depends(get_current_user),
+):
+    from app.services import stock_reports
+
+    return stock_reports.balance(
+        conn, fy=fy, from_date=from_date, to_date=to_date, loc_id=loc_id, item_ids=_csv_ints(item_ids) or None, group_ids=_csv_ints(group_ids) or None, show_value=show_value, hide_zero=hide_zero
+    )

@@ -64,7 +64,7 @@ def _password_ok_against_policy(conn: Connection, new_password: str) -> str | No
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, conn: Connection = Depends(get_conn)):
     row = conn.execute(
-        text("SELECT * FROM MstUser WHERE UserCode = :u"), {"u": body.username}
+        text("SELECT UserID, UserCode, UserName, LoginPwd, RoleID, Inactive, PwdResetDt FROM MstUser WHERE UserCode = :u"), {"u": body.username}
     ).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid Login Name !!")
@@ -95,7 +95,6 @@ def login(body: LoginRequest, conn: Connection = Depends(get_conn)):
     refresh = create_token(subject=str(row["UserID"]), extra={"type": "refresh"}, days=7)
 
     with with_transaction() as tconn:
-        audit.ensure_schema(tconn)
         audit.record(tconn, entity="Login", entity_id=row["UserID"], action="A", user_code=row["UserCode"])
 
     return LoginResponse(
@@ -118,7 +117,7 @@ def refresh(refresh_token: str, conn: Connection = Depends(get_conn)):
     if payload.get("type") != "refresh":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong token type")
     user_id = int(payload["sub"])
-    row = conn.execute(text("SELECT * FROM MstUser WHERE UserID = :id"), {"id": user_id}).mappings().first()
+    row = conn.execute(text("SELECT UserCode, UserName, RoleID, Inactive FROM MstUser WHERE UserID = :id"), {"id": user_id}).mappings().first()
     if row is None or (row["Inactive"] or "N").strip().upper() == "Y":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")
     fy = get_active_fy(conn)

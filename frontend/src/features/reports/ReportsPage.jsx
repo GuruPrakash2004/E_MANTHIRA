@@ -1,4 +1,8 @@
 import { useState } from 'react'
+import HallVoucherPanel from './HallVoucherPanel'
+import PartyGLPanel from './PartyGLPanel'
+import CustomReportsPanel from './CustomReportsPanel'
+import SubsidiaryCatalogPanel from './SubsidiaryCatalogPanel'
 import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, Checkbox, Grid, Group, Select, SimpleGrid, Skeleton, Stack, Table, Tabs, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
@@ -27,49 +31,8 @@ const CATALOG_FORM_TAB = {
   frmRptSevaIssue: 'seva-issue',
 }
 
-/** "Subsidiary Reports" — port of frmRptReport, a launcher reading
- * UtlReports (RptName/RptGroupName/RptFrmName). Real data for this client
- * is exactly the 4 reports already built as tabs here; any future row
- * added to UtlReports shows up automatically, disabled until its tab
- * exists. */
 function SubsidiaryReportsCatalog({ onOpenTab }) {
-  const { data: catalog, isLoading } = useQuery({ queryKey: ['report-catalog'], queryFn: reportsApi.getReportCatalog })
-
-  return (
-    <Card withBorder p="lg">
-      <Text size="sm" c="dimmed" mb="md">
-        Every report registered in UtlReports, the same catalog the legacy "Subsidiary Reports" screen opened from.
-      </Text>
-      {isLoading && (
-        <Stack gap="xs">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} height={56} radius="md" />
-          ))}
-        </Stack>
-      )}
-      <Stack gap="xs">
-        {(catalog || []).map((r) => {
-          const tab = CATALOG_FORM_TAB[r.form_name]
-          return (
-            <Group key={r.rpt_id} justify="space-between" wrap="nowrap" p="sm" style={{ border: '1px solid var(--vt-line)', borderRadius: 12, background: 'var(--vt-surface)' }}>
-              <div style={{ minWidth: 0 }}>
-                <Text size="sm" fw={600} truncate>
-                  {r.name}
-                </Text>
-                <Text size="xs" c="dimmed" truncate>
-                  {r.group} &middot; {r.form_name}
-                </Text>
-              </div>
-              <Button size="xs" variant="light" color="kumkum" disabled={!tab} onClick={() => tab && onOpenTab(tab)}>
-                {tab ? 'Open' : 'Not available yet'}
-              </Button>
-            </Group>
-          )
-        })}
-        {!isLoading && (catalog || []).length === 0 && <EmptyState icon={LayoutList} title="No subsidiary reports registered" hint="Reports added to UtlReports will be listed here." />}
-      </Stack>
-    </Card>
-  )
+  return <SubsidiaryCatalogPanel onOpenTab={onOpenTab} tabFor={(form) => CATALOG_FORM_TAB[form]} />
 }
 
 const money = (v) => formatINR(v)
@@ -554,148 +517,6 @@ function GeneralLedgerPanel() {
   )
 }
 
-function CustomReportsPanel() {
-  const [crid, setCrid] = useState('')
-  const [filterValues, setFilterValues] = useState({})
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState(null)
-
-  const { data: reportsList } = useQuery({ queryKey: ['custom-reports'], queryFn: reportsApi.listCustomReports })
-  const { data: definition } = useQuery({
-    queryKey: ['custom-report-fields', crid],
-    queryFn: () => reportsApi.getCustomReportFields(crid),
-    enabled: Boolean(crid),
-  })
-
-  function onPickReport(v) {
-    setCrid(v)
-    setFilterValues({})
-    setResult(null)
-  }
-
-  function setFilter(key, value) {
-    setFilterValues((f) => ({ ...f, [key]: value }))
-  }
-
-  async function onRun() {
-    setLoading(true)
-    try {
-      const data = await reportsApi.runCustomReport(crid, filterValues)
-      setResult(data)
-    } catch (err) {
-      notifications.show({ message: err?.response?.data?.detail || 'Report failed', color: 'red' })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const filterFields = (definition?.fields || []).filter((f) => f.filter_req)
-  const visibleFields = definition?.fields || []
-
-  function columnsFor(fields) {
-    return fields.map((f) => ({ key: `${f.table}__${f.code}`, label: f.caption }))
-  }
-
-  const cols = columnsFor(visibleFields)
-
-  return (
-    <Stack gap="lg">
-      <Card withBorder p="lg">
-        <Select
-          label="Report"
-          placeholder="Choose a report"
-          searchable
-          data={(reportsList || []).map((r) => ({ value: String(r.crid), label: r.name }))}
-          value={crid}
-          onChange={onPickReport}
-        />
-        {filterFields.length > 0 && (
-          <Grid mt="md">
-            {filterFields.map((f) =>
-              f.data_type === 'DATE' ? (
-                <Grid.Col span={{ base: 12, md: 6 }} key={f.code}>
-                  <Group grow align="flex-end">
-                    <DateInput label={`${f.caption} From`} valueFormat="DD/MM/YYYY" clearable onChange={(v) => setFilter(`${f.code}_from`, v ? dayjs(v).format('YYYY-MM-DD') : '')} />
-                    <DateInput label={`${f.caption} To`} valueFormat="DD/MM/YYYY" clearable onChange={(v) => setFilter(`${f.code}_to`, v ? dayjs(v).format('YYYY-MM-DD') : '')} />
-                  </Group>
-                </Grid.Col>
-              ) : (
-                <Grid.Col span={{ base: 12, sm: 6, md: 3 }} key={f.code}>
-                  <TextInput label={f.caption} value={filterValues[f.code] || ''} onChange={(e) => setFilter(f.code, e.currentTarget.value)} />
-                </Grid.Col>
-              )
-            )}
-          </Grid>
-        )}
-        <Group justify="flex-end" mt="md">
-          <RunButtons
-            loading={loading}
-            runDisabled={!crid}
-            onRun={onRun}
-            canExport={Boolean(result?.rows?.length)}
-            onExport={() => downloadCsv(`${(reportsList || []).find((r) => String(r.crid) === crid)?.name || 'report'}.csv`, result.rows, cols)}
-          />
-        </Group>
-      </Card>
-
-      {loading ? (
-        <ResultSkeleton />
-      ) : !result ? (
-        <Card withBorder>
-          <EmptyState icon={SlidersHorizontal} title={crid ? 'Ready when you are' : 'Choose a report'} hint={crid ? 'Set any filters, then run the report.' : 'Pick one of the customised reports above.'} />
-        </Card>
-      ) : (
-        <>
-          <SimpleGrid cols={{ base: 1, xs: 2 }}>
-            <StatCard label="Records" value={result.count} icon={ClipboardList} />
-          </SimpleGrid>
-          <Card withBorder p={0} style={{ overflow: 'hidden' }}>
-            {result.rows.length === 0 ? (
-              <EmptyState icon={FileSearch} title="No records found" hint="Nothing matches these filters." />
-            ) : (
-              <Table.ScrollContainer minWidth={640} mah={560} type="native">
-                <Table striped highlightOnHover stickyHeader>
-                  <Table.Thead>
-                    <Table.Tr>
-                      {cols.map((c) => (
-                        <Table.Th key={c.key} ta={result.totals[c.key] != null ? 'right' : undefined}>
-                          {c.label}
-                        </Table.Th>
-                      ))}
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {result.rows.map((r, i) => (
-                      <Table.Tr key={i}>
-                        {cols.map((c) => (
-                          <Table.Td key={c.key} ta={result.totals[c.key] != null ? 'right' : undefined} className={result.totals[c.key] != null ? 'vt-num' : undefined}>
-                            {result.totals[c.key] != null && r[c.key] != null ? money(r[c.key]) : String(r[c.key] ?? '')}
-                          </Table.Td>
-                        ))}
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                  {Object.keys(result.totals).length > 0 && (
-                    <Table.Tfoot>
-                      <Table.Tr>
-                        {cols.map((c) => (
-                          <Table.Th key={c.key} ta="right" className="vt-num">
-                            {result.totals[c.key] != null ? money(result.totals[c.key]) : ''}
-                          </Table.Th>
-                        ))}
-                      </Table.Tr>
-                    </Table.Tfoot>
-                  )}
-                </Table>
-              </Table.ScrollContainer>
-            )}
-          </Card>
-        </>
-      )}
-    </Stack>
-  )
-}
-
 // Menu items that are tabs here, not their own screens — see
 // frontend/src/components/AppShellLayout.jsx's CAPTION_ROUTE, which points
 // "Customised Reports…" and "Hall Booking With Voucher Detail Report" at
@@ -766,18 +587,13 @@ export default function ReportsPage() {
           <ReportPanel runFn={reportsApi.runDonations} columns={donationColumns} filename="donations.csv" withSevaFilters={false} />
         </Tabs.Panel>
         <Tabs.Panel value="general-ledger" pt="md">
-          <GeneralLedgerPanel />
+          <PartyGLPanel />
         </Tabs.Panel>
         <Tabs.Panel value="custom" pt="md">
           <CustomReportsPanel />
         </Tabs.Panel>
         <Tabs.Panel value="hall-voucher" pt="md">
-          <ReportPanel
-            runFn={reportsApi.runHallBookingVoucher}
-            columns={hallBookingVoucherColumns}
-            filename="hall-booking-voucher.csv"
-            withSevaFilters={false}
-          />
+          <HallVoucherPanel />
         </Tabs.Panel>
         <Tabs.Panel value="catalog" pt="md">
           <SubsidiaryReportsCatalog onOpenTab={changeTab} />

@@ -1,0 +1,30 @@
+{# Shared shell for the mock print bridge: letterhead + a body block. The `page` / `margin` blocks set the paper
+   (the bridge reads `@page { size; margin }` itself). Layout uses tables and inline widths only: the PyMuPDF
+   renderer used when WeasyPrint's GTK libraries are missing does not support flex/grid or width in class rules. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: {% block page %}A4{% endblock %}; margin: {% block margin %}14mm{% endblock %}; }
+  body { font-family: "Noto Sans", "Noto Sans Kannada", sans-serif; font-size: {% block fsize %}10.5pt{% endblock %}; color: #1a1a1a; }
+  h1 { font-size: {% block h1size %}15pt{% endblock %}; margin: 0 0 2px; text-align: center; }
+  .center { text-align: center; }
+  .right { text-align: right; }
+  .bold { font-weight: bold; }
+  .banner { background: #eeeeee; text-align: center; font-weight: bold; padding: 4px; }
+  .rule { border-top: 1.5px solid #000; margin: 6px 0; }
+  .small { font-size: 8pt; color: #666; }
+  th { background: #f2f2f2; border: 1px solid #999; padding: 4px 6px; }
+  td.c { border: 1px solid #999; padding: 4px 6px; }
+</style>
+</head>
+<body>
+  <h1>{{ compname or "TEMPLE NAME" }}</h1>
+  <div class="center">{{ add1 or "" }}{{ ", " ~ add2 if add2 }}{{ ", " ~ add3 if add3 }}</div>
+  {% if mobno %}<div class="center">Ph: {{ mobno }}</div>{% endif %}
+  {% if gstno %}<div class="center">GSTIN: {{ gstno }}</div>{% endif %}
+  {% block body %}{% endblock %}
+  {% if cancelled %}<div class="center bold" style="margin-top:8px;color:#b00020">*** CANCELLED ***</div>{% endif %}
+</body>
+</html>

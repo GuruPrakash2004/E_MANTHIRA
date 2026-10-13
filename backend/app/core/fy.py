@@ -50,25 +50,39 @@ def _to_fy(row) -> FinancialYear:
     return FinancialYear(id=start.year, start_date=start, end_date=row["yrTdate"], is_active=(row["Active"] or "N").upper() == "Y")
 
 
+def _all_fy_rows(conn: Connection) -> list[dict]:
+    """MstCompFinYear is a handful of rows; cache it so every request doesn't re-query it."""
+    from app.core import cache
+
+    return cache.get_or_set(
+        ("fy", "rows"),
+        60,
+        lambda: [dict(r) for r in conn.execute(text("SELECT yrFdate, yrTdate, Active FROM MstCompFinYear ORDER BY yrFdate")).mappings().all()],
+    )
+
+
+def invalidate() -> None:
+    from app.core import cache
+
+    cache.clear("fy")
+
+
 def get_active_fy(conn: Connection) -> FinancialYear:
-    row = conn.execute(text("SELECT yrFdate, yrTdate, Active FROM MstCompFinYear WHERE Active = 'Y'")).mappings().first()
+    row = next((r for r in _all_fy_rows(conn) if (r["Active"] or "N").upper() == "Y"), None)
     if row is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "No active financial year configured (MstCompFinYear)")
     return _to_fy(row)
 
 
 def get_fy_by_id(conn: Connection, fy_id: int) -> FinancialYear:
-    row = conn.execute(
-        text("SELECT yrFdate, yrTdate, Active FROM MstCompFinYear WHERE YEAR(yrFdate) = :year"), {"year": fy_id}
-    ).mappings().first()
+    row = next((r for r in _all_fy_rows(conn) if r["yrFdate"].year == fy_id), None)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Financial year not found")
     return _to_fy(row)
 
 
 def list_fys(conn: Connection) -> list[FinancialYear]:
-    rows = conn.execute(text("SELECT yrFdate, yrTdate, Active FROM MstCompFinYear ORDER BY yrFdate")).mappings().all()
-    return [_to_fy(r) for r in rows]
+    return [_to_fy(r) for r in _all_fy_rows(conn)]
 
 
 def get_user_fy(user: CurrentUser = Depends(get_current_user), conn: Connection = Depends(get_conn)) -> FinancialYear:

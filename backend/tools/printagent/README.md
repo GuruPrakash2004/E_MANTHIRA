@@ -17,7 +17,7 @@ that gap. One instance per Windows user, started at sign-in.
 ```
 
 * **The server draws the document** — same Crystal Reports pipeline as `/print/.../preview`
-  (`app/print/crystal_client.py`), rasterised to PNG pages by `app/print/print_agent.py::pdf_to_pages`.
+  (`app/print/rpt_print.py` job builder -> `app/print/rpt_bridge.py` -> the print bridge), rasterised to PNG pages by `app/print/print_agent.py::pdf_to_pages`.
 * **The agent prints pictures** on whatever printer Windows has on that PC. It never touches vTemple's data.
 * **The browser is the bridge**, because only the browser on the counter PC can reach `127.0.0.1` of that PC.
 
@@ -48,6 +48,7 @@ that gap. One instance per Windows user, started at sign-in.
 ## Security
 
 * **Loopback only.**
+* **`/health` is allow-listed too:** a page not on the list gets `403` and learns neither the PC name nor its printers (a request with no `Origin`, e.g. `curl` on the PC itself, still works).
 * **Origin allow-list** — `printagent.txt` next to the exe (`%LOCALAPPDATA%\VTemplePrintAgent\printagent.txt`),
   one allowed web address per line (`*` allows any page; **no file = nothing is allowed**). The browser's `Origin`
   header is checked on every `/print` call; anything else gets `403`.

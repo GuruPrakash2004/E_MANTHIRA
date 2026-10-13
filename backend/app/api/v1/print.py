@@ -17,10 +17,137 @@ from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn
 from app.core.security import CurrentUser, get_current_user
-from app.print import crystal_client, formula_values, pdf_generator, print_agent, print_prefs, record_data
-from app.print.rpt_registry import get_option, list_options, resolve_rpt_path
+from app.print import pdf_generator, print_agent, print_prefs, record_data, rpt_bridge, rpt_print, voucher_print
+from app.print.rpt_registry import get_option, list_options
 
 router = APIRouter(prefix="/print", tags=["print"])
+
+
+def _job(conn: Connection, doc_id: int, doc_id_value: int | None, *, doc_no: str | None = None, option_name: str | None = None, ctrl_click: bool = False, copies: int | None = None) -> rpt_print.PrintJob:
+    return rpt_print.build_job(conn, doc_id, doc_id_value, doc_no=doc_no, option_name=option_name, ctrl_click=ctrl_click, copies=copies)
+
+
+def _render(conn: Connection, job: rpt_print.PrintJob) -> bytes:
+    return rpt_bridge.render(job, record_data.record_data_for(conn, job.doc_id, job.doc_id_value))
+
+
+@router.get("/options")
+def print_options_for_document(doc_id: int, conn: Connection = Depends(get_conn), user: CurrentUser = Depends(get_current_user)):
+    """
+    The formats a document can print in (the legacy Print dropdown). `available` = the .rpt exists in the RPT folder;
+    `selected` marks the one to pre-select: this user's own last choice beats the designer default (`UtlOption.DefaultPrint`).
+    `after_save_action`: PP = print straight after save, P = ask first, anything else = don't print.
+    """
+    preferred = print_prefs.get_preferred_option(conn, user.user_code, doc_id)
+    options = list_options(conn, doc_id)
+    default_name = next((o.option_name for o in options if o.default_print), options[0].option_name if options else None)
+    selected = preferred if any(o.option_name == preferred for o in options) else default_name
+    return [
+        {
+            "option_name": o.option_name,
+            "rpt_file": o.rpt_file,
+            "available": o.rpt_available,
+            "default": o.default_print,
+            "preferred": o.option_name == preferred,
+            "selected": o.option_name == selected,
+            "printer_name": o.direct_printer_name,
+            "copies": o.copies,
+            "after_save_action": o.after_save_action,
+        }
+        for o in options
+    ]
+
+
+class PrintRequest(BaseModel):
+    doc_id: int
+    doc_id_value: int | None = None  # the record id; or give doc_no
+    doc_no: str | None = None
+    option_name: str | None = None  # blank = the document's first format, like the desktop
+    ctrl_click: bool = False
+
+
+class DirectPrintRequest(PrintRequest):
+    printer_name: str | None = None  # blank = the option's own DirectPrinterName
+    copies: int | None = None
+
+
+class PreferenceRequest(BaseModel):
+    doc_id: int
+    option_name: str
+
+
+@router.post("/render")
+def render_pdf(body: PrintRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """The document as a PDF (rendered by the bridge from the original .rpt)."""
+    with voucher_print.print_lock_for(conn, body.doc_id):  # vouchers print from scratch tables refilled per print
+        job = _job(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
+        pdf = _render(conn, job)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{body.doc_id}-{job.doc_id_value}.pdf"', "X-Print-Format": job.option_name},
+    )
+
+
+@router.put("/preference")
+def save_preference(body: PreferenceRequest, conn: Connection = Depends(get_conn), user: CurrentUser = Depends(get_current_user)):
+    """Remember this user's last format for the document; it beats the designer default next time."""
+    get_option(conn, body.doc_id, body.option_name)  # 404 if unknown
+    print_prefs.set_preferred_option(conn, user.user_code, body.doc_id, body.option_name)
+    conn.commit()
+    return {"message": "Saved"}
+
+
+@router.post("/print")
+def print_to_server_printer(body: DirectPrintRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """Direct print on the print service's PC (legacy operation "D"): no dialog. Counter-PC printers go via the Print Agent."""
+    with voucher_print.print_lock_for(conn, body.doc_id):
+        job = _job(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click, copies=body.copies)
+        if body.printer_name and body.printer_name.strip():
+            job.printer_name = body.printer_name.strip()
+        rpt_bridge.print_to_printer(job, record_data.record_data_for(conn, job.doc_id, job.doc_id_value))
+    return {"message": "Sent to printer", "printer_name": job.printer_name, "copies": job.copies}
+
+
+@router.get("/bridge/health")
+def bridge_health(_: CurrentUser = Depends(get_current_user)):
+    return rpt_bridge.health()
+
+
+@router.get("/bulk/documents")
+def bulk_documents(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """PDF Generator: documents that have print types, from UtlOption."""
+    return pdf_generator.printable_documents(conn)
+
+
+@router.get("/bulk/{doc_id}/parties")
+def bulk_parties(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    return pdf_generator.parties(conn, doc_id)
+
+
+@router.get("/bulk/{doc_id}/records")
+def bulk_records(doc_id: int, from_date: date, to_date: date, party_ids: str | None = None, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    ids = [int(x) for x in party_ids.split(",") if x.strip().isdigit()] if party_ids else None
+    return pdf_generator.load_records(conn, doc_id=doc_id, from_date=from_date, to_date=to_date, party_ids=ids)
+
+
+class BulkSelectedRequest(BaseModel):
+    record_ids: list[int]
+
+
+@router.post("/bulk/{doc_id}/{option_name}/download")
+def bulk_download_selected(doc_id: int, option_name: str, body: BulkSelectedRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """Download button of the legacy form: one PDF per ticked record, zipped."""
+    if not body.record_ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No data present!!")
+    if len(body.record_ids) > pdf_generator.MAX_RECORDS:
+        raise HTTPException(413, f"Select at most {pdf_generator.MAX_RECORDS} records per download")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for record_id in body.record_ids:
+            with voucher_print.print_lock_for(conn, doc_id):
+                zf.writestr(f"{doc_id}-{record_id}.pdf", _render(conn, _job(conn, doc_id, record_id, option_name=option_name)))
+    return Response(content=buf.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{option_name}.zip"'})
 
 
 @router.get("/{doc_id}/options")
@@ -66,25 +193,11 @@ def set_print_preference(
     return {"message": "Saved"}
 
 
-def _selection_formula_for(option_formula: str, record_id: int) -> str:
-    # Legacy formulas look like "{TrnHdrSEVA.SEVAID}=" — we just append the id.
-    return f"{option_formula}{record_id}" if option_formula else ""
-
-
 @router.get("/{doc_id}/{option_name}/{record_id}/preview")
 def preview(doc_id: int, option_name: str, record_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
-    option = get_option(conn, doc_id, option_name)
-    rpt_path = resolve_rpt_path(option)
-    if rpt_path is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Report file '{option.rpt_file}' not found under RPT_PATH")
-    pdf_bytes = crystal_client.render_preview(
-        rpt_path=rpt_path,
-        selection_formula=_selection_formula_for(option.selection_formula, record_id),
-        formula_values=formula_values.company_formula_values(conn),
-        record_id=record_id,
-        record_data=record_data.record_data_for(conn, doc_id, record_id),
-    )
-    return Response(content=pdf_bytes, media_type="application/pdf")
+    with voucher_print.print_lock_for(conn, doc_id):
+        pdf = _render(conn, _job(conn, doc_id, record_id, option_name=option_name))
+    return Response(content=pdf, media_type="application/pdf")
 
 
 @router.get("/{doc_id}/{option_name}/{record_id}/pages")
@@ -98,20 +211,12 @@ def pages_for_local_agent(
     browser fetches this, then POSTs the pages straight to
     http://127.0.0.1:8787/print on the PC it's running on.
     """
-    option = get_option(conn, doc_id, option_name)
-    rpt_path = resolve_rpt_path(option)
-    if rpt_path is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Report file '{option.rpt_file}' not found under RPT_PATH")
-    pdf_bytes = crystal_client.render_preview(
-        rpt_path=rpt_path,
-        selection_formula=_selection_formula_for(option.selection_formula, record_id),
-        formula_values=formula_values.company_formula_values(conn),
-        record_id=record_id,
-        record_data=record_data.record_data_for(conn, doc_id, record_id),
-    )
+    with voucher_print.print_lock_for(conn, doc_id):
+        job = _job(conn, doc_id, record_id, option_name=option_name)
+        pdf_bytes = _render(conn, job)
     return {
         "pages": print_agent.pdf_to_pages(pdf_bytes),
-        "copies": option.copies or 1,
+        "copies": job.copies,
         "name": f"{doc_id}-{record_id}",
     }
 
@@ -152,25 +257,12 @@ def bulk_pdf(
     record of `doc_id` dated between from_date/to_date, rendered through
     `option_name` and zipped for download. See app/print/pdf_generator.py.
     """
-    option = get_option(conn, doc_id, option_name)
-    rpt_path = resolve_rpt_path(option)
-    if rpt_path is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Report file '{option.rpt_file}' not found under RPT_PATH")
-
     record_ids = pdf_generator.candidate_record_ids(conn, doc_id=doc_id, from_date=from_date, to_date=to_date)
-    company_values = formula_values.company_formula_values(conn)
-
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for record_id in record_ids:
-            pdf_bytes = crystal_client.render_preview(
-                rpt_path=rpt_path,
-                selection_formula=_selection_formula_for(option.selection_formula, record_id),
-                formula_values=company_values,
-                record_id=record_id,
-                record_data=record_data.record_data_for(conn, doc_id, record_id),
-            )
-            zf.writestr(f"{doc_id}-{record_id}.pdf", pdf_bytes)
+            with voucher_print.print_lock_for(conn, doc_id):
+                zf.writestr(f"{doc_id}-{record_id}.pdf", _render(conn, _job(conn, doc_id, record_id, option_name=option_name)))
 
     return Response(
         content=buf.getvalue(),
@@ -182,17 +274,7 @@ def bulk_pdf(
 @router.post("/{doc_id}/{option_name}/{record_id}/print-direct")
 def print_direct(doc_id: int, option_name: str, record_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     """Silent print straight to the option's configured printer (no browser dialog) — for the thermal counter."""
-    option = get_option(conn, doc_id, option_name)
-    rpt_path = resolve_rpt_path(option)
-    if rpt_path is None or not option.direct_printer_name:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No direct printer configured for this option")
-    crystal_client.print_direct(
-        rpt_path=rpt_path,
-        selection_formula=_selection_formula_for(option.selection_formula, record_id),
-        formula_values=formula_values.company_formula_values(conn),
-        record_id=record_id,
-        printer_name=option.direct_printer_name,
-        copies=option.copies,
-        record_data=record_data.record_data_for(conn, doc_id, record_id),
-    )
+    with voucher_print.print_lock_for(conn, doc_id):
+        job = _job(conn, doc_id, record_id, option_name=option_name)
+        rpt_bridge.print_to_printer(job, record_data.record_data_for(conn, doc_id, record_id))
     return {"message": "Sent to printer"}

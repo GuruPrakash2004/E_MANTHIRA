@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Group, PasswordInput, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Button, Group, PasswordInput, Select, Stack, Text, TextInput } from '@mantine/core'
 import { AlertCircle, CircleCheck, Database } from 'lucide-react'
 import * as dbSettingsApi from '../api/endpoints/dbSettings'
 
@@ -22,24 +22,29 @@ import * as dbSettingsApi from '../api/endpoints/dbSettings'
 export default function DatabaseSettingsPanel() {
   const [form, setForm] = useState({
     db_engine: 'pyodbc',
-    db_driver_odbc: 'ODBC Driver 18 for SQL Server',
+    db_driver_odbc: '',
     db_server: '',
-    db_port: 1433,
+    db_port: '',
     db_name: '',
     db_user: '',
     db_password: '',
     db_trust_cert: 'yes',
   })
   const [passwordSet, setPasswordSet] = useState(false)
+  const [current, setCurrent] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null) // {ok, detail} | null
+  const [databases, setDatabases] = useState(null) // null = server not connected yet
 
+  // The form always starts blank: saved/.env values are never pre-filled, so a
+  // new connection is entered and saved fresh. Only a read-only note shows
+  // what the backend is connected to right now.
   useEffect(() => {
     dbSettingsApi
       .getDbSettings()
       .then((d) => {
-        setForm((f) => ({ ...f, ...d, db_engine: 'pyodbc', db_driver_odbc: d.db_driver_odbc || 'ODBC Driver 18 for SQL Server', db_password: '' }))
+        setCurrent(d)
         setPasswordSet(Boolean(d.password_set))
       })
       .catch(() => {})
@@ -51,10 +56,36 @@ export default function DatabaseSettingsPanel() {
   }
 
   function body() {
-    // Omit a blank password so the backend keeps whatever's already saved —
-    // only send it when the user actually typed a new one.
-    const { db_password, ...rest } = form
-    return db_password ? form : rest
+    // Send exactly what is on screen (blank port -> null, blank password
+    // stays blank) so the connection uses only these values, never saved ones.
+    return { ...form, db_port: form.db_port === '' ? null : Number(form.db_port) }
+  }
+
+  // Step 1: connect to the server only, then offer its databases.
+  async function onConnectServer() {
+    setBusy(true)
+    setResult(null)
+    try {
+      const r = await dbSettingsApi.listDatabases({ ...body(), db_name: 'master' })
+      setResult({ ok: r.ok, detail: r.detail })
+      if (r.ok) {
+        setDatabases(r.databases)
+        if (!r.databases.includes(form.db_name)) set('db_name', r.databases[0] || '')
+      } else {
+        setDatabases(null)
+      }
+    } catch (err) {
+      setDatabases(null)
+      setResult({ ok: false, detail: err?.response?.data?.detail || 'Could not reach the backend' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Changing any server credential invalidates the database list.
+  function setServerField(field, value) {
+    setDatabases(null)
+    set(field, value)
   }
 
   async function onTest() {
@@ -77,7 +108,7 @@ export default function DatabaseSettingsPanel() {
       const r = await dbSettingsApi.saveDbSettings(body())
       setResult(r)
       if (r.ok) {
-        setPasswordSet(passwordSet || Boolean(form.db_password))
+        setPasswordSet(Boolean(form.db_password))
         set('db_password', '')
       }
     } catch (err) {
@@ -97,25 +128,52 @@ export default function DatabaseSettingsPanel() {
           Database Connection
         </Text>
       </Group>
+      {current?.db_server && (
+        <Text size="xs" c="dimmed">
+          Currently: {current.db_server}
+          {current.db_port ? `:${current.db_port}` : ''} / {current.db_name || '(no database)'}
+        </Text>
+      )}
+      <Text size="xs" c="dimmed">Step 1 — connect to the server</Text>
       <Group grow>
-        <TextInput label="Server" value={form.db_server} onChange={(e) => set('db_server', e.currentTarget.value)} />
+        <TextInput className="vt-field-required" label="Server Name" placeholder="host or host\instance" value={form.db_server} onChange={(e) => setServerField('db_server', e.currentTarget.value)} />
         <TextInput
           label="Port"
           type="number"
+          placeholder="optional"
           value={form.db_port}
-          onChange={(e) => set('db_port', Number(e.currentTarget.value) || '')}
+          onChange={(e) => setServerField('db_port', Number(e.currentTarget.value) || '')}
         />
       </Group>
-      <TextInput label="Database Name" value={form.db_name} onChange={(e) => set('db_name', e.currentTarget.value)} />
       <Group grow>
-        <TextInput label="User" value={form.db_user} onChange={(e) => set('db_user', e.currentTarget.value)} />
+        <TextInput className="vt-field-required" label="SQL User Name" value={form.db_user} onChange={(e) => setServerField('db_user', e.currentTarget.value)} />
         <PasswordInput
-          label="Password"
-          placeholder={passwordSet ? '•••••••• (unchanged)' : ''}
+          className="vt-field-required"
+          label="SQL Password"
+          placeholder={passwordSet ? 'Re-enter to connect (not stored on screen)' : ''}
           value={form.db_password}
-          onChange={(e) => set('db_password', e.currentTarget.value)}
+          onChange={(e) => setServerField('db_password', e.currentTarget.value)}
         />
       </Group>
+      <Group justify="flex-end">
+        <Button variant="default" size="xs" loading={busy} disabled={!form.db_server || !form.db_user} onClick={onConnectServer}>
+          Connect
+        </Button>
+      </Group>
+      {databases && (
+        <>
+          <Text size="xs" c="dimmed">Step 2 — choose the database</Text>
+          <Select
+            className="vt-field-required"
+            label="Database Name"
+            data={databases}
+            value={form.db_name || null}
+            onChange={(v) => set('db_name', v || '')}
+            searchable
+            nothingFoundMessage="No databases"
+          />
+        </>
+      )}
 
       {result && (
         <Alert
@@ -128,10 +186,10 @@ export default function DatabaseSettingsPanel() {
       )}
 
       <Group justify="flex-end" gap="xs">
-        <Button variant="default" size="xs" loading={busy} onClick={onTest}>
+        <Button variant="default" size="xs" loading={busy} disabled={!databases || !form.db_name} onClick={onTest}>
           Test Connection
         </Button>
-        <Button color="kumkum" size="xs" loading={busy} onClick={onSave}>
+        <Button color="kumkum" size="xs" loading={busy} disabled={!databases || !form.db_name} onClick={onSave}>
           Save &amp; Reconnect
         </Button>
       </Group>

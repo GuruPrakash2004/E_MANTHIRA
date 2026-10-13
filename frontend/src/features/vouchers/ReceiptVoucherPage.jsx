@@ -1,6 +1,6 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
-import { ActionIcon, Button, Grid, Group, Kbd, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { ActionIcon, Button, Grid, Group, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
 import { DateInput } from '@mantine/dates'
 import { ArrowDownLeft, Plus, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -9,11 +9,14 @@ import * as voucherApi from '../../api/endpoints/voucher'
 import * as metaApi from '../../api/endpoints/meta'
 import LookupSelect from '../../components/LookupSelect'
 import PrintPickerModal from '../../components/PrintPickerModal'
+import { handleAfterSave } from '../../lib/printing'
 import DynamicField from '../../components/DynamicField'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
+import usePrefixes from '../../hooks/usePrefixes'
 import useDocFields from '../../hooks/useDocFields'
 import { isFieldHidden, isFieldMandatory, fieldCaption, fieldListOptions } from '../../utils/docFieldConditions'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
+import DocNavBar from '../../components/ui/DocNavBar'
 import { formatINR, isoDate } from '../../utils/format'
 
 const VCH_TYPES = ['Cash', 'Bank', 'Card']
@@ -56,6 +59,8 @@ export default function ReceiptVoucherPage() {
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
   const [printFor, setPrintFor] = useState(null)
+  const [viewId, setViewId] = useState(null) // a saved voucher being looked at (read-only)
+  const [viewNo, setViewNo] = useState('')
 
   const { byCode: fieldMeta } = useDocFields(DOC_ID)
   const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, form[key]]))
@@ -67,7 +72,7 @@ export default function ReceiptVoucherPage() {
     (f) => !knownCodes.has(f.FldCode) && !hidden(f.FldCode) && f.FldSection === 'Header'
   )
 
-  const { data: prefixes } = useQuery({ queryKey: ['prefixes', DOC_ID], queryFn: () => metaApi.getPrefixes(DOC_ID) })
+  const { data: prefixes } = usePrefixes(DOC_ID)
   const { data: recent, isLoading: recentLoading, refetch } = useQuery({
     queryKey: ['receipt-vouchers', 'recent'],
     queryFn: () => voucherApi.listReceiptVouchers({ top: 15 }),
@@ -98,6 +103,7 @@ export default function ReceiptVoucherPage() {
   const balanced = Math.round(totalDr * 100) === Math.round(totalCr * 100) && totalCr > 0
 
   async function onSave() {
+    if (viewId) return
     if (mandatory('NARR') && !form.narration.trim()) {
       notifications.show({ message: `${caption('NARR', 'Narration')} should not be blank!`, color: 'red' })
       return
@@ -125,7 +131,7 @@ export default function ReceiptVoucherPage() {
       }
       const result = await voucherApi.createReceiptVoucher(body)
       setLastSaved(result)
-      setPrintFor(result.receipt_id)
+      handleAfterSave({ docId: DOC_ID, recordId: result.receipt_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setForm((f) => ({ ...f, narration: '', cheque_dd_no: '', cheque_date: null, cheque_dd_amt: '', cheque_no: '', bank_id: '', card_no: '', card_amt: 0 }))
       setExtra({})
@@ -137,6 +143,42 @@ export default function ReceiptVoucherPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function viewRecord(id) {
+    try {
+      const r = await voucherApi.getVoucher('receipts', id)
+      const h = r.header
+      setForm((f) => ({
+        ...f,
+        prefix: h.Prefix || f.prefix,
+        receipt_date: h.RCPTVCHDate ? new Date(h.RCPTVCHDate) : new Date(),
+        vch_type: h.VCHTYP || 'Cash',
+        narration: h.NARR || '',
+        cheque_dd_no: (h.CHQDDNO || '').trim(),
+        cheque_date: h.CHQDT ? new Date(h.CHQDT) : null,
+        cheque_dd_amt: (h.CHQAMT || '').trim(),
+        cheque_no: (h.CHQNO || '').trim(),
+        bank_id: h.BANK ? String(h.BANK) : '',
+        card_no: h.CARDNO && h.CARDNO !== '0' ? h.CARDNO : '',
+        card_amt: Number(h.CRDAMT) || 0,
+      }))
+      setLines(r.lines.map((l) => ({ ac_led_id: String(l.ac_led_id), dr_amt: l.dr_amt, cr_amt: l.cr_amt })))
+      setViewId(id)
+      setViewNo(h.PrintRCPTVCHNO || h.RCPTVCHNO)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not open that voucher', color: 'red' })
+    }
+  }
+  function startNew() {
+    setViewId(null)
+    setViewNo('')
+    setLines(EMPTY_LINES)
+    setForm((f) => ({ ...f, receipt_date: new Date(), narration: '', cheque_dd_no: '', cheque_date: null, cheque_dd_amt: '', cheque_no: '', bank_id: '', card_no: '', card_amt: 0 }))
+  }
+  async function findVouchers(q) {
+    const rows = await voucherApi.listReceiptVouchers({ search: q, top: 30 })
+    return rows.map((v) => ({ id: v.RCPTVCHID, label: v.PrintRCPTVCHNO, sub: `${v.NARR} · ${formatINR(v.TOTDR)}` }))
   }
 
   useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.receipt_id) })
@@ -153,19 +195,10 @@ export default function ReceiptVoucherPage() {
             </Text>
           </div>
         </Group>
-        <Group gap="md" visibleFrom="sm" c="dimmed">
-          <Group gap={6}>
-            <Kbd size="xs">Alt+S</Kbd>
-            <Text size="xs">Save</Text>
-          </Group>
-          <Group gap={6}>
-            <Kbd size="xs">Alt+P</Kbd>
-            <Text size="xs">Print last</Text>
-          </Group>
-        </Group>
       </Group>
 
       <EntryLayout
+        viewing={Boolean(viewId)}
         main={
           <Stack gap="lg">
             <SectionCard title="Voucher details" hint="Number series, date and what the voucher is for.">
@@ -326,7 +359,8 @@ export default function ReceiptVoucherPage() {
               words={totalCr}
               warning={balanced || (totalDr === 0 && totalCr === 0) ? null : 'Debit and Credit totals are NOT matching!'}
               saving={saving}
-              onSave={onSave}
+              onSave={viewId ? undefined : onSave}
+              saveDisabled={Boolean(viewId)}
             />
             {lastSaved && (
               <SavedPanel
@@ -352,6 +386,8 @@ export default function ReceiptVoucherPage() {
           </>
         }
       />
+
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} search={findVouchers} />
 
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Receipt Voucher" />
     </Stack>

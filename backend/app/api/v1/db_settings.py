@@ -8,6 +8,8 @@ echoed back on GET (write-only field) as a low-cost safety default.
 from __future__ import annotations
 
 from pydantic import BaseModel
+
+from app.print import rpt_bridge_manager
 from fastapi import APIRouter
 
 from app.core import runtime_db_settings as rds
@@ -32,14 +34,42 @@ def get_db_settings():
     return rds.effective_fields()
 
 
+@router.post("/databases")
+def list_databases(body: DbSettingsIn):
+    """Step 1 of the panel: connect to the SERVER only (master, using exactly
+    the submitted server/user/password) and list the databases on it."""
+    from sqlalchemy import text
+    from app.core.db import _connect_with_fallback
+
+    values = body.model_dump(exclude_unset=True)
+    values["db_name"] = "master"
+    candidate = rds.build_candidate(values)
+    try:
+        engine, driver = _connect_with_fallback(candidate, pool_pre_ping=True)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "detail": str(exc)[:300], "databases": []}
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT name FROM sys.databases WHERE state = 0 "
+                "AND name NOT IN ('master','tempdb','model','msdb') "
+                "AND HAS_DBACCESS(name) = 1 ORDER BY name"
+            )).fetchall()
+    finally:
+        engine.dispose()
+    return {"ok": True, "detail": f"Connected to server (via {driver})", "databases": [r[0] for r in rows]}
+
+
 @router.post("/test")
 def test_db_settings(body: DbSettingsIn):
-    candidate = rds.build_candidate(body.model_dump())
+    candidate = rds.build_candidate(body.model_dump(exclude_unset=True))
     ok, detail = test_connection_for(candidate)
     return {"ok": ok, "detail": detail}
 
 
 @router.put("")
 def update_db_settings(body: DbSettingsIn):
-    ok, detail = rds.apply_and_reconnect(body.model_dump())
+    ok, detail = rds.apply_and_reconnect(body.model_dump(exclude_unset=True))
+    if ok:
+        rpt_bridge_manager.restart()  # the print bridge reads the DB settings at start; relaunch it on the new database
     return {"ok": ok, "detail": detail}

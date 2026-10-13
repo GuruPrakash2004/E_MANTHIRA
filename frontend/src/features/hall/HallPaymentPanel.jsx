@@ -1,6 +1,9 @@
 import { useState } from 'react'
-import { Badge, Button, Divider, Group, Modal, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
-import { Receipt } from 'lucide-react'
+import { ActionIcon, Badge, Button, Divider, Group, Modal, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { Receipt, Trash2 } from 'lucide-react'
+import dayjs from 'dayjs'
+import { useConfirm } from '../../components/ui/ConfirmProvider'
+import { formatINR } from '../../utils/format'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as hallApi from '../../api/endpoints/hall'
@@ -20,6 +23,7 @@ const RECEIPT_TYPES = ['ADV', 'Partial', 'Final']
  */
 export default function HallPaymentPanel({ hbId, onClose }) {
   const queryClient = useQueryClient()
+  const confirm = useConfirm()
   const [amount, setAmount] = useState(0)
   const [mode, setMode] = useState('Cash')
   const [reference, setReference] = useState('')
@@ -50,6 +54,18 @@ export default function HallPaymentPanel({ hbId, onClose }) {
   const codeValues = { PAYMNTMODE: receiptType === 'ADV' ? mode : '', REFNO: reference, LEDGER: ledgerId, LEDID: cashBankLedgerId }
   const mandatory = (code) => isFieldMandatory(fieldMeta[code], codeValues)
   const caption = (code, fallback) => fieldCaption(fieldMeta[code], fallback)
+
+  async function onDeleteReceipt(r) {
+    if (!(await confirm({ title: 'Delete this receipt?', message: `Receipt No. ${r.PrintRCPTVCHNO} will be deleted and the booking balance restored.`, confirmLabel: 'Delete' }))) return
+    try {
+      await hallApi.deleteReceipt(hbId, r.RCPTVCHID)
+      notifications.show({ message: 'Receipt Deleted!', color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: ['hall-bookings'] })
+      refetch()
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not delete the receipt', color: 'red' })
+    }
+  }
 
   async function onSubmit() {
     if (Number(amount) <= 0) {
@@ -125,40 +141,65 @@ export default function HallPaymentPanel({ hbId, onClose }) {
             </Text>
           </Group>
 
-          <Divider label="Payments" labelPosition="left" />
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Receipt No</Table.Th>
-                <Table.Th>Type</Table.Th>
-                <Table.Th>Date</Table.Th>
-                <Table.Th w={120}>Amount</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {(booking.receipts || []).length === 0 && (
+          <Divider label="Receipt Info" labelPosition="left" />
+          <Group gap="xl" wrap="wrap">
+            <Text size="sm">
+              Total Amt: <b>{formatINR(booking.NETPAY || 0)}</b>
+            </Text>
+            <Text size="sm">
+              Receipt Amt: <b>{formatINR((booking.receipts || []).filter((r) => r.Cancelled !== 'Y').reduce((t, r) => t + Number(r.TOTDR || 0), 0))}</b>
+            </Text>
+            <Text size="sm">
+              Pending Amt: <b>{formatINR(booking.BALAMT || 0)}</b>
+            </Text>
+          </Group>
+          <Table.ScrollContainer minWidth={520}>
+            <Table>
+              <Table.Thead>
                 <Table.Tr>
-                  <Table.Td colSpan={4}>
-                    <Text size="xs" c="dimmed" ta="center" py="sm">
-                      No payments recorded yet
-                    </Text>
-                  </Table.Td>
+                  <Table.Th>Receipt No</Table.Th>
+                  <Table.Th>Date</Table.Th>
+                  <Table.Th>Type</Table.Th>
+                  <Table.Th ta="right">Amount</Table.Th>
+                  <Table.Th>Voucher type</Table.Th>
+                  <Table.Th>Narration</Table.Th>
+                  <Table.Th w={48} aria-label="Delete" />
                 </Table.Tr>
-              )}
-              {(booking.receipts || []).map((r) => (
-                <Table.Tr key={r.RCPTVCHID} style={{ opacity: r.Cancelled === 'Y' ? 0.5 : 1 }}>
-                  <Table.Td>{r.PrintRCPTVCHNO}</Table.Td>
-                  <Table.Td>
-                    <Badge size="xs" variant="light" color={r.RCPTTYPE === 'Final' ? 'teal' : 'saffron'}>
-                      {r.RCPTTYPE || '—'}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>{r.RCPTVCHDate ? new Date(r.RCPTVCHDate).toLocaleDateString() : ''}</Table.Td>
-                  <Table.Td>₹{Number(r.TOTCR || 0).toFixed(2)}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {(booking.receipts || []).length === 0 && (
+                  <Table.Tr>
+                    <Table.Td colSpan={7}>
+                      <Text size="xs" c="dimmed" ta="center" py="sm">
+                        No payments recorded yet
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+                {(booking.receipts || []).map((r) => (
+                  <Table.Tr key={r.RCPTVCHID} style={{ opacity: r.Cancelled === 'Y' ? 0.5 : 1 }}>
+                    <Table.Td>{r.PrintRCPTVCHNO}</Table.Td>
+                    <Table.Td className="vt-num">{r.RCPTVCHDate ? dayjs(r.RCPTVCHDate).format('DD/MM/YYYY') : ''}</Table.Td>
+                    <Table.Td>
+                      <Badge size="xs" variant="light" color={r.RCPTTYPE === 'Final' ? 'teal' : 'saffron'}>
+                        {r.RCPTTYPE || '-'}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td ta="right" className="vt-num">
+                      {formatINR(r.TOTDR || 0)}
+                    </Table.Td>
+                    <Table.Td>{r.VCHTYP}</Table.Td>
+                    <Table.Td>{r.NARR}</Table.Td>
+                    <Table.Td>
+                      <ActionIcon variant="subtle" color="red" size={32} aria-label={`Delete receipt ${r.PrintRCPTVCHNO}`} onClick={() => onDeleteReceipt(r)}>
+                        <Trash2 size={16} />
+                      </ActionIcon>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
 
           {balance > 0 && (
             <>

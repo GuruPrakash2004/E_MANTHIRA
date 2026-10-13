@@ -1,0 +1,22 @@
+{% extends "_base.html.j2" %}
+{% block page %}80mm 200mm{% endblock %}
+{% block margin %}3mm{% endblock %}
+{% block fsize %}9.5pt{% endblock %}
+{% block h1size %}12pt{% endblock %}
+{% block body %}
+  <div class="banner">HALL RECEIPT</div>
+  <div>No: <b>{{ print_no or record_id }}</b> &nbsp; Date: {{ doc_date }}</div>
+  <div>Name: <b>{{ customer_name or "-" }}</b></div>
+  {% if customer_mobile %}<div>Mobile: {{ customer_mobile }}</div>{% endif %}
+  <div>Function: {{ function_name or "-" }}</div>
+  <div>{{ start_date }} to {{ end_date }}</div>
+  <div class="rule"></div>
+  {% for l in lines %}<table style="width:100%"><tr><td>{{ l.name or hall_name }}</td><td class="right">{{ l.amount }}</td></tr></table>{% else %}<table style="width:100%"><tr><td>{{ hall_name or "-" }}</td><td class="right">{{ amount }}</td></tr></table>{% endfor %}
+  <div class="rule"></div>
+  {% if total_gst and total_gst != "0.00" %}<table style="width:100%"><tr><td>GST</td><td class="right">{{ total_gst }}</td></tr></table>{% endif %}
+  {% if advance and advance != "0.00" %}<table style="width:100%"><tr><td>Advance</td><td class="right">{{ advance }}</td></tr></table>{% endif %}
+  <table style="width:100%"><tr><td class="bold">NET</td><td class="right bold">Rs {{ net_pay or amount }}</td></tr></table>
+  <div>{{ amount_in_words }}</div>
+  <div>Paid by {{ payment_mode or "Cash" }}</div>
+  <div class="small">Issued by {{ issued_by }}</div>
+{% endblock %}

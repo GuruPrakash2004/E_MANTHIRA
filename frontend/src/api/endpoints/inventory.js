@@ -29,3 +29,13 @@ export const getWhereUsed = (itemId) => get('/inventory/where-used', { params: {
 /** Stock Balance Report / Stock Ledger Report — port of frmRptStockBal / frmRptStockLed. */
 export const getStockBalanceReport = (params) => get('/inventory/stock-balance-report', { params })
 export const getStockLedgerReport = (params) => get('/inventory/stock-ledger-report', { params })
+
+/** Item Quick Referencer / History — port of frmRptStkRef. */
+export const referencerItems = (q) => get('/inventory/item-referencer/items', { params: { q } })
+export const referencerItem = (id) => get(`/inventory/item-referencer/${id}`)
+export const referencerTransactions = (id, params) => get(`/inventory/item-referencer/${id}/transactions`, { params })
+
+/** Stock Ledger / Stock Balance (legacy frmRptStockLed / frmRptStockBal). */
+export const stockReportLookups = () => get('/inventory/reports/lookups')
+export const stockLedger = (params) => get('/inventory/reports/stock-ledger', { params })
+export const stockBalance = (params) => get('/inventory/reports/stock-balance', { params })

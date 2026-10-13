@@ -85,6 +85,20 @@ def list_audit_log(
     ]
 
 
+@router.get("/documents")
+def audit_documents(kind: str = Query("master", pattern="^(master|transaction)$"), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """Audit Log screen combo (legacy frmUtlRecAuditLog): documents of the chosen type that are audit-tracked
+    (UtlTransactions.AuditLogTrack = 'Y'), plus any document this app has actually logged entries for."""
+    doc_type = "Master" if kind == "master" else "Transaction"
+    rows = conn.execute(
+        text(
+            "SELECT DocName FROM UtlTransactions WHERE DocType = :t AND (AuditLogTrack = 'Y' OR DocName IN (SELECT DISTINCT Entity FROM WebAuditLog)) ORDER BY DocName"
+        ),
+        {"t": doc_type},
+    ).all()
+    return [r[0] for r in rows]
+
+
 @router.delete("")
 def purge_audit_log(
     before: date = Query(..., description="Deletes every row strictly before this date (keep-everything-after)"),

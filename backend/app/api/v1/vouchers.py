@@ -9,8 +9,9 @@ from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
 from app.core.fy import FinancialYear, get_user_fy
-from app.core.security import CurrentUser, require_right
+from app.core.security import CurrentUser, get_current_user, require_right
 from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
+from app.services import journal as journal_service
 from app.services import payment as payment_service
 from app.services import receipt as receipt_service
 
@@ -154,3 +155,55 @@ def delete_receipt_voucher(receipt_id: int, _: CurrentUser = Depends(require_rig
     with with_transaction() as conn:
         receipt_service.delete_by_id(conn, receipt_id=receipt_id)
     return {"message": "Deleted Receipt Voucher Successfully!"}
+
+
+# ---- Journal Voucher (DocID 1254) — same Dr/Cr grid as Payment Voucher ----
+
+
+class JournalVoucherCreateRequest(PaymentVoucherCreateRequest):
+    pass
+
+
+@router.get("/vouchers/journals")
+def list_journal_vouchers(
+    search: str = "",
+    top: int = Query(50, le=200),
+    fy: FinancialYear = Depends(get_user_fy),
+    conn: Connection = Depends(get_conn),
+    _: CurrentUser = Depends(require_right(journal_service.DOC_ID, RIGHT_VIEW)),
+):
+    return journal_service.list_recent(conn, fy=fy, search=search, top=top)
+
+
+@router.post("/vouchers/journals", status_code=201)
+def create_journal_voucher(
+    body: JournalVoucherCreateRequest,
+    fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(journal_service.DOC_ID, RIGHT_ADD)),
+):
+    values = body.model_dump()
+    lines = [journal_service.VoucherLine(**l) for l in values.pop("lines")]
+    data = journal_service.JournalVoucherInput(**values, lines=lines)
+    with with_transaction() as conn:
+        return journal_service.create(conn, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.post("/vouchers/journals/{jnrvch_id}/cancel")
+def cancel_journal_voucher(jnrvch_id: int, body: CancelRequest, user: CurrentUser = Depends(require_right(journal_service.DOC_ID, RIGHT_EDIT))):
+    with with_transaction() as conn:
+        journal_service.cancel(conn, jnrvch_id=jnrvch_id, reason=body.reason, user_code=user.user_code)
+    return {"message": "Cancelled Journal Voucher Successfully!"}
+
+
+@router.delete("/vouchers/journals/{jnrvch_id}")
+def delete_journal_voucher(jnrvch_id: int, user: CurrentUser = Depends(require_right(journal_service.DOC_ID, RIGHT_DELETE))):
+    with with_transaction() as conn:
+        journal_service.delete(conn, jnrvch_id=jnrvch_id, user_code=user.user_code)
+    return {"message": "Deleted Journal Voucher Successfully!"}
+
+
+@router.get("/vouchers/{kind}/{voucher_id}")
+def get_voucher(kind: str, voucher_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    from app.services import voucher_view
+
+    return voucher_view.get_voucher(conn, kind, voucher_id)

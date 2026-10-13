@@ -3,6 +3,8 @@ import { AppShell, Burger, Collapse, Group, NavLink, Text, Menu, Avatar, Badge, 
 import { SlidersHorizontal, Calculator, ChevronDown, Database, FileText, FlaskConical, LayoutDashboard, LogOut, Package, Receipt, Search, Star, Wallet, Wrench, X } from 'lucide-react'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import useFavourites from '../hooks/useFavourites'
+import { Suspense } from 'react'
+import { Loader, Center } from '@mantine/core'
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import { getMenu } from '../api/endpoints/meta'
 import { useAuth } from '../hooks/useAuth'
@@ -15,7 +17,8 @@ import GlobalSearch from './GlobalSearch'
 import { isDemoMode } from '../lib/demoMode'
 import { useConfirm } from './ui/ConfirmProvider'
 import { AnimatePresence, motion } from 'framer-motion'
-import WelcomeSplash from './WelcomeSplash'
+import { lazy } from 'react'
+const WelcomeSplash = lazy(() => import('./WelcomeSplash'))
 import { enterDemoMode, exitDemoMode } from '../lib/demoAuth'
 
 // Transparent cutouts of the official logo (logo/primary-logo@2x.png), made with Pillow:
@@ -24,9 +27,8 @@ import { enterDemoMode, exitDemoMode } from '../lib/demoAuth'
 const BRAND_LOCKUP = '/brand/lockup-horizontal.png' // badge + "e-Mandira PRANALI" wordmark, side by side
 
 // One icon per sidebar group so the list can be scanned without reading every heading.
-const GROUP_ICON = { Transactions: Receipt, Vouchers: Wallet, Masters: Database, Reports: FileText, 'Ac-Reports': Calculator, Utilities: Wrench, Inventory: Package, Administration: SlidersHorizontal }
+const GROUP_ICON = { Transactions: Receipt, Vouchers: Wallet, Masters: Database, Reports: FileText, 'Ac-Reports': Calculator, Accounting: Calculator, Utilities: Wrench, Inventory: Package, Administration: SlidersHorizontal }
 
-const TYPE_ORDER = ['Transactions', 'Vouchers', 'Masters', 'Reports', 'Ac-Reports', 'Utilities']
 // A handful of docs have a dedicated, purpose-built screen; everything else
 // that's a simple master (has a DocShForm short-form in UtlTransactions) is
 // served by the generic MasterPage, keyed off the menu item's own DocID —
@@ -37,6 +39,8 @@ const CAPTION_ROUTE = {
   'Hall Booking Entry': '/halls/entry',
   'Donation Reciept Entry': '/donations',
   'Payment Voucher': '/vouchers/payment',
+  'Expense Entry': '/expenses',
+  'Journal Voucher': '/vouchers/journal',
   'Receipt Voucher': '/vouchers/receipt',
   'Panchanga': '/panchanga',
   'Hall Status': '/halls/status',
@@ -61,9 +65,31 @@ const CAPTION_ROUTE = {
   'Display in Browser': '/display',
   'Import from Excel': '/settings/import-excel',
   'Global Settings...': '/settings/admin-master?tab=global-settings',
-  'Security': '/settings/admin-master?tab=roles', // DocID 18 = Role (CLAUDE.md §6) -> Roles & Rights tab
+  'Security': '/settings/admin-master?tab=users', // DocID 18 = User Master (legacy FRMUSERRIGHTS)
   'Bulk Master Update': '/settings/admin-master?tab=bulk-update',
   'General Ledger': '/reports?tab=general-ledger',
+  'Stock Level Report': '/reports/stock-level',
+  'Stock Ageing Report': '/reports/stock-ageing',
+  'Stock Ageing': '/reports/stock-ageing',
+  'Customer Wise Outstanding': '/reports/party-outstanding?party=C',
+  'Audit Log': '/audit-log',
+  'Database Connectivity': '/settings/admin-master?tab=database',
+  'Daily Sales Report': '/reports/daily-sales',
+  'Product Sales Summary Report': '/reports/product-sales',
+  'Profit Margin': '/not-in-web?c=Profit%20Margin',
+  'Label Printing': '/not-in-web?c=Label%20Printing',
+  'Authorise Documents': '/utilities/authorise',
+  'ShortClosedFields': '/not-in-web?c=ShortClosedFields',
+  'ShortClose Documents': '/utilities/shortclose',
+  'Screen Docs': '/utilities/screen-docs',
+  'Post Doc Entry': '/not-in-web?c=Post%20Doc%20Entry',
+  'Shared Documents': '/not-in-web?c=Shared%20Documents',
+  'Reminder Alert': '/not-in-web?c=Reminder%20Alert',
+  'Barcode Layout Format': '/not-in-web?c=Barcode%20Layout%20Format',
+  'Barcode Ammendment': '/not-in-web?c=Barcode%20Ammendment',
+  'Voice Command Alternatives': '/not-in-web?c=Voice%20Command%20Alternatives',
+  'Import Legacy Data': '/not-in-web?c=Import%20Legacy%20Data',
+  'DOWNLOAD LATEST EXE': '/not-in-web?c=DOWNLOAD%20LATEST%20EXE',
 }
 
 function routeFor(item) {
@@ -85,9 +111,11 @@ const EXTRA_SEARCH_LINKS = [
   { caption: 'Donation Receipt Entry', to: '/donations', group: 'Transactions', keywords: 'kanike donor' },
   { caption: 'Hall Booking', to: '/halls', group: 'Transactions', keywords: 'kalyana mantapa reserve' },
   { caption: 'Hall Booking Entry', to: '/halls/entry', group: 'Transactions', keywords: 'hall bill advance' },
+  { caption: 'Expense Entry', to: '/expenses', group: 'Transactions', keywords: 'expenditure spend cost payment' },
   { caption: 'Hall Status', to: '/halls/status', group: 'Transactions', keywords: 'availability calendar occupancy' },
   { caption: 'Payment Voucher', to: '/vouchers/payment', group: 'Vouchers', keywords: 'expense pay' },
   { caption: 'Receipt Voucher', to: '/vouchers/receipt', group: 'Vouchers', keywords: 'income receive' },
+  { caption: 'Journal Voucher', to: '/vouchers/journal', group: 'Vouchers', keywords: 'adjustment transfer non-cash' },
   { caption: 'Panchanga', to: '/panchanga', group: 'Utilities', keywords: 'calendar tithi festival amavasya ekadashi' },
   { alias: true, caption: 'Display Board', to: '/display', group: 'Utilities', keywords: 'display in browser screen tv' },
   { caption: 'Reports', to: '/reports', group: 'Reports', keywords: 'report launcher' },
@@ -107,9 +135,9 @@ const EXTRA_SEARCH_LINKS = [
   { caption: 'Roles & Rights', to: '/settings/admin-master?tab=roles', group: 'Admin Master', adminOnly: true, keywords: 'permissions security access role' },
   { caption: 'Customise Menu', to: '/settings/admin-master?tab=menu', group: 'Admin Master', adminOnly: true, keywords: 'menu show hide sidebar' },
   { caption: 'Global Settings', to: '/settings/admin-master?tab=global-settings', group: 'Admin Master', adminOnly: true, keywords: 'welcome video options configuration' },
-  { caption: 'Company Master', to: '/settings/admin-master?tab=company', group: 'Admin Master', adminOnly: true, keywords: 'trust company financial year address' },
   { caption: 'Bulk Master Update', to: '/settings/admin-master?tab=bulk-update', group: 'Admin Master', adminOnly: true, keywords: 'bulk update masters' },
   { caption: 'Database Settings', to: '/settings/admin-master?tab=database', group: 'Admin Master', adminOnly: true, keywords: 'server connection sql' },
+  { caption: 'Email (SMTP) Settings', to: '/settings/admin-master?tab=email', group: 'Admin Master', adminOnly: true, keywords: 'mail smtp password host port approval email' },
   { caption: 'Print Options', to: '/settings/admin-master?tab=print-options', group: 'Admin Master', adminOnly: true, keywords: 'receipt format printer' },
   { caption: 'Print Settings', to: '/settings/admin-master?tab=print-settings', group: 'Admin Master', adminOnly: true, keywords: 'local printer print agent' },
   { caption: 'Stock Adjustment Entry', to: '/inventory/stock-adjustment', group: 'Inventory', adminOnly: true, keywords: 'stock' },
@@ -122,6 +150,14 @@ const EXTRA_SEARCH_LINKS = [
   { caption: 'Stock Ledger Report', to: '/inventory/stock-ledger-report', group: 'Inventory', adminOnly: true, keywords: 'stock ledger' },
   { caption: 'Item Referencer', to: '/inventory/item-referencer', group: 'Inventory', adminOnly: true, keywords: 'item lookup where used' },
 ]
+
+function PageFallback() {
+  return (
+    <Center mih={240} role="status" aria-label="Loading page">
+      <Loader color="kumkum" />
+    </Center>
+  )
+}
 
 export default function AppShellLayout() {
   // Phones/tablets (< 768px): nav starts closed and closes after every navigation, so it never covers the page.
@@ -211,24 +247,27 @@ export default function AppShellLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Several legacy Reports menu rows (Subsidiary, Customised, Hall Booking With Voucher Detail) are just tabs of the
-  // Reports page. In the sidebar they collapse into one "Reports" entry; search and the menu data still know them all.
-  const isReportTab = (item) => (routeFor(item) || '').startsWith('/reports?')
-  function sidebarItems(items) {
-    const first = items.findIndex(isReportTab)
-    if (first < 0) return items
-    const out = items.filter((i) => !isReportTab(i))
-    out.splice(first, 0, { menu_item_id: 'reports-all', caption: 'Reports', type: items[0].type, _route: '/reports' })
-    return out
-  }
-  const grouped = TYPE_ORDER.map((type) => ({ type, items: type === 'Reports' ? sidebarItems(menu.filter((m) => m.type === type)) : menu.filter((m) => m.type === type) })).filter(
-    (g) => g.items.length
-  )
+  // The sidebar is built purely from the menu the backend serves (MstMenu): section, sub-group heading and order all
+  // come from the data. A `_heading` entry renders as a sub-group label.
+  const grouped = []
+  ;[...menu]
+    .sort((x, y) => (x.section_order ?? 99) - (y.section_order ?? 99))
+    .forEach((m) => {
+      const label = m.section || m.type
+      let g = grouped.find((x) => x.type === label)
+      if (!g) {
+        g = { type: label, items: [], sub: null }
+        grouped.push(g)
+      }
+      const sub = m.subgroup || ''
+      if (sub && sub !== g.sub) g.items.push({ menu_item_id: `h-${label}-${sub}`, caption: sub, _heading: true })
+      g.sub = sub
+      g.items.push(m)
+    })
 
   // Open the group that holds the active route (landing on a screen via bookmark/search/favourite).
   useEffect(() => {
     let activeType = grouped.find((g) => g.items.some((item) => isCurrentPath(routeFor(item))))?.type
-    if (!activeType && isCurrentPath('/inventory')) activeType = 'Inventory'
     if (!activeType && isCurrentPath('/settings')) activeType = 'Administration'
     if (activeType) setOpenGroups((prev) => (prev.has(activeType) && prev.size === 1 ? prev : new Set([activeType])))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -426,6 +465,7 @@ export default function AppShellLayout() {
             {grouped.map((g) => (
               <RailGroup key={g.type} label={g.type} icon={GROUP_ICON[g.type]} active={g.items.some((item) => isCurrentPath(routeFor(item)))}>
                 {g.items.map((item) => {
+                  if (item._heading) return <Menu.Label key={item.menu_item_id}>{item.caption}</Menu.Label>
                   const to = routeFor(item)
                   return (
                     <Menu.Item key={item.menu_item_id} component={Link} to={to || '#'} disabled={!to}>
@@ -435,14 +475,6 @@ export default function AppShellLayout() {
                 })}
               </RailGroup>
             ))}
-            {isAdmin && (
-              <RailGroup label="Inventory" icon={Package} active={isCurrentPath('/inventory')}>
-                <Menu.Item component={Link} to="/inventory/stock-adjustment">Stock Adjustment Entry</Menu.Item>
-                <Menu.Item component={Link} to="/inventory/store-issue">Store Issue Note</Menu.Item>
-                <Menu.Item component={Link} to="/inventory/purchase-bill">Purchase Bill</Menu.Item>
-                <Menu.Item component={Link} to="/inventory/bom">Bill of Material</Menu.Item>
-              </RailGroup>
-            )}
             {isAdmin && (
               <RailGroup label="Administration" icon={SlidersHorizontal} active={isCurrentPath('/settings')}>
                 <Menu.Item component={Link} to="/settings/admin-master">Admin Master</Menu.Item>
@@ -482,26 +514,21 @@ export default function AppShellLayout() {
                   onToggle={() => toggleGroup(g.type)}
                 />
                 <Collapse in={openGroups.has(g.type)}>
-                  <div className="vt-side-sub">{g.items.map((item) => renderItem(routeFor(item), item.caption))}</div>
+                  <div className="vt-side-sub">
+                    {g.items.map((item) =>
+                      item._heading ? (
+                        <Text key={item.menu_item_id} size="xs" fw={700} c="#D9B9A3" px="xs" pt={8} pb={2} style={{ letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                          {item.caption}
+                        </Text>
+                      ) : (
+                        renderItem(routeFor(item), item.caption)
+                      )
+                    )}
+                  </div>
                 </Collapse>
               </div>
             ))}
 
-            {isAdmin && (
-              <div style={{ marginBottom: 6 }}>
-                {/* Stock Adjustment / Store Issue / Purchase Bill / BOM are MenuShow='N' in the legacy app
-                    (hidden, zero real usage): built on request, ADMIN-only here so daily staff aren't cluttered. */}
-                <GroupHeader label="Inventory" open={openGroups.has('Inventory')} active={isCurrentPath('/inventory')} onToggle={() => toggleGroup('Inventory')} />
-                <Collapse in={openGroups.has('Inventory')}>
-                  <div className="vt-side-sub">
-                    {renderItem('/inventory/stock-adjustment', 'Stock Adjustment Entry')}
-                    {renderItem('/inventory/store-issue', 'Store Issue Note')}
-                    {renderItem('/inventory/purchase-bill', 'Purchase Bill')}
-                    {renderItem('/inventory/bom', 'Bill of Material')}
-                  </div>
-                </Collapse>
-              </div>
-            )}
             {isAdmin && (
               <div style={{ marginBottom: 6 }}>
                 <GroupHeader label="Administration" open={openGroups.has('Administration')} active={isCurrentPath('/settings')} onToggle={() => toggleGroup('Administration')} />
@@ -519,32 +546,6 @@ export default function AppShellLayout() {
           </Group>
         )}
 
-        {/* Account card: who is signed in. Role names aren't in the session, so ADMIN is the only role shown by name. */}
-        <Group
-          gap="sm"
-          wrap="nowrap"
-          justify={rail ? 'center' : 'flex-start'}
-          py="xs"
-          px={rail ? 0 : 'sm'}
-          mx="xs"
-          mb={6}
-          style={{ borderRadius: 16, background: 'rgba(244,225,166,0.08)', border: '1px solid rgba(244,225,166,0.18)' }}
-        >
-          <Avatar radius="xl" size={36} color="gold" variant="filled" c="#2B0909" aria-label={`Signed in as ${user?.user_name || user?.user_code}`}>
-            {(user?.user_code || '?').slice(0, 2).toUpperCase()}
-          </Avatar>
-          {!rail && (
-            <div style={{ minWidth: 0 }}>
-              <Text size="sm" fw={600} c="#FBF6EC" truncate>
-                {user?.user_name || user?.user_code}
-              </Text>
-              <Text size="xs" c="#D9B9A3" truncate>
-                {isAdmin ? 'Administrator' : `User ${user?.user_code}`}
-              </Text>
-            </div>
-          )}
-        </Group>
-
         {/* Credit card: gold + silver Softvent mark straight on the maroon, no white box. */}
         {!rail && (
           <Stack gap={8} align="center" py="sm" px={4} mx="xs" mb="xs" style={{ borderRadius: 16, background: 'rgba(244,225,166,0.08)', border: '1px solid rgba(244,225,166,0.18)' }}>
@@ -559,7 +560,11 @@ export default function AppShellLayout() {
         )}
       </AppShell.Navbar>
 
-      <AnimatePresence>{welcome && <WelcomeSplash key="welcome" name={user?.user_name || user?.user_code} onDone={() => setWelcome(false)} />}</AnimatePresence>
+      <AnimatePresence>{welcome && (
+        <Suspense fallback={null}>
+          <WelcomeSplash key="welcome" name={user?.user_name || user?.user_code} onDone={() => setWelcome(false)} />
+        </Suspense>
+      )}</AnimatePresence>
       <AppShell.Main ref={mainRef} className="vt-app-main" data-vt-stage style={{ background: 'var(--vt-sandal)' }}>
         <DevotionalBackdrop />
         {/* each screen eases in; while the welcome video is up the page waits, then rises as the video dissolves */}
@@ -570,7 +575,9 @@ export default function AppShellLayout() {
           animate={welcome ? { opacity: 0, y: 14 } : { opacity: 1, y: 0 }}
           transition={{ duration: 0.45, ease: [0.22, 0.8, 0.3, 1], delay: welcome ? 0 : 0.15 }}
         >
-          <Outlet />
+          <Suspense fallback={<PageFallback />}>
+            <Outlet />
+          </Suspense>
         </motion.div>
       </AppShell.Main>
       <style>{`

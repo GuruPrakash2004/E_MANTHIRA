@@ -38,7 +38,8 @@ class PrintOption:
 
 
 def _rpt_dir() -> Path:
-    return Path(get_settings().rpt_path).expanduser()
+    settings = get_settings()
+    return Path(settings.rpt_folder or settings.rpt_path).expanduser()
 
 
 def scan_rpt_files() -> dict[str, str]:

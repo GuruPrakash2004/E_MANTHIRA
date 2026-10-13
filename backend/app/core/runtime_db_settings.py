@@ -38,8 +38,9 @@ def load_override() -> dict[str, Any]:
 
 
 def save_override(values: dict[str, Any]) -> None:
-    current = load_override()
-    current.update({k: v for k, v in values.items() if k in OVERRIDABLE_FIELDS and v is not None})
+    # Replace, don't merge: the saved target is exactly what was submitted
+    # (blank port/password included), never blended with older saved values.
+    current = {k: v for k, v in values.items() if k in OVERRIDABLE_FIELDS}
     _OVERRIDE_PATH.write_text(json.dumps(current, indent=2), encoding="utf-8")
 
 
@@ -61,13 +62,17 @@ def effective_fields() -> dict[str, Any]:
 
 
 def build_candidate(values: dict[str, Any]):
-    """A Settings instance reflecting the current override + these proposed
-    changes, WITHOUT persisting anything — used to test-connect before save."""
+    """A Settings instance built from exactly the submitted values (over bare
+    .env defaults for fields not submitted) — the previously saved override is
+    deliberately NOT layered in, so a test uses only what was typed.
+    WITHOUT persisting anything — used to test-connect before save."""
     from app.core.config import Settings
 
-    base = Settings()
-    merged = {**load_override(), **{k: v for k, v in values.items() if k in OVERRIDABLE_FIELDS and v is not None}}
-    return base.model_copy(update=merged)
+    # _env_file=None: ignore .env too, so nothing saved can bleed into a fresh entry.
+    base = Settings(_env_file=None)
+    given = {k: v for k, v in values.items() if k in OVERRIDABLE_FIELDS}
+    given = {k: ("" if v is None and k != "db_port" else v) for k, v in given.items()}
+    return base.model_copy(update=given)
 
 
 def apply_and_reconnect(values: dict[str, Any]) -> tuple[bool, str]:
@@ -81,6 +86,7 @@ def apply_and_reconnect(values: dict[str, Any]) -> tuple[bool, str]:
     from app.core.audit import ensure_schema
     from app.print.print_prefs import ensure_schema as ensure_print_prefs_schema
 
+    values = {k: v for k, v in values.items() if k in OVERRIDABLE_FIELDS}
     candidate = build_candidate(values)
     ok, detail = test_connection_for(candidate)
     if not ok:

@@ -4,37 +4,46 @@ import { iso } from './util'
 
 // ---------------------------------------------------------------- menu
 // caption strings match AppShellLayout's CAPTION_ROUTE exactly so every sidebar link goes somewhere real.
-const M = (id, caption, type, doc_id = null, group = '') => ({ menu_item_id: id, caption, type, doc_id, form_key: '', group, shortcut: '', rights: '111111111111', can_view: true })
+// section / subgroup / section_order mirror what backend app/meta/menu.py derives from MstMenu.
+const SECTIONS = { Masters: ['Masters', 1, ''], Transactions: ['Transactions', 2, ''], Reports: ['Reports', 3, ''], Vouchers: ['Accounting', 4, 'Vouchers'], 'Ac-Reports': ['Accounting', 4, 'Accounting Reports'], Tools: ['Tools', 5, ''], Utilities: ['Utilities', 6, ''] }
+const M = (id, caption, type, doc_id = null, group = '') => ({ menu_item_id: id, caption, type, doc_id, form_key: '', group, section: SECTIONS[type][0], section_order: SECTIONS[type][1], subgroup: group || SECTIONS[type][2], shortcut: '', rights: '111111111111', can_view: true })
 export const DEMO_MENU = [
   M(1, 'Seva Entry', 'Transactions', 1263),
   M(2, 'Donation Reciept Entry', 'Transactions', 1261),
   M(3, 'Hall Booking', 'Transactions', 1281),
   M(4, 'Hall Booking Entry', 'Transactions', 1280),
-  M(5, 'Panchanga', 'Transactions'),
-  M(6, 'Hall Status', 'Transactions'),
   M(7, 'Payment Voucher', 'Vouchers', 1224),
   M(8, 'Receipt Voucher', 'Vouchers', 1248),
-  M(20, 'Sannidhi Master', 'Masters', 1255),
-  M(21, 'Seva Master', 'Masters', 1265),
-  M(22, 'Gothra Master', 'Masters', 1257),
-  M(23, 'Nakshatra Master', 'Masters', 1258),
-  M(24, 'Rashi Master', 'Masters', 1279),
-  M(25, 'Hall Master', 'Masters', 1282),
-  M(26, 'Event Master', 'Masters', 1266),
-  M(27, 'Ledger Master', 'Masters', 1204),
-  M(28, 'Ledger Group Master', 'Masters', 1205),
-  M(29, 'Bank Master', 'Masters', 1223),
+  M(9, 'Purchase Voucher', 'Vouchers'),
+  M(19, 'Company Master', 'Masters', 17, 'Seva Related'),
+  M(20, 'Sannidhi Master', 'Masters', 1255, 'Seva Related'),
+  M(21, 'Seva Master', 'Masters', 1265, 'Seva Related'),
+  M(22, 'Gothra Master', 'Masters', 1257, 'Seva Related'),
+  M(23, 'Nakshatra Master', 'Masters', 1258, 'Seva Related'),
+  M(24, 'Rashi Master', 'Masters', 1279, 'Seva Related'),
+  M(25, 'Hall Master', 'Masters', 1282, 'Seva Related'),
+  M(26, 'Event Master', 'Masters', 1266, 'Seva Related'),
+  M(27, 'Ledger Master', 'Masters', 1204, 'Others'),
+  M(28, 'Ledger Group Master', 'Masters', 1205, 'Others'),
   M(40, 'Subsidiary Reports', 'Reports'),
   M(41, 'Customised Reports...', 'Reports'),
   M(42, 'Hall Booking With Voucher Detail Report', 'Reports'),
   M(43, 'PDF Generator', 'Reports'),
+  M(44, 'Hall Status', 'Reports'),
+  M(45, 'Item Referencer', 'Reports'),
+  M(46, 'Audit Trail', 'Reports'),
+  M(47, 'Current Stock Balance', 'Reports'),
+  M(48, 'Stock Level Report', 'Reports'),
+  M(49, 'Stock Ageing Report', 'Reports'),
   M(50, 'General Ledger', 'Ac-Reports'),
   M(60, 'Display in Browser', 'Utilities'),
   M(61, 'Import from Excel', 'Utilities'),
-  M(62, 'Audit Trail', 'Utilities'),
+  M(62, 'Audit Log', 'Utilities'),
   M(63, 'Global Settings...', 'Utilities'),
   M(64, 'Security', 'Utilities'),
   M(65, 'Bulk Master Update', 'Utilities'),
+  M(66, 'Database Connectivity', 'Utilities'),
+  M(67, 'Panchanga', 'Utilities'),
 ]
 
 // ---------------------------------------------------------------- UtlDocDsgrFlds
@@ -50,6 +59,10 @@ const PAYMENT_LIST = 'Cash|Cheque|Card|UPI|Online Transfer'
 export function buildDocFields() {
   order = 0
   const f = {}
+  f[17] = [
+    fld(17, 'TELNO', 'Tel No'), fld(17, 'MOBNO', 'Mobile no'), fld(17, 'WEB', 'Website'),
+    fld(17, 'GSTNO', 'GST No'), fld(17, 'CINNO', 'CIN No'), fld(17, 'PANNO', 'Pan No'),
+  ]
   f[1263] = [
     fld(1263, 'SANNIDHIID', 'Sannidhi', { mandatory: true, combo: 'MstSANNIDHI' }),
     fld(1263, 'SVAID', 'Seva', { mandatory: true, combo: 'MstSVA' }),

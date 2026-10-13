@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Card, Divider, Group, Kbd, Skeleton, Stack, Text, Title } from '@mantine/core'
+import { ActionIcon, Button, Card, Divider, Group, Kbd, Skeleton, Text, Title, Stack } from '@mantine/core'
 import { Printer } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import EmptyState from './EmptyState'
@@ -32,11 +32,11 @@ export function SectionCard({ title, hint, action, children }) {
 // >= 1200px: form on the left, a side panel pinned to the viewport on the right that always shows the
 // summary and the recent list (the list takes the remaining height and scrolls inside itself).
 // Below that: one column, side panel under the form.
-export function EntryLayout({ main, side }) {
+export function EntryLayout({ main, side, viewing = false }) {
   return (
     <>
       <div className="vt-entry-layout">
-        <div className="vt-entry-main">{main}</div>
+        <div className="vt-entry-main">{viewing ? <fieldset disabled style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>{main}</fieldset> : main}</div>
         <aside className="vt-entry-side" aria-label="Summary and recent entries">
           {side}
         </aside>
@@ -44,27 +44,44 @@ export function EntryLayout({ main, side }) {
       <style>{`
         .vt-entry-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--mantine-spacing-lg); align-items: start; }
         .vt-entry-main { min-width: 0; }
-        .vt-entry-side { display: flex; flex-direction: column; gap: var(--mantine-spacing-md); min-width: 0; }
-        .vt-entry-side .vt-recent-list { max-height: 320px; }
+        .vt-entry-side { display: flex; flex-direction: column; gap: var(--mantine-spacing-sm); min-width: 0; }
+        .vt-entry-side .vt-recent-list { max-height: 360px; }
         @media (min-width: 1200px) {
-          .vt-entry-layout { grid-template-columns: minmax(0, 1fr) 360px; }
-          .vt-entry-side { position: sticky; top: 96px; height: calc(100dvh - 112px); }
+          .vt-entry-layout { grid-template-columns: minmax(0, 1fr) 380px; }
+          /* header is 80px: pin 10px below it, and use all the remaining height so the recent list shows more rows */
+          .vt-entry-side { position: sticky; top: 90px; height: calc(100dvh - 102px); }
           .vt-entry-side > * { flex: 0 0 auto; }
-          .vt-entry-side > .vt-recent-card { flex: 1 1 0; min-height: 150px; }
+          .vt-entry-side > .vt-recent-card { flex: 1 1 0; min-height: 220px; }
           .vt-entry-side .vt-recent-list { max-height: none; }
         }
+
+        /* Recent list: thin themed scrollbar, soft fade at the edges, roomy hover rows */
+        .vt-recent-list {
+          scrollbar-width: thin;
+          scrollbar-color: var(--vt-accent) transparent;
+          overscroll-behavior: auto;
+          padding: 2px 6px 2px 0;
+          -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 14px), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 14px), transparent 100%);
+        }
+        .vt-recent-list::-webkit-scrollbar { width: 6px; }
+        .vt-recent-list::-webkit-scrollbar-track { background: transparent; }
+        .vt-recent-list::-webkit-scrollbar-thumb { background: var(--vt-accent); border-radius: 999px; opacity: .6; }
+        .vt-recent-list::-webkit-scrollbar-thumb:hover { background: var(--mantine-color-gold-5); }
+        .vt-recent-row { border-radius: 10px; padding: 8px 10px; transition: background-color .15s ease; }
+        .vt-recent-row:hover { background: var(--vt-gold-chip); }
       `}</style>
     </>
   )
 }
 
-export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, onSave }) {
+export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, saveDisabled = false, onSave }) {
   return (
-    <Card p="lg" style={{ background: 'linear-gradient(160deg, var(--vt-g1) 0%, var(--vt-g3) 100%)', border: '1px solid rgba(244,225,166,0.3)', color: '#FBF6EC' }}>
+    <Card p="md" style={{ background: 'linear-gradient(160deg, var(--vt-g1) 0%, var(--vt-g3) 100%)', border: '1px solid rgba(244,225,166,0.3)', color: '#FBF6EC' }}>
       <Text size="xs" fw={700} tt="uppercase" c="#F4E1A6" style={{ letterSpacing: 1 }}>
         Summary
       </Text>
-      <Stack gap={6} mt="sm">
+      <Stack gap={4} mt={6}>
         {rows.map((r) => (
           <Group key={r.label} justify="space-between" wrap="nowrap">
             <Text size="sm" c="#E9D2B8">
@@ -76,11 +93,11 @@ export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, war
           </Group>
         ))}
       </Stack>
-      <Divider my="md" color="rgba(244,225,166,0.25)" />
+      <Divider my="sm" color="rgba(244,225,166,0.25)" />
       <Text size="xs" c="#E9D2B8">
         {totalLabel}
       </Text>
-      <Text className="vt-num" c="#F4E1A6" style={{ fontFamily: 'Marcellus, Georgia, serif', fontSize: 'clamp(30px,3vw,40px)', fontWeight: 700, lineHeight: 1.15 }}>
+      <Text className="vt-num" c="#F4E1A6" style={{ fontFamily: 'Marcellus, Georgia, serif', fontSize: 'clamp(26px,2.4vw,34px)', fontWeight: 700, lineHeight: 1.15 }}>
         {total}
       </Text>
       {amountInWords(words) && (
@@ -93,16 +110,15 @@ export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, war
           {warning}
         </Text>
       )}
-      <Button fullWidth size="lg" mt="md" color="gold" c="#2B0909" leftSection={<SaveIcon size={18} />} loading={saving} onClick={onSave}>
-        {saveLabel}
+      <Button fullWidth size="md" mt="sm" color="gold" c="#2B0909" leftSection={<SaveIcon size={18} />} loading={saving} disabled={saveDisabled} onClick={onSave} aria-keyshortcuts="Alt+S">
+        <Group gap={10} wrap="nowrap">
+          <span>{saveLabel}</span>
+          <Kbd size="xs" style={{ background: 'rgba(43,9,9,0.12)', color: '#2B0909', borderColor: 'rgba(43,9,9,0.25)' }}>
+            Alt+S
+          </Kbd>
+        </Group>
       </Button>
-      <Group gap={6} justify="center" mt="xs">
-        <Kbd size="xs">Alt+S</Kbd>
-        <Text size="xs" c="#D9B9A3">
-          to save
-        </Text>
-      </Group>
-    </Card>
+          </Card>
   )
 }
 
@@ -148,14 +164,13 @@ export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyT
       ) : rows.length === 0 ? (
         <EmptyState icon={Icon} title={emptyTitle} hint={emptyHint} />
       ) : (
-        <Stack gap={0} className="vt-recent-list" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
+        <Stack gap={2} className="vt-recent-list" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
           <AnimatePresence initial={false}>
-          {rows.map((row, i) => {
+          {rows.map((row) => {
             const r = renderRow(row)
             return (
               <motion.div key={r.key} layout="position" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
-                {i > 0 && <Divider my={6} />}
-                <Group justify="space-between" wrap="nowrap" gap="xs">
+                <Group justify="space-between" wrap="nowrap" gap="xs" className="vt-recent-row">
                   <div style={{ minWidth: 0 }}>
                     <Text size="sm" fw={600} className="vt-num">
                       {r.title}
@@ -205,29 +220,19 @@ function Diya() {
   )
 }
 
-/** Page title row used by entry screens: gopuram mark, title, subtitle and the keyboard-shortcut hints. */
-export function PageHeader({ title, subtitle, shortcuts = [{ keys: 'Alt+S', label: 'Save' }] }) {
+/** Page title row used by entry screens: gopuram mark, title and subtitle. (Keyboard shortcuts still work; the hint chips were removed.) */
+export function PageHeader({ title, subtitle }) {
   return (
-    <Group justify="space-between" align="center" wrap="wrap" gap="md">
-      <Group gap="sm" wrap="nowrap">
-        <img src="/illustrations/gopuram-mark.svg" alt="" aria-hidden style={{ height: 40, width: 40 }} />
-        <div>
-          <Title order={2}>{title}</Title>
-          {subtitle && (
-            <Text size="sm" c="dimmed">
-              {subtitle}
-            </Text>
-          )}
-        </div>
-      </Group>
-      <Group gap="md" visibleFrom="sm" c="dimmed">
-        {shortcuts.map((k) => (
-          <Group gap={6} key={k.keys}>
-            <Kbd size="xs">{k.keys}</Kbd>
-            <Text size="xs">{k.label}</Text>
-          </Group>
-        ))}
-      </Group>
+    <Group gap="sm" wrap="nowrap">
+      <img src="/illustrations/gopuram-mark.svg" alt="" aria-hidden style={{ height: 40, width: 40 }} />
+      <div>
+        <Title order={2}>{title}</Title>
+        {subtitle && (
+          <Text size="sm" c="dimmed">
+            {subtitle}
+          </Text>
+        )}
+      </div>
     </Group>
   )
 }

@@ -25,6 +25,7 @@ from sqlalchemy.engine import Connection
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, update_row
+from app.utils.text_norm import normalise_name
 from app.meta import numbering
 from app.services import receipt as receipt_service
 from app.utils.amount_in_words import amount_in_words
@@ -67,6 +68,11 @@ class SevaInput:
     dates: list[SevaDate]
     doc_date: date
     is_regular: bool = False
+    add1: str | None = None  # the four address lines of the legacy form (TrnHdrSEVA.Add1..Add4)
+    add2: str | None = None
+    add3: str | None = None
+    add4: str | None = None
+    mobile_no: str | None = None  # separate 'Mobile No' under the address (TrnHdrSEVA.MOBNO)
     prasada: bool = False
     issued_by: str = ""
     # Fields the Designer tool adds to UtlDocDsgrFlds later that this
@@ -74,6 +80,10 @@ class SevaInput:
     # silently drops anything that isn't a real TrnHdrSEVA column, so this
     # is safe even if a designer field name doesn't match exactly.
     extra_fields: dict = field(default_factory=dict)
+
+
+# Voucher type (book) each payment mode may post to — mirrors the web form; Payment and Voucher Type used to be independent.
+VOUCHER_FOR_PAYMENT = {"CASH": ("Cash",), "CARD": ("Card", "Bank"), "CHEQUE": ("Bank",), "UPI": ("Bank",)}
 
 
 def _auto_receipt_enabled(conn: Connection) -> bool:
@@ -114,6 +124,17 @@ def validate(data: SevaInput, fy: FinancialYear) -> None:
     # records — the opposite of what "mandatory for Cash" would produce.)
     if data.payment_mode.upper() != "CASH" and not (data.mobile or "").strip():
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Mobile Number is mandatory for non-Cash payment")
+    if (data.mobile or "").strip() and not (data.mobile.isdigit() and len(data.mobile) == 10):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Mobile Number must be 10 digits")
+    # Payment Mode decides which book the receipt posts to: a UPI/Cheque receipt must not land in the cash book.
+    allowed = VOUCHER_FOR_PAYMENT.get(data.payment_mode.upper())
+    if allowed is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Payment Mode is required")
+    if data.voucher_type.title() not in allowed:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{'UPI' if data.payment_mode.upper() == 'UPI' else data.payment_mode.title()} payments post to {' / '.join(allowed)}, not {data.voucher_type}",
+        )
     if not data.name.strip():
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Name should not be blank!")
     if data.rate <= 0:
@@ -183,9 +204,9 @@ def create(conn: Connection, *, data: SevaInput, fy: FinancialYear, user_code: s
             "AMTINWRDS": amount_in_words(total_amt, "Rupees", "Paise"),
             "RegularD": "Y" if data.is_regular else "N",
             "DaysPrintText": days_print_text,
-            "KNAME": data.name,
+            "KNAME": normalise_name(data.name),
             "NAMEINKAN": data.name_kn or "",
-            "SECKNAME": data.name2 or "",
+            "SECKNAME": normalise_name(data.name2),
             "GOTHRAID": data.gothra_id,
             "NAKSHATRAID": data.nakshatra_id,
             "RASHIID": data.rashi_id,
@@ -193,7 +214,11 @@ def create(conn: Connection, *, data: SevaInput, fy: FinancialYear, user_code: s
             "SECRASHIID": data.rashi2_id,
             "RMKS": data.timing_text or "",
             "MOBNUM": data.mobile,
-            "MOBNO": data.mobile,
+            "MOBNO": (data.mobile_no or "").strip() or data.mobile,
+            "Add1": data.add1 or "",
+            "Add2": data.add2 or "",
+            "Add3": data.add3 or "",
+            "Add4": data.add4 or "",
             "PAYMENT": data.payment_mode,
             "BANKNAME": data.bank_name,
             "CHQNO": data.cheque_no,
@@ -285,3 +310,122 @@ def delete(conn: Connection, *, seva_id: int, user_code: str) -> None:
     conn.execute(text("DELETE FROM TrnDtlSevaDates WHERE SevaID = :id"), {"id": seva_id})
     conn.execute(text("DELETE FROM TrnHdrSEVA WHERE SEVAID = :id"), {"id": seva_id})
     audit.record(conn, entity="Seva Entry", entity_id=seva_id, action="D", user_code=user_code)
+
+
+def regular_devotees(conn: Connection, *, name: str = "", top: int = 0) -> list[dict]:
+    """
+    Select Sevakartharu (frmTrnSeva.btnLoadSevaDtls_Click): earlier sevas of regular devotees (RegularD='Y', not
+    cancelled), newest first, optionally narrowed to names containing `name` and limited to the newest `top`.
+    """
+    from app.core.db import limit_clause
+
+    sql = """
+        SELECT h.SEVAID, h.SEVANO, h.PrintSEVANO, h.SVAID, h.KNAME, h.MOBNO, h.NAMEINKAN,
+               g.GOTHRACODE AS GothraName, h.GOTHRAID, n1.NAKSHATRACODE AS NakshatraName, h.NAKSHATRAID,
+               h.SECKNAME, n2.NAKSHATRACODE AS NakshatraName2, h.SECNAKSHATRAID,
+               r1.RASHICODE AS Rashi1, h.RASHIID, r2.RASHICODE AS Rashi2, h.SECRASHIID,
+               h.Add1, h.Add2, h.Add3, h.Add4
+        FROM TrnHdrSEVA h
+        JOIN MstSVA e ON h.SVAID = e.SVAID
+        LEFT JOIN MstNAKSHATRA n1 ON h.NAKSHATRAID = n1.NAKSHATRAID
+        LEFT JOIN MstNAKSHATRA n2 ON h.SECNAKSHATRAID = n2.NAKSHATRAID
+        LEFT JOIN MstGOTHRA g ON h.GOTHRAID = g.GOTHRAID
+        LEFT JOIN MstRASHI r1 ON h.RASHIID = r1.RASHIID
+        LEFT JOIN MstRASHI r2 ON h.SECRASHIID = r2.RASHIID
+        WHERE h.Cancelled = 'N' AND h.RegularD = 'Y'
+    """
+    params: dict = {}
+    if name.strip():
+        sql += " AND h.KNAME LIKE :q"
+        params["q"] = f"%{name.strip()}%"
+    sql += f" ORDER BY h.SEVAID DESC {limit_clause(top if top > 0 else 500)}"
+    return [dict(r) for r in conn.execute(text(sql), params).mappings().all()]
+
+
+def last_entry(conn: Connection) -> dict | None:
+    """F6 in Add mode (frmTrnSeva): load the most recent seva (max SEVAID) so it can be re-entered."""
+    last = conn.execute(text("SELECT MAX(SEVAID) FROM TrnHdrSEVA")).scalar()
+    return get(conn, int(last)) if last else None
+
+
+# ---------------------------------------------------------------- Group Seva (frmTrnSeva: Group Seva button)
+
+
+def group_sevas(conn: Connection) -> list[dict]:
+    """The saved groups (TrnHdrGRPSEVA) with the Sevas their members are booked for - what the legacy 'Load' dialog lists."""
+    rows = conn.execute(
+        text(
+            """
+            SELECT h.GRPSEVAID, h.NAME, h.GRPSEVADISPNAME, h.MOBNO, d.SVAID, i.SVANAME,
+                   COUNT(*) AS members
+            FROM TrnHdrGRPSEVA h
+            JOIN TrnDtlGrpSeva d ON h.GRPSEVAID = d.GRPSEVAID
+            JOIN MstSVA i ON d.SVAID = i.SVAID
+            WHERE h.Cancelled = 'N'
+            GROUP BY h.GRPSEVAID, h.NAME, h.GRPSEVADISPNAME, h.MOBNO, d.SVAID, i.SVANAME
+            ORDER BY h.NAME, i.SVANAME
+            """
+        )
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def group_members(conn: Connection, *, grp_id: int, seva_id: int) -> list[dict]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT d.GRPSEVADtlID, s.SANNIDHICODE AS sannidhi, d.SANNIDHIID, i.SVANAME AS seva, d.SVAID, i.AMT AS rate,
+                   d.SEVAKARTHRU AS name, n1.NAKSHATRACODE AS nakshatra, d.NAKSHATRAID,
+                   g.GOTHRACODE AS gothra, d.GOTRAID, d.SEVAKARTHRU2 AS name2, n2.NAKSHATRACODE AS nakshatra2, d.NAKSH2ID,
+                   r.RASHICODE AS rashi, d.RASHI AS rashi_id
+            FROM TrnDtlGrpSeva d
+            JOIN MstSVA i ON d.SVAID = i.SVAID
+            JOIN MstSANNIDHI s ON d.SANNIDHIID = s.SANNIDHIID
+            LEFT JOIN MstGOTHRA g ON d.GOTRAID = g.GOTHRAID
+            LEFT JOIN MstNAKSHATRA n1 ON d.NAKSHATRAID = n1.NAKSHATRAID
+            LEFT JOIN MstNAKSHATRA n2 ON d.NAKSH2ID = n2.NAKSHATRAID
+            LEFT JOIN MstRASHI r ON d.RASHI = r.RASHIID
+            WHERE d.GRPSEVAID = :g AND d.SVAID = :v
+            ORDER BY d.GRPSEVADtlID
+            """
+        ),
+        {"g": grp_id, "v": seva_id},
+    ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def generate_group(
+    conn: Connection, *, grp_id: int, seva_id: int, member_ids: list[int], template: SevaInput, fy: FinancialYear, user_code: str
+) -> list[dict]:
+    """
+    btnGenInv_Click: one Seva Entry per ticked member, each with that member's own details and the Seva's rate, and the
+    payment, days, dates and ledgers entered on the form. All entries (and their receipts) save together or not at all.
+    """
+    from dataclasses import replace
+
+    grp = conn.execute(text("SELECT NAME, MOBNO FROM TrnHdrGRPSEVA WHERE GRPSEVAID = :g"), {"g": grp_id}).mappings().first()
+    if grp is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Group Seva not found")
+    members = {m["GRPSEVADtlID"]: m for m in group_members(conn, grp_id=grp_id, seva_id=seva_id)}
+    picked = [members[i] for i in dict.fromkeys(member_ids) if i in members]
+    if not picked:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Tick at least one member")
+    created = []
+    for m in picked:
+        data = replace(
+            template,
+            sannidhi_id=m["SANNIDHIID"],
+            seva_id=m["SVAID"],
+            mobile=(grp["MOBNO"] or "").strip(),
+            mobile_no=(grp["MOBNO"] or "").strip(),
+            name=m["name"] or "",
+            name2=m["name2"] or "",
+            gothra_id=m["GOTRAID"],
+            nakshatra_id=m["NAKSHATRAID"],
+            nakshatra2_id=m["NAKSH2ID"],
+            rashi_id=m["rashi_id"],
+            rate=float(m["rate"] or 0),
+            extra_fields={**(template.extra_fields or {}), "GRPSEVAID": grp_id},
+        )
+        created.append(create(conn, data=data, fy=fy, user_code=user_code))
+    return created

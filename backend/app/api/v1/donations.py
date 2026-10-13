@@ -58,6 +58,18 @@ def list_donations(
     return donation_service.list_recent(conn, fy=fy, search=search, top=top)
 
 
+@router.get("/donors")
+def donor_history(
+    name: str = "", top: int = Query(0, ge=0, le=500), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(donation_service.DOC_ID, RIGHT_VIEW))
+):
+    return donation_service.donor_history(conn, name=name, top=top)
+
+
+@router.get("/last")
+def last_donation(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(donation_service.DOC_ID, RIGHT_VIEW))):
+    return donation_service.last_entry(conn)
+
+
 @router.get("/{donrec_id}")
 def get_donation(donrec_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(donation_service.DOC_ID, RIGHT_VIEW))):
     return donation_service.get(conn, donrec_id)

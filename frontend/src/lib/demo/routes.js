@@ -160,19 +160,21 @@ function createHbe(db, b, user) {
   return { hbe_id: id, hbe_no: rec.PrintHBENO }
 }
 function createVoucher(db, kind, b, user) {
-  const list = kind === 'pay' ? db.payVch : db.rcptVch
+  const list = kind === 'pay' ? db.payVch : kind === 'jnr' ? db.jnrVch : db.rcptVch
   const lines = b.lines || []
   const dr = lines.reduce((s, l) => s + num(l.dr_amt), 0)
   const cr = lines.reduce((s, l) => s + num(l.cr_amt), 0)
   if (!String(b.narration || '').trim()) fail(422, 'Narration should not be blank!')
   if (Math.round(dr * 100) !== Math.round(cr * 100) || !dr) fail(422, 'Debit and Credit totals are NOT matching!')
-  const id = kind === 'pay' ? db.nextId.pay++ : db.nextId.rcpt++
+  const id = kind === 'pay' ? db.nextId.pay++ : kind === 'jnr' ? db.nextId.jnr++ : db.nextId.rcpt++
   const no = list.length + 1
-  const pfx = kind === 'pay' ? 'PV' : 'RV'
+  const pfx = kind === 'pay' ? 'PV' : kind === 'jnr' ? 'JV' : 'RV'
   const printNo = `${b.prefix || FY_PREFIX}${pfx}${pad(no, 4)}`
-  const date = (kind === 'pay' ? b.voucher_date : b.receipt_date) || iso(0)
-  list.unshift({ [kind === 'pay' ? 'PMTVCHID' : 'RCPTVCHID']: id, [kind === 'pay' ? 'PMTVCHNO' : 'RCPTVCHNO']: no, [kind === 'pay' ? 'PrintPMTVCHNO' : 'PrintRCPTVCHNO']: printNo, VCHDate: date, VCHTYP: b.vch_type, NARR: b.narration, TOTDR: dr, TOTCR: cr, Cancelled: 'N', lines })
-  audit(db, user, 'A', kind === 'pay' ? 'Payment Voucher' : 'Receipt Voucher', printNo)
+  const date = (kind === 'rcpt' ? b.receipt_date : b.voucher_date) || iso(0)
+  const T = kind === 'pay' ? 'PMTVCH' : kind === 'jnr' ? 'JNRVCH' : 'RCPTVCH'
+  list.unshift({ [`${T}ID`]: id, [`${T}NO`]: no, [`Print${T}NO`]: printNo, VCHDate: date, VCHTYP: b.vch_type, NARR: b.narration, TOTDR: dr, TOTCR: cr, Cancelled: 'N', lines })
+  audit(db, user, 'A', kind === 'pay' ? 'Payment Voucher' : kind === 'jnr' ? 'Journal Voucher' : 'Receipt Voucher', printNo)
+  if (kind === 'jnr') return { jnrvch_id: id, jnrvch_no: printNo }
   return kind === 'pay' ? { pmtvch_id: id, pmtvch_no: printNo } : { receipt_id: id, receipt_no: printNo }
 }
 function createInv(db, key, idKey, noKey, printKey, prefix, b, extra, user) {
@@ -334,6 +336,19 @@ on('GET', '/meta/docs/:doc/fields', ({ db, p }) => ({ doc: { DocID: Number(p[0])
 on('GET', '/meta/lookup/:doc/:field', ({ db, p, q }) => lookup(db, p[1], q.search))
 on('GET', '/meta/ledgers', ({ db, q }) => ledgerRows(db).map((r) => ({ value: r.LEDID, label: r.LEDNAME })).filter((o) => !q.search || o.label.toLowerCase().includes(q.search.toLowerCase())))
 
+on('POST', '/masters/:doc/:row/approve', ({ body }) => ({ authorised: !!body.approve }))
+on('GET', '/masters/:doc/:row/attach-seva', ({ db }) => (db.rows?.['1265'] || []).slice(0, 8).map((s, i) => ({ seva_id: s.SVAID ?? i + 1, code: s.SVACODE, name: s.SVANAME, amount: s.AMT || 0, attached: i % 2 === 0 })))
+on('PUT', '/masters/:doc/:row/attach-seva', () => ({ message: 'Sevas attached successfully!' }))
+on('GET', '/masters/:doc/:row/party/counts', () => ({ addresses: 0, contacts: 0, alerts: 0, activities: 0 }))
+on('GET', '/masters/:doc/:row/party/:kind', () => [])
+on('GET', '/masters/:doc/:row/image', () => fail(404, 'No image'))
+let demoMail = { host: 'smtp.example.com', port: '587', mail_id: 'trust@example.com', password: 'demo-password', enable_ssl: 'N', enable_tls: 'Y', approval_mail: 'N', approval_url: '' }
+on('GET', '/mail-settings', () => demoMail)
+on('PUT', '/mail-settings', ({ body }) => (demoMail = { ...demoMail, ...body }))
+on('POST', '/mail-settings/test', ({ body }) => ({ message: `Test mail sent to ${body.to} (demo)` }))
+on('POST', '/masters/:doc/:row/send-approval', () => ({ message: 'e-Mail Sent Successfully', sent: [] }))
+on('GET', '/masters/:doc/layout', () => ({ fields: [], hide_inactive: false, list_subtitle_cols: [], pending_panels: [], primary: null }))
+on('GET', '/masters/:doc/core-lookup/:field', () => [])
 on('GET', '/masters/:doc', ({ db, p, q }) => masterList(db, Number(p[0]), q))
 on('POST', '/masters/:doc/import', ({ db, p }) => {
   const m = master(db, Number(p[0]))
@@ -416,7 +431,7 @@ on('DELETE', '/hall-booking-entry/:id', ({ db, p }) => {
   return { message: 'Deleted' }
 })
 
-;[['payments', 'pay', 'payVch', 'PMTVCHID'], ['receipts', 'rcpt', 'rcptVch', 'RCPTVCHID']].forEach(([path, kind, key, idCol]) => {
+;[['payments', 'pay', 'payVch', 'PMTVCHID'], ['receipts', 'rcpt', 'rcptVch', 'RCPTVCHID'], ['journals', 'jnr', 'jnrVch', 'JNRVCHID']].forEach(([path, kind, key, idCol]) => {
   on('GET', `/vouchers/${path}`, ({ db, q }) => top(db[key], q))
   on('POST', `/vouchers/${path}`, ({ db, body }) => createVoucher(db, kind, body, U))
   on('POST', `/vouchers/${path}/:id/cancel`, ({ db, p, body }) => {
@@ -455,6 +470,16 @@ INV.forEach(([path, key, idKey, idCol, noCol, printCol, prefix, build, resultNo]
 on('GET', '/inventory/stock-balance', ({ db, q }) => db.stock.balances.filter((b) => (!q.loc_id || b.loc_id === Number(q.loc_id)) && (!q.item_code || b.item_code.toLowerCase().includes(String(q.item_code).toLowerCase()))))
 on('GET', '/inventory/stock-balance-report', ({ db, q }) => db.stock.balances.filter((b) => !q.loc_id || b.loc_id === Number(q.loc_id)))
 on('GET', '/inventory/stock-ledger-report', ({ db, q }) => db.stock.ledger.filter((l) => l.item_id === Number(q.item_id) && (!q.loc_id || l.loc_id === Number(q.loc_id))))
+on('GET', '/inventory/reports/lookups', () => ({ locations: [], item_groups: [], valuation: 'S', valuation_name: 'Standard' }))
+on('GET', '/inventory/reports/stock-ledger', () => ({ rows: [], count: 0 }))
+on('GET', '/inventory/reports/stock-balance', () => ({ rows: [], valuation: 'S', valuation_name: 'Standard', count: 0 }))
+on('GET', '/inventory/item-referencer/items', ({ db, q }) => (db.stock.balances || []).filter((b) => !q.q || `${b.item_code} ${b.item_name}`.toLowerCase().includes(String(q.q).toLowerCase())).map((b) => ({ id: b.item_id, code: b.item_code, name: b.item_name })))
+on('GET', '/inventory/item-referencer/:id/transactions', () => [])
+on('GET', '/inventory/item-referencer/:id', ({ db, p }) => {
+  const rows = (db.stock.balances || []).filter((b) => b.item_id === Number(p[0]))
+  const b = rows[0] || {}
+  return { item_id: b.item_id, code: b.item_code, name: b.item_name, uom: b.uom_code || '', group: '', fy_start: `${new Date().getFullYear()}-04-01`, bom_available: false, qoh: rows.reduce((s, r) => s + Number(r.qty || 0), 0), by_location: rows.map((r) => ({ location: r.loc_name, qoh: Number(r.qty || 0) })), last_transactions: [], docs: [] }
+})
 on('GET', '/inventory/where-used', ({ db, q }) => db.stock.boms.filter((b) => b.component_item_id === Number(q.item_id)))
 
 on('GET', '/panchanga', ({ db, q }) => db.panchanga.filter((d) => d.date >= q.from_date && d.date <= q.to_date))
@@ -489,12 +514,51 @@ on('POST', '/reports/hall-booking-voucher', ({ db, body }) => {
   const rows = db.hall.filter((h) => h.Cancelled !== 'Y' && inRange(h.HBDate, body)).flatMap((h) =>
     (h.receipts.length ? h.receipts : [{}]).map((r) => ({ PrintHBNO: h.PrintHBNO, HBDate: h.HBDate, NMEOFFUNC: h.NMEOFFUNC, CONPRS: h.CONPRS, CONTACTNO: h.CONTACTNO, HBSTARTDT: h.HBSTARTDT, HBENDDT: h.HBENDDT, AMOUNT: h.AMOUNT, RCPTVCHNO: r.PrintRCPTVCHNO || '', RCPTTYPE: r.RCPTTYPE || '', TOTCR: r.TOTCR || 0, BALAMT: h.BALAMT, printdonrecno: h.printdonrecno }))
   )
-  return { total_count: rows.length, total_amount: rows.reduce((s, r) => s + r.AMOUNT, 0), rows }
+  return { total_count: rows.length, total_amount: rows.reduce((s, r) => s + r.AMOUNT, 0), total_received: rows.reduce((s, r) => s + Number(r.TOTCR || 0), 0), total_donation: 0, rows }
 })
+on('GET', '/reports/hall-booking-voucher/bookings', ({ db, q }) => db.hall.filter((h) => inRange(h.HBDate, { from_date: q.from_date, to_date: q.to_date })).map((h) => ({ id: h.HBID, no: h.PrintHBNO, date: h.HBDate, func: h.NMEOFFUNC })))
+on('GET', '/users/form-settings', () => ({ user_based: false, ad_auth: false, pwd_policy: true, pwd_rules: false, rules: { min_len: 0, min_alpha: 0, min_numeric: 0, min_spl: 0, min_lower: 0, min_upper: 0 } }))
+on('PUT', '/users/:id/image', () => ({ message: 'Image updated' }))
+on('DELETE', '/users/:id/image', () => ({ message: 'Image removed' }))
+on('GET', '/trade-reports/party-outstanding-detail', () => ({ party_name: 'Customer', rows: [] }))
+on('GET', '/vouchers/:kind/:id', () => fail(404, 'Voucher not found'))
+on('GET', '/trade-reports/sales/trips', () => fail(422, "Invalid object name 'TrnHdrSINVDCT'. Error in SQL: Select Distinct TripNO from TrnHdrSINVDCT order by 1"))
+on('GET', '/trade-reports/sales/daily', () => fail(422, "Invalid object name 'TrnHdrSINVDCT'."))
+on('GET', '/trade-reports/sales/product-summary', () => fail(422, "Invalid object name 'TrnHdrSInvDct'."))
+on('GET', '/reports/party-gl/accounts', () => [])
+on('POST', '/reports/party-gl', ({ body }) => ({ mode: body.mode, rows: [], totals: body.mode === 'summary' ? { op_bal: 0, dr: 0, cr: 0, balance: 0 } : { dr: 0, cr: 0 }, count: 0 }))
 on('POST', '/reports/general-ledger', ({ db, body }) => generalLedger(db, body))
-on('GET', '/reports/custom', () => DEMO_CUSTOM_REPORTS)
-on('GET', '/reports/custom/:id/fields', ({ p }) => DEMO_CUSTOM_DEFS[p[0]] || fail(404, 'Report not found'))
-on('POST', '/reports/custom/:id/run', ({ db, p, body }) => customRun(db, Number(p[0]), body.filters || {}))
+on('GET', '/reports/custom', () => DEMO_CUSTOM_REPORTS.map((r) => ({ crid: r.crid, name: r.name, desc: '', group: 'General', has_filters: true })))
+on('GET', '/reports/custom/:id/fields', ({ p }) => {
+  const d = DEMO_CUSTOM_DEFS[p[0]] || fail(404, 'Report not found')
+  return { crid: d.crid, name: d.name, desc: '', filters: d.fields.filter((f) => f.filter_req).map((f) => ({ table: f.table, code: f.code, caption: f.caption, data_type: f.data_type })) }
+})
+function customRunShaped(db, crid, body) {
+  const d = DEMO_CUSTOM_DEFS[crid] || fail(404, 'Report not found')
+  const q = {}
+  ;(body.date_filters || []).forEach((f) => { q[`${f.code}_from`] = f.from; q[`${f.code}_to`] = f.to })
+  const res = customRun(db, crid, q)
+  const cols = d.fields.map((f) => ({ key: `${f.table}__${f.code}`, caption: f.caption, tot_req: f.data_type === 'NUMERIC' }))
+  let rows = res.rows
+  ;(body.list_filters || []).forEach((f) => { rows = rows.filter((r) => (f.values || []).includes(String(r[`${f.table}__${f.code}`]))) })
+  const totals = {}
+  cols.forEach((c) => { if (c.tot_req) totals[c.key] = rows.reduce((t, r) => t + Number(r[c.key] || 0), 0) })
+  return { title: d.name, period_text: '', filter_text: (body.list_filters || []).map((f) => `[${f.code} = ${(f.values || []).join(', ')}]`).join(' '), columns: cols, rows: rows.map((r) => cols.map((c) => r[c.key])), totals, count: rows.length }
+}
+on('GET', '/reports/custom/:id/filter-values', ({ db, p, q }) => {
+  const res = customRunShaped(db, Number(p[0]), {})
+  const i = res.columns.findIndex((c) => c.key === `${q.table}__${q.code}`)
+  return [...new Set(res.rows.map((r) => String(r[i] ?? '')).filter(Boolean))].sort()
+})
+on('POST', '/reports/custom/:id/run', ({ db, p, body }) => customRunShaped(db, Number(p[0]), body))
+on('POST', '/reports/custom/:id/export', () => new Blob(['xlsx'], { type: 'application/octet-stream' }))
+on('POST', '/reports/custom/:id/email', () => ({ message: 'Mail sent (demo)' }))
+on('GET', '/reports/custom/rights/users', () => [])
+on('GET', '/reports/custom/rights/:id', () => [])
+on('PUT', '/reports/custom/rights/:id', ({ body }) => ({ saved: (body.rpt_ids || []).length }))
+on('GET', '/reports/catalog/users', () => [])
+on('GET', '/reports/catalog/rights/:id', () => [])
+on('PUT', '/reports/catalog/rights/:id', ({ body }) => ({ saved: (body.rpt_ids || []).length }))
 on('GET', '/reports/catalog', () => DEMO_REPORT_CATALOG)
 
 // admin
@@ -510,6 +574,22 @@ on('PUT', '/settings', ({ db, body }) => {
   s.value = body.value
   return { message: 'Updated' }
 })
+on('PUT', '/settings/bulk', ({ db, body }) => {
+  body.forEach((i) => { const s = db.settings.find((x) => x.group === i.group && x.name === i.name); if (s) s.value = i.value })
+  return { message: 'Updated successfully.', updated: body.length }
+})
+on('POST', '/settings', ({ db, body }) => {
+  if (db.settings.some((x) => x.name === body.name)) fail(409, 'FldCode already exists...')
+  db.settings.push({ group: body.group || 'General', name: body.name, value: body.value || '', caption: body.caption, remarks: body.remarks || '', hidden: body.hide, mandatory: false })
+  return { message: `'${body.name}' added successfully.` }
+})
+on('GET', '/company/layout', () => ({
+  doc_id: 17,
+  info_fields: [
+    { code: 'CompName', caption: 'Company Name', required: true }, { code: 'Address1', caption: 'Address', required: false }, { code: 'Address2', caption: '', required: false },
+    { code: 'Address3', caption: '', required: false }, { code: 'Address4', caption: '', required: false }, { code: 'Address5', caption: '', required: false }, { code: 'EMAIL', caption: 'Email ID', required: false },
+  ],
+}))
 on('GET', '/company', ({ db }) => db.company)
 on('PUT', '/company', ({ db, body }) => {
   if (!String(body.CompName || '').trim()) fail(422, 'Company name should not be blank!')
@@ -526,6 +606,14 @@ on('PUT', '/company/financial-years/active', ({ db, body }) => {
   db.fys.forEach((f) => (f.Active = f.yrFdate === body.from_date ? 'Y' : 'N'))
   return { message: 'Active year changed' }
 })
+on('DELETE', '/company/financial-years/:from', ({ db, p }) => {
+  const fy = db.fys.find((f) => f.yrFdate === p[0]) || fail(404, 'Financial year not found')
+  if (fy.Active === 'Y') fail(409, 'The active financial year cannot be removed')
+  db.fys = db.fys.filter((f) => f !== fy)
+  return { message: 'Removed' }
+})
+on('GET', '/company/image', () => fail(404, 'No company image'))
+on('PUT', '/company/image', () => ({ message: 'Image updated' }))
 on('GET', '/audit-log/filters', ({ db }) => ({ entities: [...new Set(db.audit.map((a) => a.entity))].sort(), actions: ['A', 'M', 'D', 'C'], users: [...new Set(db.audit.map((a) => a.user_code))].sort() }))
 on('GET', '/audit-log', ({ db, q }) => db.audit.filter((a) => (!q.entity || a.entity === q.entity) && (!q.action || a.action === q.action) && (!q.user_code || a.user_code === q.user_code) && (!q.from_date || a.at.slice(0, 10) >= q.from_date) && (!q.to_date || a.at.slice(0, 10) <= q.to_date)))
 on('DELETE', '/audit-log', ({ db, q }) => {
@@ -556,10 +644,21 @@ on('PUT', '/bulk-update/:id/rows', ({ db, p, body }) => {
 })
 
 // printing
+on('GET', '/print/options', ({ q }) => DEMO_PRINT_OPTIONS_BY_DOC(Number(q.doc_id)).map((o) => ({ ...o, selected: o.preferred, printer_name: o.direct_printer_name })))
+on('POST', '/print/render', ({ body }) => demoPdfBlob(`${DOC_NAMES[body.doc_id] || 'Document'} #${body.doc_id_value}`))
+on('PUT', '/print/preference', () => ({ message: 'Saved' }))
+on('POST', '/print/print', ({ body }) => ({ message: 'Demo: nothing was sent to a printer', printer_name: body.printer_name || '', copies: body.copies || 1 }))
 on('GET', '/print/:doc/options', ({ p }) => DEMO_PRINT_OPTIONS_BY_DOC(Number(p[0])))
 on('PUT', '/print/:doc/preference', () => ({ message: 'Saved' }))
 on('GET', '/print/:doc/:opt/:rec/preview', ({ p }) => demoPdfBlob(`${DOC_NAMES[p[0]] || 'Document'} #${p[2]}`))
 on('POST', '/print/:doc/:opt/:rec/print-direct', () => ({ message: 'Demo: nothing was sent to a printer' }))
+on('GET', '/print/bulk/documents', () => [{ doc_id: 1263, doc_name: 'Seva Entry', party_label: '' }, { doc_id: 1261, doc_name: 'Donation Reciept Entry', party_label: '' }, { doc_id: 1281, doc_name: 'Hall Booking', party_label: '' }])
+on('GET', '/print/bulk/:doc/parties', () => [])
+on('GET', '/print/bulk/:doc/records', ({ db, p, q }) => {
+  const src = Number(p[0]) === 1263 ? db.sevas.map((s) => ({ id: s.SEVAID, doc_no: s.PrintSEVANO || s.SEVANO, doc_date: s.SEVADate })) : Number(p[0]) === 1261 ? db.donations.map((d) => ({ id: d.DONRECID, doc_no: d.PrintDONRECNO, doc_date: d.DONRECDate })) : db.hall.map((h) => ({ id: h.HBID, doc_no: h.PrintHBNO, doc_date: h.HBDate }))
+  return src.filter((r) => String(r.doc_date).slice(0, 10) >= q.from_date && String(r.doc_date).slice(0, 10) <= q.to_date).map((r) => ({ ...r, party: '' }))
+})
+on('POST', '/print/bulk/:doc/:opt/download', () => new Blob(['PK'], { type: 'application/zip' }))
 on('GET', '/print/:doc/:opt/bulk-pdf', () => new Blob(['PK'], { type: 'application/zip' }))
 on('GET', '/print-options', ({ db }) => db.printOptions)
 on('PUT', '/print-options/:doc/:opt', ({ db, p, body }) => {
@@ -573,8 +672,33 @@ on('GET', '/display/today-sevas', ({ db }) =>
 )
 
 on('GET', '/db-settings', () => DEMO_DB_SETTINGS)
+on('POST', '/db-settings/databases', () => ({ ok: true, detail: 'Demo mode: sample server', databases: ['vTmplSLV', 'vTmplDemo'] }))
 on('POST', '/db-settings/test', () => ({ ok: true, detail: 'Demo mode: no real connection was tested.' }))
 on('PUT', '/db-settings', () => ({ ok: true, detail: 'Demo mode: nothing was changed.' }))
+on('GET', '/trade-reports/availability', () => ({ sales_invoice_tables: [], sales_invoice_docs: 0, stock_movements: 0, stock_level_templates: 0, label_layouts: 0, customers: 0, suppliers: 0, short_closed_fields: 0, shared_documents: 0, post_doc_entries: 0, party_alert_messages: 0, barcode_layouts: 0, voice_commands: 0, docs_needing_authorisation: 0 }))
+on('GET', '/trade-reports/stock-level/templates', () => [])
+on('GET', '/trade-reports/stock-level', () => ({ columns: [], rows: [], truncated: false }))
+on('GET', '/trade-reports/stock-ageing', ({ q }) => ({ labels: String(q.ranges || '').split(',').map((r) => r.replace('-', ' to ')), rows: [] }))
+on('GET', '/trade-reports/party-outstanding', ({ q }) => ({ party_name: q.party === 'S' ? 'Supplier' : 'Customer', rows: [], totals: { opening: 0, debit: 0, credit: 0, balance: 0 } }))
+on('GET', '/expenses', ({ db, q }) => top(db.exp, q))
+on('POST', '/expenses', ({ db, body }) => {
+  const lines = body.lines || []
+  if (!lines.length || lines.some((l) => !(num(l.amount) > 0))) fail(422, 'Please Enter Amount Greater than 0')
+  const id = db.nextId.exp++
+  const printNo = `${body.prefix || FY_PREFIX}${pad(db.exp.length + 1, 5)}`
+  db.exp.unshift({ EXPID: id, EXPNO: printNo, PrintEXPNO: printNo, EXPDate: body.expense_date, PAYMNTMODE: body.payment_mode, RMKS: body.remarks || '', TOTAMT: lines.reduce((s, l) => s + num(l.amount), 0), Cancelled: 'N' })
+  audit(db, U, 'A', 'Expense Entry', printNo)
+  return { exp_id: id, exp_no: printNo, total_amt: db.exp[0].TOTAMT }
+})
+on('POST', '/expenses/:id/cancel', ({ db, p }) => {
+  const r = db.exp.find((e) => e.EXPID === Number(p[0])) || fail(404, 'Expense Entry not found')
+  r.Cancelled = 'Y'
+  return { message: 'Cancelled' }
+})
+on('DELETE', '/expenses/:id', ({ db, p }) => {
+  db.exp = db.exp.filter((e) => e.EXPID !== Number(p[0]))
+  return { message: 'Deleted' }
+})
 on('GET', '/welcome', ({ db }) => ({ enabled: db.welcome.enabled, custom: false, size: 0, version: 0 }))
 on('PUT', '/welcome/enabled', ({ db, body }) => {
   db.welcome.enabled = !!body.enabled
@@ -584,6 +708,52 @@ on('POST', '/welcome', () => fail(400, 'Uploading a welcome video needs the real
 on('DELETE', '/welcome', ({ db }) => ({ enabled: db.welcome.enabled, custom: false, size: 0, version: 0 }))
 
 /** Resolve one request. Returns { data } or throws DemoError. */
+// ---- Utilities: Authorise Documents, Screen Documents, ShortClose, Import from Excel info/preview ----
+const DEMO_AUTH = [
+  { doc_id: 1113, name: 'Customer Group Master', type: 'Master', levels: 1 },
+  { doc_id: 1112, name: 'Customer Master', type: 'Master', levels: 1 },
+]
+const authPending = (db) => (db.authPending ||= { 1112: [{ id: 1, no: 'C001', name: 'Sri Venkatesh Traders', date: null }, { id: 2, no: 'C002', name: 'Lakshmi Stores', date: null }], 1113: [{ id: 1, no: 'G01', name: 'Wholesale', date: null }] })
+on('GET', '/utilities/authorise/summary', ({ db }) => ({
+  levels: [{ level: 1, label: 'First' }],
+  documents: DEMO_AUTH.map((d) => ({ ...d, counts: [authPending(db)[d.doc_id].length] })),
+}))
+on('GET', '/utilities/authorise/:id/pending', ({ db, p }) => {
+  const d = DEMO_AUTH.find((x) => x.doc_id === Number(p[0])) || fail(404, 'This document does not need authorisation')
+  return { document: d.name, type: d.type, level: 1, level_label: 'First', rows: authPending(db)[d.doc_id] }
+})
+on('POST', '/utilities/authorise/:id', ({ db, p, body }) => {
+  const list = authPending(db)
+  list[Number(p[0])] = list[Number(p[0])].filter((r) => !(body.ids || []).includes(r.id))
+  return { message: 'Selected Document Authorised Successfully!', authorised: (body.ids || []).length }
+})
+const screenDocs = (db) => (db.screenDocs ||= [
+  { doc_id: 1, screen: 'Item Master', group: 'User guide', file: 'item-master-guide.pdf', remarks: 'How to add items', available: false },
+  { doc_id: 2, screen: 'Item Master', group: 'Formats', file: 'item-import-format.xlsx', remarks: 'Import layout', available: false },
+])
+on('GET', '/utilities/screen-docs/screens', ({ db }) => [...new Set(['Item Master', 'Seva Entry', 'Donation Entry', ...screenDocs(db).map((d) => d.screen)])].sort().map((c) => ({ caption: c, count: screenDocs(db).filter((d) => d.screen === c).length })))
+on('GET', '/utilities/screen-docs', ({ db, q }) => screenDocs(db).filter((d) => d.screen === q.screen).map((d, i) => ({ ...d, sl_no: i + 1 })))
+on('POST', '/utilities/screen-docs', () => ({ message: 'Details saved Successfully!!!', doc_id: 0 }))
+on('PUT', '/utilities/screen-docs/:id', ({ db, p, body }) => {
+  const d = screenDocs(db).find((x) => x.doc_id === Number(p[0]))
+  if (d) d.remarks = body.remarks
+  return { message: 'Details Updated Successfully!!!' }
+})
+on('DELETE', '/utilities/screen-docs/:id', ({ db, p }) => {
+  db.screenDocs = screenDocs(db).filter((x) => x.doc_id !== Number(p[0]))
+  return { message: 'Deleted' }
+})
+on('GET', '/utilities/shortclose/documents', () => [])
+on('GET', '/masters/:doc/import-fields', () => [
+  { name: 'Code', data_type: 'Text', mandatory: 'Y', foreign_key: '', max_length: 50, unique: 'Y', example: '', default: '' },
+  { name: 'Name', data_type: 'Text', mandatory: 'Y', foreign_key: '', max_length: 250, unique: 'N', example: '', default: '' },
+])
+on('POST', '/masters/:doc/import-preview', () => ({
+  columns: [{ key: 'code', label: 'Code' }, { key: 'name', label: 'Name' }],
+  total: 3,
+  rows: [{ row: 2, code: 'A01', name: 'Sample row A' }, { row: 3, code: 'A02', name: 'Sample row B' }, { row: 4, code: 'A03', name: 'Sample row C' }],
+}))
+
 export function handleDemoRequest({ method, path, query = {}, body }) {
   const db = getDb()
   const m = method.toUpperCase()

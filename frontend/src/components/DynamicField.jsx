@@ -12,9 +12,9 @@ import { fieldDefault, fieldListOptions } from '../utils/docFieldConditions'
  * the caller (already resolved via `isFieldMandatory`, which may be a
  * live condition, not just the static FldBlnMandatory flag).
  */
-export default function DynamicField({ docId, field, value, onChange, required }) {
+function FieldWidget({ docId, field, value, onChange, required, locked = false }) {
   const isRequired = required ?? field.FldBlnMandatory === 'Y'
-  const readOnly = field.FldBlnReadOnly === 'Y'
+  const readOnly = field.FldBlnReadOnly === 'Y' || locked
   const maxLength = field.FldDataWidth || undefined
 
   // Seed the legacy Designer's static default (FldUseDefault/FldDefStdDefault)
@@ -86,5 +86,20 @@ export default function DynamicField({ docId, field, value, onChange, required }
       value={value || ''}
       onChange={(e) => onChange(e.currentTarget.value)}
     />
+  )
+}
+
+/**
+ * Legacy colour convention (from the vTemple7 screens): a red caption marks a mandatory field, blue marks a
+ * read-only one. Both come from UtlDocDsgrFlds (FldBlnMandatory / conditions, FldBlnReadOnly), never hard-coded.
+ */
+export default function DynamicField(props) {
+  const { field, required, locked } = props
+  const isRequired = required ?? field.FldBlnMandatory === 'Y'
+  const intrinsicReadOnly = field.FldBlnReadOnly === 'Y'
+  return (
+    <div style={{ display: 'contents' }} className={`${isRequired ? 'vt-fld-required' : ''} ${intrinsicReadOnly ? 'vt-fld-readonly' : ''}`} data-locked={locked || undefined}>
+      <FieldWidget {...props} />
+    </div>
   )
 }

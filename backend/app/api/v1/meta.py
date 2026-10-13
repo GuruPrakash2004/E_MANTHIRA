@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from app.core import cache
 from app.core.db import get_conn, limit_clause, with_transaction
+from app.core.fy import FinancialYear, get_user_fy
 from app.core.security import CurrentUser, get_current_user
 from app.meta import menu as meta_menu
 from app.meta import lookups as meta_lookups
@@ -75,6 +77,7 @@ def set_menu_visibility(
             text("UPDATE MstMenu SET MenuShow = :v WHERE MenuItemID = :id"),
             {"v": "Y" if body.show else "N", "id": menu_item_id},
         )
+    meta_menu.invalidate()
     return {"message": "Updated"}
 
 
@@ -87,11 +90,16 @@ def get_prefixes(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUs
 @router.get("/docs/{doc_id}/fields")
 def get_doc_fields(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     """Field schema (captions, types, rules, lookups, formulas) for a document — port of UtlDocDsgrFlds."""
-    doc = conn.execute(text("SELECT * FROM UtlTransactions WHERE DocID = :d"), {"d": doc_id}).mappings().first()
-    fields = conn.execute(
-        text("SELECT * FROM UtlDocDsgrFlds WHERE DocID = :d ORDER BY FldSection, FldOrderBy"), {"d": doc_id}
-    ).mappings().all()
-    return {"doc": dict(doc) if doc else None, "fields": [dict(f) for f in fields]}
+
+    def load():
+        doc = conn.execute(text("SELECT * FROM UtlTransactions WHERE DocID = :d"), {"d": doc_id}).mappings().first()
+        fields = conn.execute(
+            text("SELECT * FROM UtlDocDsgrFlds WHERE DocID = :d ORDER BY FldSection, FldOrderBy"), {"d": doc_id}
+        ).mappings().all()
+        return {"doc": dict(doc) if doc else None, "fields": [dict(f) for f in fields]}
+
+    # Designer-owned metadata (edited only in the legacy Designer) — 5 minute TTL.
+    return cache.get_or_set(("docfields", doc_id), 300, load)
 
 
 @router.get("/lookup/{doc_id}/{field_code}")
@@ -117,3 +125,19 @@ def get_ledgers(search: str = "", conn: Connection = Depends(get_conn), _: Curre
     sql += f" ORDER BY LEDNAME {limit_clause(100)}"
     rows = conn.execute(text(sql), params).mappings().all()
     return [{"value": r["value"], "label": r["label"]} for r in rows]
+
+
+@router.get("/docs/{doc_id}/nav")
+def navigate_document(
+    doc_id: int,
+    direction: str,
+    current: int | None = None,
+    prefix: str = "",
+    fy: "FinancialYear" = Depends(get_user_fy),
+    conn: Connection = Depends(get_conn),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """First / previous / next / last record id of a transaction document in the active financial year."""
+    from app.services import doc_nav
+
+    return {"id": doc_nav.neighbour_id(conn, doc_id=doc_id, direction=direction, current=current, fy=fy, prefix=prefix)}

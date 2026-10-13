@@ -6,3 +6,4 @@ import { get, post, put } from '../api'
 export const getDbSettings = () => get('/db-settings')
 export const testDbSettings = (body) => post('/db-settings/test', body)
 export const saveDbSettings = (body) => put('/db-settings', body)
+export const listDatabases = (body) => post('/db-settings/databases', body)

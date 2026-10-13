@@ -123,6 +123,12 @@ namespace VTemplePrintAgent
 
                     if (req.Path == "/health" && req.Method == "GET")
                     {
+                        // a web page that is not on the allow-list must not learn this PC's name or printers
+                        if (origin.Length > 0 && !OriginAllowed(origin))
+                        {
+                            WriteJson(stream, 403, origin, "{\"error\":\"This page is not allowed to use the print agent\"}");
+                            return;
+                        }
                         HandleHealth(stream, origin);
                         return;
                     }
