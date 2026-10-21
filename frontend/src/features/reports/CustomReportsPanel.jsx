@@ -11,6 +11,7 @@ import { useAuth } from '../../hooks/useAuth'
 import EmptyState from '../../components/ui/EmptyState'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { isoDate } from '../../utils/format'
+import usePrintKey from '../../hooks/usePrintKey'
 
 const fmtCell = (v) => {
   if (v == null) return ''
@@ -27,6 +28,7 @@ const keyOf = (f) => `${f.table}|${f.code}`
  * client sees its own. Design and Import are the legacy report designer and are not part of the web app.
  */
 export default function CustomReportsPanel() {
+  usePrintKey(() => print())
   const navigate = useNavigate()
   const confirm = useConfirm()
   const { user } = useAuth()
@@ -220,7 +222,7 @@ export default function CustomReportsPanel() {
       <Group justify="space-between" wrap="wrap">
         <Group gap="sm">
           <Button color="kumkum" leftSection={<Play size={16} />} loading={running} disabled={!crid} onClick={view}>View Report</Button>
-          <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!result} onClick={print}>Print Report</Button>
+          <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!result} onClick={print}>Print Report (F10)</Button>
           <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!result?.rows?.length} onClick={toExcel}>Excel</Button>
           <Button variant="light" color="kumkum" leftSection={<Mail size={16} />} disabled={!crid} onClick={() => setEmailOpen(true)}>Email</Button>
         </Group>

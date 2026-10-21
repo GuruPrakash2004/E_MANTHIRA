@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import logging
 import re
+import threading
 
 import httpx
 from fastapi import HTTPException, status
@@ -88,6 +89,28 @@ def _timeout() -> httpx.Timeout:
     return httpx.Timeout(s.rpt_bridge_render_timeout_seconds, connect=s.rpt_bridge_connect_timeout_seconds)
 
 
+_client_lock = threading.Lock()
+_http: httpx.Client | None = None
+_slots: threading.BoundedSemaphore | None = None
+
+
+def _client() -> httpx.Client:
+    """One pooled client for every bridge call (keep-alive instead of a fresh connection per print)."""
+    global _http
+    with _client_lock:
+        if _http is None:
+            _http = httpx.Client(limits=httpx.Limits(max_connections=8, max_keepalive_connections=4))
+        return _http
+
+
+def _render_slots() -> threading.BoundedSemaphore:
+    global _slots
+    with _client_lock:
+        if _slots is None:
+            _slots = threading.BoundedSemaphore(max(1, int(get_settings().rpt_bridge_max_concurrent or 1)))
+        return _slots
+
+
 def _detail(resp: httpx.Response) -> str:
     try:
         body = resp.json()
@@ -157,12 +180,13 @@ class Rendered:
 def render(job: PrintJob) -> Rendered:
     """POST /render — the PDF exported from the original .rpt, with the paper facts from its response headers."""
     try:
-        resp = httpx.post(
-            f"{_base_url()}/render",
-            json={**job.to_bridge_payload(), "format": "pdf"},
-            headers=_headers(),
-            timeout=_timeout(),
-        )
+        with _render_slots():
+            resp = _client().post(
+                f"{_base_url()}/render",
+                json={**job.to_bridge_payload(), "format": "pdf"},
+                headers=_headers(),
+                timeout=_timeout(),
+            )
         resp.raise_for_status()
         try:
             margin = float(resp.headers.get("X-Margin-Bottom-Pt", "0") or 0)
@@ -187,12 +211,13 @@ def print_to_printer(job: PrintJob) -> None:
             "This print format has no printer set. Choose a printer, or ask the administrator to set one on the print option.",
         )
     try:
-        resp = httpx.post(
-            f"{_base_url()}/print",
-            json={**job.to_bridge_payload(), "printer_name": job.printer_name, "copies": job.copies},
-            headers=_headers(),
-            timeout=_timeout(),
-        )
+        with _render_slots():
+            resp = _client().post(
+                f"{_base_url()}/print",
+                json={**job.to_bridge_payload(), "printer_name": job.printer_name, "copies": job.copies},
+                headers=_headers(),
+                timeout=_timeout(),
+            )
         resp.raise_for_status()
     except Exception as exc:  # noqa: BLE001
         raise _raise(exc) from exc

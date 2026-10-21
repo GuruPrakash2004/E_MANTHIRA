@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AppShell, Burger, Collapse, Group, NavLink, Text, Menu, Avatar, Badge, Stack, ActionIcon, Tooltip, UnstyledButton } from '@mantine/core'
-import { SlidersHorizontal, Calculator, ChevronDown, Database, FileText, FlaskConical, LayoutDashboard, LogOut, Package, Receipt, Search, Star, Wallet, Wrench, X } from 'lucide-react'
+import { SlidersHorizontal, Calculator, ChevronDown, Database, FileText, LayoutDashboard, LogOut, Package, Receipt, Search, Star, Wallet, Wrench, X } from 'lucide-react'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import useFavourites from '../hooks/useFavourites'
 import { Suspense } from 'react'
@@ -10,16 +10,15 @@ import { getMenu } from '../api/endpoints/meta'
 import { useAuth } from '../hooks/useAuth'
 import useAutoFocusFirstField from '../hooks/useAutoFocusFirstField'
 import DevotionalBackdrop from './DevotionalBackdrop'
-import PaletteSwitch from './PaletteSwitch'
 import ShineLogo from './ShineLogo'
+import ShortcutHelp from './ShortcutHelp'
 import ThemeToggle from './ThemeToggle'
+import DesignerRefreshButton from './DesignerRefreshButton'
 import GlobalSearch from './GlobalSearch'
-import { isDemoMode } from '../lib/demoMode'
 import { useConfirm } from './ui/ConfirmProvider'
 import { AnimatePresence, motion } from 'framer-motion'
 import { lazy } from 'react'
 const WelcomeSplash = lazy(() => import('./WelcomeSplash'))
-import { enterDemoMode, exitDemoMode } from '../lib/demoAuth'
 
 // Transparent cutouts of the official logo (logo/primary-logo@2x.png), made with Pillow:
 // lockup-horizontal (header), lockup-transparent (vertical), lockup-light (vertical, for dark
@@ -233,6 +232,13 @@ export default function AppShellLayout() {
   // input/textarea/contenteditable): never hijacks normal form entry.
   useEffect(() => {
     function onKeyDown(e) {
+      // Ctrl+K reaches the search from anywhere, even from inside a form field
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        if (isNarrow()) setMobileSearch(true)
+        else searchRef.current?.focus()
+        return
+      }
       if (e.key !== '/') return
       const tag = document.activeElement?.tagName
       const editable = document.activeElement?.isContentEditable
@@ -305,12 +311,10 @@ export default function AppShellLayout() {
     )
   }
 
-  // Signing out asks first; a demo session also drops the demo flag (otherwise a real login right
-  // after would still have every request intercepted as fake).
+  // Signing out asks first.
   async function onSignOut() {
     const ok = await confirm({ title: 'Sign out?', message: 'You will need to sign in again to continue.', confirmLabel: 'Sign out' })
     if (!ok) return
-    if (isDemoMode()) return exitDemoMode()
     logout()
     navigate('/login')
   }
@@ -375,35 +379,9 @@ export default function AppShellLayout() {
             <ActionIcon hiddenFrom="sm" variant="subtle" color="kumkum" size={44} aria-label="Search screens" onClick={() => setMobileSearch(true)}>
               <Search size={20} />
             </ActionIcon>
-            <Group visibleFrom="xs" wrap="nowrap"><PaletteSwitch /></Group>
+            <ShortcutHelp />
+            {user?.user_code?.toUpperCase() === 'ADMIN' && <DesignerRefreshButton />}
             <ThemeToggle />
-            {/* Developer-only data-source switch: never saves while on Demo Data (src/lib/demoAuth.js + api.js). */}
-            <Menu position="bottom-end" withArrow>
-              <Menu.Target>
-                <Badge
-                  component="button"
-                  type="button"
-                  color={isDemoMode() ? 'gold' : 'kumkum'}
-                  variant={isDemoMode() ? 'filled' : 'light'}
-                  size="lg"
-                  c={isDemoMode() ? '#3A2A0A' : undefined}
-                  leftSection={<FlaskConical size={12} />}
-                  visibleFrom="sm"
-                  style={{ cursor: 'pointer', border: 'none' }}
-                  aria-label="Data source"
-                >
-                  <span className="vt-hide-md">{isDemoMode() ? 'Demo Data' : 'Real Data'}</span>
-                </Badge>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>Data source</Menu.Label>
-                {isDemoMode() ? (
-                  <Menu.Item onClick={exitDemoMode}>Switch to Real Data (sign in again)</Menu.Item>
-                ) : (
-                  <Menu.Item onClick={enterDemoMode}>Switch to Demo Data (offline preview)</Menu.Item>
-                )}
-              </Menu.Dropdown>
-            </Menu>
             <Badge color="gold" variant="light" size="lg" c="var(--vt-badge-ink)" visibleFrom="lg">
               FY 2026-27
             </Badge>
@@ -537,12 +515,6 @@ export default function AppShellLayout() {
               </div>
             )}
           </div>
-        )}
-
-        {narrow && (
-          <Group justify="center" mx="xs" mb={6} hiddenFrom="xs">
-            <PaletteSwitch />
-          </Group>
         )}
 
         {/* Credit card: gold + silver Softvent mark straight on the maroon, no white box. */}

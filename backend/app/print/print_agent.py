@@ -34,13 +34,16 @@ RASTER_DPI = 203  # a thermal receipt printer's usual resolution
 _ORIGIN_RE = re.compile(r"^https?://[A-Za-z0-9.\-\[\]:]+$")
 
 
-def pdf_to_pages(pdf_bytes: bytes) -> list[dict]:
+PREVIEW_DPI = 144  # the on-screen preview shows 1.5-2 px per point; 203 dpi is only needed for the thermal printer
+
+
+def pdf_to_pages(pdf_bytes: bytes, dpi: int = RASTER_DPI) -> list[dict]:
     """Rasterises every page of `pdf_bytes` to a PNG at RASTER_DPI and
     returns `[{"png": "<base64>", "w": <points>, "h": <points>}, ...]` —
     the exact shape the Print Agent's `/print` body expects. Page size is
     reported in points (1/72 inch) so the agent can set the printer's
     paper to the document's real size (a receipt keeps its roll width)."""
-    zoom = RASTER_DPI / POINTS_PER_INCH
+    zoom = dpi / POINTS_PER_INCH
     matrix = fitz.Matrix(zoom, zoom)
     pages = []
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:

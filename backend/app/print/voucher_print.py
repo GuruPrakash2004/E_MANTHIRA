@@ -52,8 +52,13 @@ def _short_form(conn: Connection, doc_id: int) -> tuple[str, str] | None:
     return (sh, (row[1] or "").strip()) if _IDENT.match(sh or "!") else None
 
 
+_VOUCHER_DOC: dict[int, bool] = {}  # document definitions do not change while the app runs
+
+
 def is_voucher_doc(conn: Connection, doc_id: int) -> bool:
     """A voucher-style document = its detail table has the ledger/Dr/Cr columns the voucher form uses (metadata-driven, no id list)."""
+    if doc_id in _VOUCHER_DOC:
+        return _VOUCHER_DOC[doc_id]
     found = _short_form(conn, doc_id)
     if found is None:
         return False
@@ -63,7 +68,8 @@ def is_voucher_doc(conn: Connection, doc_id: int) -> bool:
             text("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = :t"), {"t": f"TrnDtl{found[0]}"}
         ).all()
     }
-    return {"acledid", "dramt", "cramt", "amttype"} <= cols
+    _VOUCHER_DOC[doc_id] = {"acledid", "dramt", "cramt", "amttype"} <= cols
+    return _VOUCHER_DOC[doc_id]
 
 
 def print_lock_for(conn: Connection, doc_id: int):

@@ -30,6 +30,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as sevaApi from '../../api/endpoints/seva'
 import * as mastersApi from '../../api/endpoints/masters'
 import LookupSelect from '../../components/LookupSelect'
+import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
 import DynamicField from '../../components/DynamicField'
@@ -351,7 +352,7 @@ export default function SevaEntryPage() {
   }
   useHotkeys('f6', (e) => { e.preventDefault(); if (!viewId) loadLastEntry() }, { enableOnFormTags: true }, [viewId])
 
-  async function onSave() {
+  async function onSave(mode) {
     touch('__all')
     if (!canSave) return
     setSaving(true)
@@ -378,7 +379,9 @@ export default function SevaEntryPage() {
       }
       const result = await sevaApi.createSeva(body)
       setLastSaved(result)
-      handleAfterSave({ docId: DOC_ID, recordId: result.seva_id, openDialog: setPrintFor })
+      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      if (mode === 'print') directPrint(result.seva_id)
+      else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.seva_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setDates([])
       setTouched({})
@@ -394,7 +397,12 @@ export default function SevaEntryPage() {
 
   const [printFor, setPrintFor] = useState(null)
 
-  useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.seva_id) })
+  const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+  useDocShortcuts({
+    onSave: () => !viewId && onSave('save'),
+    onPrint: () => lastSaved && setPrintFor(lastSaved.seva_id),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
+  })
 
   return (
     <Stack gap="lg" className="vt-rise">
@@ -708,7 +716,8 @@ export default function SevaEntryPage() {
           warning={firstError || null}
           saving={saving}
           saveDisabled={!canSave || Boolean(viewId)}
-          onSave={onSave}
+          onSave={() => onSave('save')}
+          onSavePrint={() => onSave('print')}
         />
         {lastSaved && (
           <SavedPanel lines={[`Seva ${lastSaved.seva_no}`, `Receipt ${lastSaved.receipt_no}`]} onPrint={() => setPrintFor(lastSaved.seva_id)} />

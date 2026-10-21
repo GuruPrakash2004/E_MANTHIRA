@@ -12,6 +12,7 @@ import { PageHeader } from '../../components/ui/EntryParts'
 import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
 import dayjs from 'dayjs'
+import usePrintKey from '../../hooks/usePrintKey'
 
 const q2 = (v) => (v == null ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 
@@ -21,6 +22,7 @@ const q2 = (v) => (v == null ? '' : Number(v).toLocaleString('en-IN', { minimumF
  * location. Totals per item group and a grand total are shown, on a virtualised grid.
  */
 export default function StockBalanceReportPage() {
+  usePrintKey(() => rows.length && window.print())
   const navigate = useNavigate()
   const fyStart = dayjs().month() >= 3 ? dayjs().month(3).startOf('month').toDate() : dayjs().subtract(1, 'year').month(3).startOf('month').toDate()
   const [from, setFrom] = useState(fyStart)
@@ -123,7 +125,7 @@ export default function StockBalanceReportPage() {
       <Group justify="space-between" wrap="wrap">
         <Group gap="sm">
           <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls('Stock Balance.xls', rows, columns.map((c) => ({ label: c.label, value: (r) => (c.num ? (r[c.key] == null ? '' : Number(r[c.key]).toFixed(2)) : r[c.key]) })))}>Excel</Button>
-          <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!rows.length} onClick={() => window.print()}>Print</Button>
+          <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!rows.length} onClick={() => window.print()}>Print (F10)</Button>
           <Checkbox color="kumkum" label="Do Not Show Items With Zero Balance" checked={hideZero} onChange={(e) => setHideZero(e.currentTarget.checked)} />
         </Group>
         <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>Close</Button>

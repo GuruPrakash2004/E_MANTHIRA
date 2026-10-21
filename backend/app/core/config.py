@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     api_prefix: str = "/api/v1"
+    # Folder of the built frontend that the backend serves at "/" (blank = ../frontend/dist next to the backend).
+    frontend_dist: str = ""
     frontend_origins: str = "http://localhost:5173"
 
     # Database. db_engine picks BOTH the dialect and which schema is in play:
@@ -65,6 +67,10 @@ class Settings(BaseSettings):
     rpt_bridge_key: str = ""
     rpt_bridge_connect_timeout_seconds: int = 5
     rpt_bridge_render_timeout_seconds: int = 60
+    # The Crystal engine renders one report at a time: extra requests wait here instead of piling up inside the bridge and timing out.
+    rpt_bridge_max_concurrent: int = 1
+    # Seconds a finished render is reused (preview -> print, double F10). 0 = off.
+    print_cache_ttl_seconds: int = 30
 
     # Messaging
     smtp_host: str = ""

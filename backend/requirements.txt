@@ -9,6 +9,7 @@ PyMySQL==1.1.1  # for DB_ENGINE=mysql (fresh sample schema, local dev)
 # real ODBC Driver 18 installed). It needs unixODBC headers to build on
 # macOS/Linux dev machines, so it is NOT installed by default:
 #   pip install pyodbc==5.1.0
+pyodbc==5.1.0; sys_platform == "win32"
 
 python-jose[cryptography]==3.3.0
 passlib[argon2]==1.7.4

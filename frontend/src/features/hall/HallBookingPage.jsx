@@ -6,6 +6,7 @@ import { Building, ChevronDown } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as hallApi from '../../api/endpoints/hall'
 import LookupSelect from '../../components/LookupSelect'
+import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
 import DynamicField from '../../components/DynamicField'
@@ -91,7 +92,7 @@ export default function HallBookingPage() {
     return d ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null
   }
 
-  async function onSave() {
+  async function onSave(mode) {
     if (mandatory('HALLID') && !form.hall_id) {
       notifications.show({ message: `${caption('HALLID', 'Name of the Hall / Room')} is mandatory`, color: 'red' })
       return
@@ -119,7 +120,9 @@ export default function HallBookingPage() {
       }
       const result = await hallApi.createBooking(body)
       setLastSaved(result)
-      handleAfterSave({ docId: DOC_ID, recordId: result.hb_id, openDialog: setPrintFor })
+      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      if (mode === 'print') directPrint(result.hb_id)
+      else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.hb_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setExtra({})
       queryClient.invalidateQueries({ queryKey: ['hall-bookings'] })
@@ -175,7 +178,12 @@ export default function HallBookingPage() {
     return rows.map((r) => ({ id: r.HBID, label: r.PrintHBNO || r.HBNO, sub: `${r.NMEOFFUNC || ''} ${r.CONTACTNO || ''}`.trim() }))
   }
 
-  useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.hb_id) })
+  const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+  useDocShortcuts({
+    onSave: () => !viewId && onSave('save'),
+    onPrint: () => lastSaved && setPrintFor(lastSaved.hb_id),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
+  })
 
   return (
     <Stack gap="lg" className="vt-rise">
@@ -302,7 +310,8 @@ export default function HallBookingPage() {
               words={net}
               saving={saving}
               saveDisabled={Boolean(viewId)}
-              onSave={onSave}
+              onSave={() => onSave('save')}
+              onSavePrint={() => onSave('print')}
             />
             {lastSaved && (
               <SavedPanel

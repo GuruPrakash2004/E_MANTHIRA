@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Badge, Button, Group, Loader, Modal, Select, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useQuery } from '@tanstack/react-query'
+import { useHotkeys } from 'react-hotkeys-hook'
 import { AlertTriangle, Download, FileText, Printer } from 'lucide-react'
 import * as printApi from '../api/endpoints/print'
 import { agentNow, detectAgent, getRememberedPrinter, rememberPrinter, warmAgent } from '../lib/localPrint'
-import { loadFormats, pickFormat, printErrorMessage, printInBrowser, printOnServer, printOnThisPc, renderToPreview, renderToUrl, rememberFormat } from '../lib/printing'
+import { loadFormats, pickFormat, printErrorMessage, printInBrowser, printOnServer, printOnThisPc, renderToPreview, renderToUrl, rememberFormat, setPrintDialogOpen } from '../lib/printing'
 
 const BROWSER = 'browser'
 const SERVER = 'server'
@@ -32,6 +33,11 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
     queryFn: () => loadFormats(docId),
     enabled: opened && Boolean(docId),
   })
+
+  useEffect(() => {
+    setPrintDialogOpen(opened)
+    return () => setPrintDialogOpen(false)
+  }, [opened])
 
   // A dropdown open on the page behind must not stay open over the form.
   useEffect(() => {
@@ -151,6 +157,9 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
       setPrinting(false)
     }
   }, [format, printing, target, docId, recordId, selected, pdfUrl, onClose])
+
+  // F10 = print now from anywhere in the dialog (even with the format list or the printer picker focused)
+  useHotkeys('f10', (e) => { e.preventDefault(); onPrint() }, { enabled: opened, enableOnFormTags: true }, [onPrint, opened])
 
   // Up/Down = previous/next available format; Enter = print (unless a control that uses Enter has focus)
   function onKeyDown(e) {
@@ -273,7 +282,7 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
               </Text>
             </Group>
             <Text size="xs" c="dimmed">
-              Up/Down format · Enter print · Esc close
+              Up/Down format · Enter or F10 print · Esc close
             </Text>
           </Group>
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '0.75rem' }}>
@@ -308,7 +317,7 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
               Cancel
             </Button>
             <Button data-autofocus color="kumkum" leftSection={<Printer size={16} />} loading={printing} disabled={!format?.available} onClick={onPrint}>
-              Print
+              Print (F10)
             </Button>
           </Group>
         </div>

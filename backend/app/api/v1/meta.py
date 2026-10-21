@@ -81,6 +81,15 @@ def set_menu_visibility(
     return {"message": "Updated"}
 
 
+@router.post("/reload")
+def reload_designer(user: CurrentUser = Depends(get_current_user)):
+    """'Refresh from Doc Designer' — drop every cached copy of designer-owned metadata (doc fields, menu, rights,
+    financial years) so the next read comes from the DB. Nothing re-reads on page load; this is the only refresh."""
+    _require_admin(user)
+    cache.clear()
+    return {"message": "Refreshed from Doc Designer"}
+
+
 @router.get("/prefixes/{doc_id}")
 def get_prefixes(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     """Available document-number prefixes for a doc — port of UtlDocNoPrefix resolution."""

@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import io
 import zipfile
+from dataclasses import dataclass
 from datetime import date
 
 from pydantic import BaseModel
@@ -18,7 +19,7 @@ from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn
 from app.core.security import CurrentUser, get_current_user
-from app.print import page_fit, pdf_generator, print_agent, print_prefs, rpt_bridge, rpt_print, voucher_print
+from app.print import page_fit, pdf_generator, print_agent, print_prefs, render_cache, rpt_bridge, rpt_print, voucher_print
 from app.print.rpt_registry import get_option, list_options
 
 router = APIRouter(prefix="/print", tags=["print"])
@@ -32,6 +33,31 @@ def _render_fitted(job: rpt_print.PrintJob) -> tuple[bytes, page_fit.Page]:
     """The .rpt's PDF at the report's own page size (roll formats cut at the end of the receipt, see page_fit.py)."""
     r = rpt_bridge.render(job)
     return page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt)
+
+
+@dataclass(frozen=True)
+class _Done:
+    pdf: bytes
+    page: page_fit.Page
+    option_name: str
+    doc_id_value: int
+    copies: int
+
+
+def _rendered(conn: Connection, doc_id: int, doc_id_value: int | None, *, doc_no: str | None = None, option_name: str | None = None, ctrl_click: bool = False) -> _Done:
+    """
+    The finished render of one record, shared for a few seconds (render_cache.py): the dialog's preview, the Print that
+    follows it and a repeated F10 are one Crystal render, not three queued ones. The cache is checked before any database
+    work (job building, voucher staging) so a hit costs nothing.
+    """
+
+    def compute() -> _Done:
+        with voucher_print.print_lock_for(conn, doc_id):  # vouchers print from scratch tables refilled per print
+            job = _job(conn, doc_id, doc_id_value, doc_no=doc_no, option_name=option_name, ctrl_click=ctrl_click)
+            pdf, page = _render_fitted(job)
+        return _Done(pdf, page, job.option_name, job.doc_id_value, job.copies)
+
+    return render_cache.cache.get_or_compute(("render", doc_id, doc_id_value, doc_no, option_name, ctrl_click), compute)
 
 
 def _render(conn: Connection, job: rpt_print.PrintJob) -> bytes:
@@ -86,17 +112,15 @@ class PreferenceRequest(BaseModel):
 @router.post("/render")
 def render_pdf(body: PrintRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     """The document as a PDF (rendered by the bridge from the original .rpt)."""
-    with voucher_print.print_lock_for(conn, body.doc_id):  # vouchers print from scratch tables refilled per print
-        job = _job(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
-        pdf, page = _render_fitted(job)
+    done = _rendered(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
     return Response(
-        content=pdf,
+        content=done.pdf,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'inline; filename="{body.doc_id}-{job.doc_id_value}.pdf"',
-            "X-Print-Format": job.option_name,
-            "X-Page-Width-Pt": str(page.width_pt),
-            "X-Page-Height-Pt": str(page.height_pt),
+            "Content-Disposition": f'inline; filename="{body.doc_id}-{done.doc_id_value}.pdf"',
+            "X-Print-Format": done.option_name,
+            "X-Page-Width-Pt": str(done.page.width_pt),
+            "X-Page-Height-Pt": str(done.page.height_pt),
             "Access-Control-Expose-Headers": "X-Print-Format, X-Page-Width-Pt, X-Page-Height-Pt",
         },
     )
@@ -108,10 +132,12 @@ def render_preview(body: PrintRequest, conn: Connection = Depends(get_conn), _: 
     What the print dialog shows: the report's pages as PNG images at their real shape (no PDF-viewer chrome, so nothing is
     stretched or framed), plus the same PDF (base64) for the browser's Print. One render of the original .rpt.
     """
-    with voucher_print.print_lock_for(conn, body.doc_id):
-        job = _job(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
-        pdf, _page = _render_fitted(job)
-    return {"format": job.option_name, "pdf": base64.b64encode(pdf).decode("ascii"), "pages": print_agent.pdf_to_pages(pdf)}
+    done = _rendered(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
+    pages = render_cache.cache.get_or_compute(
+        ("pages", body.doc_id, done.doc_id_value, done.option_name, print_agent.PREVIEW_DPI),
+        lambda: print_agent.pdf_to_pages(done.pdf, print_agent.PREVIEW_DPI),
+    )
+    return {"format": done.option_name, "pdf": base64.b64encode(done.pdf).decode("ascii"), "pages": pages}
 
 
 @router.put("/preference")
@@ -220,9 +246,7 @@ def set_print_preference(
 
 @router.get("/{doc_id}/{option_name}/{record_id}/preview")
 def preview(doc_id: int, option_name: str, record_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
-    with voucher_print.print_lock_for(conn, doc_id):
-        pdf = _render(conn, _job(conn, doc_id, record_id, option_name=option_name))
-    return Response(content=pdf, media_type="application/pdf")
+    return Response(content=_rendered(conn, doc_id, record_id, option_name=option_name).pdf, media_type="application/pdf")
 
 
 @router.get("/{doc_id}/{option_name}/{record_id}/pages")
@@ -236,12 +260,10 @@ def pages_for_local_agent(
     browser fetches this, then POSTs the pages straight to
     http://127.0.0.1:8787/print on the PC it's running on.
     """
-    with voucher_print.print_lock_for(conn, doc_id):
-        job = _job(conn, doc_id, record_id, option_name=option_name)
-        pdf_bytes = _render(conn, job)
+    done = _rendered(conn, doc_id, record_id, option_name=option_name)
     return {
-        "pages": print_agent.pdf_to_pages(pdf_bytes),
-        "copies": job.copies,
+        "pages": render_cache.cache.get_or_compute(("pages", doc_id, record_id, option_name, print_agent.RASTER_DPI), lambda: print_agent.pdf_to_pages(done.pdf)),
+        "copies": done.copies,
         "name": f"{doc_id}-{record_id}",
     }
 

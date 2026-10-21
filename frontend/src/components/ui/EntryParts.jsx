@@ -1,5 +1,6 @@
 import { ActionIcon, Button, Card, Divider, Group, Kbd, Skeleton, Text, Title, Stack } from '@mantine/core'
-import { Printer } from 'lucide-react'
+import { Printer, Save } from 'lucide-react'
+import useEnterAsTab from '../../hooks/useEnterAsTab'
 import { AnimatePresence, motion } from 'framer-motion'
 import EmptyState from './EmptyState'
 import amountInWords from '../../utils/amountInWords'
@@ -33,10 +34,11 @@ export function SectionCard({ title, hint, action, children }) {
 // summary and the recent list (the list takes the remaining height and scrolls inside itself).
 // Below that: one column, side panel under the form.
 export function EntryLayout({ main, side, viewing = false }) {
+  const enterAsTab = useEnterAsTab()
   return (
     <>
       <div className="vt-entry-layout">
-        <div className="vt-entry-main">{viewing ? <fieldset disabled style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>{main}</fieldset> : main}</div>
+        <div className="vt-entry-main" onKeyDown={enterAsTab}>{viewing ? <fieldset disabled style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>{main}</fieldset> : main}</div>
         <aside className="vt-entry-side" aria-label="Summary and recent entries">
           {side}
         </aside>
@@ -75,7 +77,7 @@ export function EntryLayout({ main, side, viewing = false }) {
   )
 }
 
-export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, saveDisabled = false, onSave }) {
+export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, saveDisabled = false, onSave, onSavePrint }) {
   return (
     <Card p="md" style={{ background: 'linear-gradient(160deg, var(--vt-g1) 0%, var(--vt-g3) 100%)', border: '1px solid rgba(244,225,166,0.3)', color: '#FBF6EC' }}>
       <Text size="xs" fw={700} tt="uppercase" c="#F4E1A6" style={{ letterSpacing: 1 }}>
@@ -110,6 +112,23 @@ export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, war
           {warning}
         </Text>
       )}
+      {/* Screens that print get two explicit buttons: Alt+S saves only, F10 saves and prints straight away. */}
+      {onSavePrint ? (
+        <Group gap={8} mt="sm" wrap="nowrap" grow>
+          <Button size="sm" px="xs" color="gold" c="#2B0909" leftSection={<Save size={16} />} loading={saving} disabled={saveDisabled} onClick={onSave} aria-keyshortcuts="Alt+S" title="Save only, nothing is printed (Alt+S)">
+            <Group gap={6} wrap="nowrap">
+              <span>Save</span>
+              <Kbd size="xs" style={{ background: 'rgba(43,9,9,0.12)', color: '#2B0909', borderColor: 'rgba(43,9,9,0.25)' }}>Alt+S</Kbd>
+            </Group>
+          </Button>
+          <Button size="sm" px="xs" variant="outline" color="gold" leftSection={<Printer size={16} />} disabled={saving || saveDisabled} onClick={onSavePrint} aria-keyshortcuts="F10" title="Save and print straight away, no dialog (F10)">
+            <Group gap={6} wrap="nowrap">
+              <span>Save &amp; Print</span>
+              <Kbd size="xs" style={{ background: 'rgba(244,225,166,0.15)', color: '#F4E1A6', borderColor: 'rgba(244,225,166,0.4)' }}>F10</Kbd>
+            </Group>
+          </Button>
+        </Group>
+      ) : (
       <Button fullWidth size="md" mt="sm" color="gold" c="#2B0909" leftSection={<SaveIcon size={18} />} loading={saving} disabled={saveDisabled} onClick={onSave} aria-keyshortcuts="Alt+S">
         <Group gap={10} wrap="nowrap">
           <span>{saveLabel}</span>
@@ -118,6 +137,7 @@ export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, war
           </Kbd>
         </Group>
       </Button>
+      )}
           </Card>
   )
 }

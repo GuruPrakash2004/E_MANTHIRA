@@ -6,6 +6,7 @@ import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as expenseApi from '../../api/endpoints/expense'
 import LookupSelect from '../../components/LookupSelect'
+import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
@@ -78,7 +79,7 @@ export default function ExpenseEntryPage() {
     return Object.keys(e).length === 0
   }
 
-  async function onSave() {
+  async function onSave(mode) {
     if (!validate()) return
     setSaving(true)
     try {
@@ -96,7 +97,9 @@ export default function ExpenseEntryPage() {
         lines: lines.map((l) => ({ led_id: Number(l.led_id), amount: Number(l.amount), item_desc: l.item_desc, remarks: l.remarks })),
       })
       setLastSaved(result)
-      handleAfterSave({ docId: DOC_ID, recordId: result.exp_id, openDialog: setPrintFor })
+      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      if (mode === 'print') directPrint(result.exp_id)
+      else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.exp_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setForm((f) => ({ ...f, ref_no: '', remarks: '', cheque_no: '', cheque_date: null, cheque_amount: 0, bank_name: '', payment_mode: 'Cash' }))
       setLines([{ ...EMPTY_LINE }])
@@ -108,7 +111,12 @@ export default function ExpenseEntryPage() {
     }
   }
 
-  useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.exp_id) })
+  const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+  useDocShortcuts({
+    onSave: () => onSave('save'),
+    onPrint: () => lastSaved && setPrintFor(lastSaved.exp_id),
+    onDirectPrint: () => onSave('print'),
+  })
 
   return (
     <Stack gap="lg" className="vt-rise">
@@ -259,7 +267,8 @@ export default function ExpenseEntryPage() {
               words={total}
               saveLabel="Save & Print"
               saving={saving}
-              onSave={onSave}
+              onSave={() => onSave('save')}
+              onSavePrint={() => onSave('print')}
             />
             {lastSaved && <SavedPanel lines={[`Expense ${lastSaved.exp_no}`]} onPrint={() => setPrintFor(lastSaved.exp_id)} />}
             <RecentCard

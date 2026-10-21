@@ -13,6 +13,8 @@ print bridge (see print/rpt_bridge.py and tools/rptbridge/README.md) — this is
 """
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,17 +43,24 @@ def _rpt_dir() -> Path:
     return Path(settings.rpt_folder or settings.rpt_path).expanduser()
 
 
-def scan_rpt_files() -> dict[str, str]:
+_SCAN_TTL = 10.0  # seconds; the Rpts folder is often a network share, and a listing per print was a visible delay
+_scan: dict = {"at": 0.0, "dir": None, "files": {}}
+_scan_lock = threading.Lock()
+
+
+def scan_rpt_files(force: bool = False) -> dict[str, str]:
     """
-    Scan RPT_PATH: {lowercased filename -> actual path}. Re-scanned on every
-    call (not cached) — a local directory listing of ~30 files is cheap, and
-    this way a .rpt file pasted into RPT_PATH while the server is running is
-    picked up on the very next request, no restart needed.
+    Scan RPT_PATH: {lowercased filename -> actual path}. Cached for a few seconds, so a .rpt file pasted into
+    RPT_PATH while the server is running is still picked up almost at once (and immediately when a lookup misses,
+    see find_rpt), without listing the folder on every print.
     """
     d = _rpt_dir()
-    if not d.exists():
-        return {}
-    return {p.name.lower(): str(p) for p in d.glob("*.rpt")}
+    with _scan_lock:
+        if not force and _scan["dir"] == d and time.monotonic() - _scan["at"] < _SCAN_TTL:
+            return _scan["files"]
+        files = {p.name.lower(): str(p) for p in d.glob("*.rpt")} if d.exists() else {}
+        _scan.update(at=time.monotonic(), dir=d, files=files)
+        return files
 
 
 def normalize_rpt_name(raw: str | None) -> str:
@@ -64,7 +73,9 @@ def normalize_rpt_name(raw: str | None) -> str:
 def find_rpt(raw: str | None) -> str | None:
     """Path of the EXACT file the option names (case-insensitive, as on Windows) - never a similar name, never a prefix."""
     name = normalize_rpt_name(raw)
-    return scan_rpt_files().get(name.lower()) if name else None
+    if not name:
+        return None
+    return scan_rpt_files().get(name.lower()) or scan_rpt_files(force=True).get(name.lower())
 
 
 def list_options(conn: Connection, doc_id: int) -> list[PrintOption]:

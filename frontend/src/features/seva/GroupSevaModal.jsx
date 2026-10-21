@@ -11,6 +11,9 @@ import { formatINR, isoDate } from '../../utils/format'
  * Group Seva (legacy frmTrnSeva "Group Seva" panel): pick a saved group, tick its members, and one Seva Entry is
  * generated per member using this form's payment, ledgers, days and dates. Everything is saved together or not at all.
  */
+// Stable fallback: a fresh `[]` default on every render made the [members] effect below re-fire forever.
+const NO_MEMBERS = []
+
 export default function GroupSevaModal({ opened, onClose, form, dates, onDone }) {
   const queryClient = useQueryClient()
   const [pick, setPick] = useState(null) // "grpId:sevaId"
@@ -20,7 +23,7 @@ export default function GroupSevaModal({ opened, onClose, form, dates, onDone })
 
   const { data: groups = [] } = useQuery({ queryKey: ['group-seva-groups'], queryFn: sevaApi.groupSevaGroups, enabled: opened })
   const [grpId, sevaId] = (pick || ':').split(':').map(Number)
-  const { data: members = [] } = useQuery({
+  const { data: members = NO_MEMBERS } = useQuery({
     queryKey: ['group-seva-members', grpId, sevaId],
     queryFn: () => sevaApi.groupSevaMembers(grpId, sevaId),
     enabled: opened && Boolean(pick),

@@ -125,46 +125,8 @@ body {
 @media (max-width: 700px) { .vt-dvbg-m1 { width: 360px; height: 360px; right: -140px; } .vt-dvbg-m2 { width: 280px; height: 280px; left: -120px; } }
 @media (prefers-reduced-motion: reduce) { .vt-dvbg-m, .vt-dvbg-halo { animation: none; } .vt-dvbg-spark { display: none; } }
 
-/* ---- Palettes ("F-mood" button in the header). Default = the logo maroon; P1 Burgundy; P2 Blush Beige. ---- */
+/* Dark-panel gradient stops (the logo maroon). */
 :root { --vt-g1: #6b1a1a; --vt-g2: #5a1414; --vt-g2d: #3e0e0e; --vt-g3: #2b0909; }
-
-/* P1 Burgundy: rich and dramatic. */
-:root[data-vt-palette='p1'] {
-  --vt-g1: #7a0f2b; --vt-g2: #5c0a20; --vt-g2d: #3d0614; --vt-g3: #260209;
-  --mantine-color-kumkum-0: #fbeaee; --mantine-color-kumkum-1: #f3cbd4; --mantine-color-kumkum-2: #e49cad; --mantine-color-kumkum-3: #cf6b84; --mantine-color-kumkum-4: #b54463;
-  --mantine-color-kumkum-5: #962947; --mantine-color-kumkum-6: #800020; --mantine-color-kumkum-7: #66001a; --mantine-color-kumkum-8: #4d0014; --mantine-color-kumkum-9: #33000d;
-  --mantine-color-kumkum-filled: #800020; --mantine-color-kumkum-filled-hover: #66001a; --mantine-color-kumkum-light: rgba(128, 0, 32, 0.1); --mantine-color-kumkum-light-hover: rgba(128, 0, 32, 0.16);
-  --mantine-color-kumkum-light-color: #800020; --mantine-color-kumkum-outline: #800020; --mantine-color-kumkum-outline-hover: rgba(128, 0, 32, 0.05);
-  --vt-sandal: #faf1ee; --vt-header: #fff8f6; --vt-line: #ecd6d4;
-}
-/* P2 Blush Beige: warm and elegant. Dark panels become a soft mauve-burgundy so the page still reads as blush. */
-:root[data-vt-palette='p2'] {
-  --vt-g1: #8f3b4c; --vt-g2: #6e2a39; --vt-g2d: #55202c; --vt-g3: #3f1620;
-  --mantine-color-kumkum-0: #fbeff0; --mantine-color-kumkum-1: #f2d8dc; --mantine-color-kumkum-2: #e5b4bc; --mantine-color-kumkum-3: #d38d99; --mantine-color-kumkum-4: #bd6676;
-  --mantine-color-kumkum-5: #a84e60; --mantine-color-kumkum-6: #913a4c; --mantine-color-kumkum-7: #7a2e3f; --mantine-color-kumkum-8: #5f2230; --mantine-color-kumkum-9: #451823;
-  --mantine-color-kumkum-filled: #913a4c; --mantine-color-kumkum-filled-hover: #7a2e3f; --mantine-color-kumkum-light: rgba(145, 58, 76, 0.1); --mantine-color-kumkum-light-hover: rgba(145, 58, 76, 0.16);
-  --mantine-color-kumkum-light-color: #7a2e3f; --mantine-color-kumkum-outline: #913a4c; --mantine-color-kumkum-outline-hover: rgba(145, 58, 76, 0.05);
-  --vt-sandal: #f4e4dd; --vt-header: #faefea; --vt-surface: #fff9f6; --vt-line: #e6cfc5;
-  --vt-has-bg: linear-gradient(160deg, #fff9f6 0%, #f6e0d6 100%);
-}
-/* Dark scheme under each palette keeps the surfaces tinted to the palette. */
-:root[data-vt-palette='p1'][data-mantine-color-scheme='dark'] { --vt-sandal: #1a0a0e; --vt-header: #220c13; --vt-surface: #2a1018; --vt-line: #4a2230; --vt-has-bg: linear-gradient(160deg, #3a1420 0%, #4a1a28 100%); }
-:root[data-vt-palette='p2'][data-mantine-color-scheme='dark'] { --vt-sandal: #211417; --vt-header: #2a191d; --vt-surface: #2f1d21; --vt-line: #503339; --vt-has-bg: linear-gradient(160deg, #3b2429 0%, #4a2d32 100%); }
-
-/* P3 Temple Gold: the logo's gold forward on ivory (buttons in antique bronze-gold, dark panels in deep gold-brown). */
-:root[data-vt-palette='p3'] {
-  --vt-g1: #7a5a1c; --vt-g2: #5a4012; --vt-g2d: #3e2b0c; --vt-g3: #2a1c07;
-  --mantine-color-kumkum-0: #fbf4e2; --mantine-color-kumkum-1: #f4e3b4; --mantine-color-kumkum-2: #ead085; --mantine-color-kumkum-3: #ddba57; --mantine-color-kumkum-4: #c99f3d;
-  --mantine-color-kumkum-5: #a97f32; --mantine-color-kumkum-6: #8a6420; --mantine-color-kumkum-7: #6e4f18; --mantine-color-kumkum-8: #523b12; --mantine-color-kumkum-9: #3a290c;
-  --mantine-color-kumkum-filled: #8a6420; --mantine-color-kumkum-filled-hover: #6e4f18; --mantine-color-kumkum-light: rgba(138, 100, 32, 0.12); --mantine-color-kumkum-light-hover: rgba(138, 100, 32, 0.18);
-  --mantine-color-kumkum-light-color: #6e4f18; --mantine-color-kumkum-outline: #8a6420; --mantine-color-kumkum-outline-hover: rgba(138, 100, 32, 0.06);
-  --vt-sandal: #fbf6ec; --vt-header: #fffdf6; --vt-line: #eadab0;
-}
-:root[data-vt-palette='p3'][data-mantine-color-scheme='dark'] { --vt-sandal: #191208; --vt-header: #21170b; --vt-surface: #281d0f; --vt-line: #4a3a1c; --vt-has-bg: linear-gradient(160deg, #33250f 0%, #42301a 100%); }
-/* Mantine dark scale (inputs, menus, modals) follows the palette in the dark theme. */
-:root[data-vt-palette='p3'][data-mantine-color-scheme='dark'] { --mantine-color-dark-4: #5a4520; --mantine-color-dark-5: #46361a; --mantine-color-dark-6: #33270f; --mantine-color-dark-7: #281d0f; --mantine-color-dark-8: #1c1409; --mantine-color-dark-9: #130d05; }
-:root[data-vt-palette='p1'][data-mantine-color-scheme='dark'] { --mantine-color-dark-4: #5c2a3a; --mantine-color-dark-5: #4a2230; --mantine-color-dark-6: #381824; --mantine-color-dark-7: #2a1018; --mantine-color-dark-8: #1c0a10; --mantine-color-dark-9: #12060a; }
-:root[data-vt-palette='p2'][data-mantine-color-scheme='dark'] { --mantine-color-dark-4: #644045; --mantine-color-dark-5: #503339; --mantine-color-dark-6: #3f2a2f; --mantine-color-dark-7: #2f1d21; --mantine-color-dark-8: #22151a; --mantine-color-dark-9: #160d10; }
 
 /* ShineLogo: sweep clipped to the logo artwork only. */
 .vt-shine { position: relative; display: block; width: fit-content; line-height: 0; }

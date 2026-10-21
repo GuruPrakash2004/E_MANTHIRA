@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import mimetypes
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.gzip_mw import SelectiveGZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.api.v1 import doc_actions, mail_settings, master_extras, audit, auth, bulk_update, company, db_settings, display, donations, expense, hall_booking_entry, halls, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, exports, trading_reports, users, utilities, vouchers, welcome
 from app.core.config import get_settings
@@ -43,7 +45,7 @@ app = FastAPI(title="vTemple Web API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(SelectiveGZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.frontend_origin_list,
+    allow_origin_regex=".*",  # any origin; the regex form echoes the caller's origin, which works with credentials
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,3 +89,26 @@ def health():
         return {"status": "ok"}
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=503, content={"status": "error", "detail": str(exc)})
+
+
+# --- Serve the built frontend (frontend/dist) from this same server -------------------------------------------------
+# One process, one address: the site at "/" and the API under settings.api_prefix ("/api/v1"). Skipped (API only) when
+# the dist folder has not been built, so `npm run dev` + `uvicorn` development keeps working. Override with FRONTEND_DIST.
+_DIST = Path(settings.frontend_dist).expanduser().resolve() if settings.frontend_dist else Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+if (_DIST / "index.html").is_file():
+    # Windows maps .js to text/plain through its registry, and browsers refuse module scripts with that type (blank page).
+    for _ext, _type in {".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".json": "application/json", ".woff2": "font/woff2", ".mp4": "video/mp4", ".webmanifest": "application/manifest+json"}.items():
+        mimetypes.add_type(_type, _ext)
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def serve_frontend(path: str):
+        if path == settings.api_prefix.strip("/") or path.startswith(settings.api_prefix.strip("/") + "/"):
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        target = (_DIST / path).resolve()
+        if path and target.is_file() and _DIST in target.parents:
+            # Vite's hashed files never change, so browsers may keep them for a year; everything else is revalidated.
+            cache = "public, max-age=31536000, immutable" if target.parent.name == "assets" else "no-cache"
+            return FileResponse(target, headers={"Cache-Control": cache})
+        # any other path is a client-side route (React Router): hand back the app shell
+        return FileResponse(_DIST / "index.html", headers={"Cache-Control": "no-cache"})

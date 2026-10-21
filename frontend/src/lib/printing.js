@@ -116,3 +116,24 @@ export async function handleAfterSave({ docId, recordId, openDialog }) {
     }
   }
 }
+
+// True while a PrintDialog is open, so a screen's own F10 handler stands down and F10 prints once (from the dialog).
+let printDialogOpen = false
+export const setPrintDialogOpen = (v) => { printDialogOpen = v }
+export const isPrintDialogOpen = () => printDialogOpen
+
+/**
+ * F10 on a screen: print this record straight away in the format and printer last used, no dialog.
+ * If the format is missing or the print fails, the reason is shown and the dialog opens so it can be fixed.
+ */
+export async function directPrintRecord({ docId, recordId, openDialog }) {
+  if (printDialogOpen || !recordId) return
+  try {
+    const format = pickFormat(await loadFormats(docId))
+    if (!format?.available) throw new Error('No print format is available for this document.')
+    notifications.show({ message: await printNow({ docId, recordId, format }), color: 'teal' })
+  } catch (err) {
+    notifications.show({ title: 'Could not print', message: await printErrorMessage(err), color: 'red' })
+    openDialog?.(recordId)
+  }
+}

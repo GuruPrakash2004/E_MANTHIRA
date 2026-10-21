@@ -13,9 +13,7 @@ import { theme } from './theme/theme'
 import { AuthProvider } from './hooks/useAuth'
 import ConfirmProvider from './components/ui/ConfirmProvider'
 import App from './App'
-import { applyPalette, storedPalette } from './components/PaletteSwitch'
 
-applyPalette(storedPalette())
 
 // Sensible app-wide defaults: reads stay fresh for 30 s (no refetch storm on every mount / window focus),
 // 4xx errors are not retried (a 403/422 will not fix itself), server errors retry at most twice.

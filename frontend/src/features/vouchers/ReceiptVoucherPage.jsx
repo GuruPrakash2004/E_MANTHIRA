@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as voucherApi from '../../api/endpoints/voucher'
 import * as metaApi from '../../api/endpoints/meta'
 import LookupSelect from '../../components/LookupSelect'
+import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
 import DynamicField from '../../components/DynamicField'
@@ -102,7 +103,7 @@ export default function ReceiptVoucherPage() {
   const totalCr = lines.reduce((s, l) => s + (Number(l.cr_amt) || 0), 0)
   const balanced = Math.round(totalDr * 100) === Math.round(totalCr * 100) && totalCr > 0
 
-  async function onSave() {
+  async function onSave(mode) {
     if (viewId) return
     if (mandatory('NARR') && !form.narration.trim()) {
       notifications.show({ message: `${caption('NARR', 'Narration')} should not be blank!`, color: 'red' })
@@ -131,7 +132,9 @@ export default function ReceiptVoucherPage() {
       }
       const result = await voucherApi.createReceiptVoucher(body)
       setLastSaved(result)
-      handleAfterSave({ docId: DOC_ID, recordId: result.receipt_id, openDialog: setPrintFor })
+      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      if (mode === 'print') directPrint(result.receipt_id)
+      else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.receipt_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setForm((f) => ({ ...f, narration: '', cheque_dd_no: '', cheque_date: null, cheque_dd_amt: '', cheque_no: '', bank_id: '', card_no: '', card_amt: 0 }))
       setExtra({})
@@ -181,7 +184,12 @@ export default function ReceiptVoucherPage() {
     return rows.map((v) => ({ id: v.RCPTVCHID, label: v.PrintRCPTVCHNO, sub: `${v.NARR} · ${formatINR(v.TOTDR)}` }))
   }
 
-  useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.receipt_id) })
+  const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+  useDocShortcuts({
+    onSave: () => !viewId && onSave('save'),
+    onPrint: () => lastSaved && setPrintFor(lastSaved.receipt_id),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
+  })
 
   return (
     <Stack gap="lg" className="vt-rise">
@@ -359,7 +367,8 @@ export default function ReceiptVoucherPage() {
               words={totalCr}
               warning={balanced || (totalDr === 0 && totalCr === 0) ? null : 'Debit and Credit totals are NOT matching!'}
               saving={saving}
-              onSave={viewId ? undefined : onSave}
+              onSave={viewId ? undefined : () => onSave('save')}
+              onSavePrint={viewId ? undefined : () => onSave('print')}
               saveDisabled={Boolean(viewId)}
             />
             {lastSaved && (

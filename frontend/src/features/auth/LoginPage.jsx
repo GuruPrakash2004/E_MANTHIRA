@@ -2,13 +2,12 @@ import DevotionalBackdrop from '../../components/DevotionalBackdrop'
 import ThemeToggle from '../../components/ThemeToggle'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Checkbox, Modal, Paper, PasswordInput, Stack, Text, TextInput, Title, Alert, Group } from '@mantine/core'
-import { AlertCircle, FlaskConical, Lock, Settings, User } from 'lucide-react'
+import { Button, Checkbox, Paper, PasswordInput, Stack, Text, TextInput, Title, Alert, Group } from '@mantine/core'
+import { AlertCircle, Lock, Settings, User } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 import DatabaseSettingsPanel from '../../components/DatabaseSettingsPanel'
 import ShineLogo from '../../components/ShineLogo'
 import HeroVisual from '../../components/HeroVisual'
-import { enterDemoMode } from '../../lib/demoAuth'
 import { cachedWelcome, getWelcome, welcomeVideoUrl } from '../../api/endpoints/welcome'
 
 // Original artwork (see vTemple_Analysis/08_UI_UX_Design_System.md §4 "Ornament kit"):
@@ -85,6 +84,9 @@ export default function LoginPage() {
         <Stack w="100%" maw={400} gap="md" style={{ position: 'relative' }} className="vt-rise">
           <ShineLogo wrapClassName="vt-login-mobile-brand vt-logo-on-light" imgClassName="vt-login-mobile-img" src="/brand/lockup-horizontal.png" alt="e-Mandira Pranali" />
 
+          {dbSettingsOpen ? (
+            <DatabaseSettingsPanel onClose={() => setDbSettingsOpen(false)} />
+          ) : (
           <Paper w="100%" p="xl" withBorder shadow="md" component="form" onSubmit={onSubmit} noValidate>
             <Stack gap={4} mb="lg">
               <Title order={2} style={{ fontSize: '1.75rem' }}>
@@ -126,20 +128,13 @@ export default function LoginPage() {
               </Button>
             </Stack>
           </Paper>
+          )}
 
           {/* Outside the form: fixing the server must not require logging in first. */}
           <Group gap="xs" justify="center">
             <Button variant="subtle" color="gray" size="compact-md" leftSection={<Settings size={14} />} onClick={() => setDbSettingsOpen(true)}>
               Database settings
             </Button>
-            {/* Developer escape hatch: canned data, no SQL Server needed, never saves (see lib/demoAuth.js). */}
-            <Button variant="subtle" color="gray" size="compact-md" leftSection={<FlaskConical size={14} />} onClick={() => {
-                sessionStorage.setItem('vt-welcome', '1')
-                enterDemoMode()
-              }}>
-              Continue with demo data
-            </Button>
-            <ThemeToggle size={36} />
           </Group>
 
           {/* Dark credit badge: gold + silver Softvent mark (public/softvent-logo-dark.png, recoloured from the original). */}
@@ -161,15 +156,15 @@ export default function LoginPage() {
           </Stack>
         </Stack>
 
-        <Modal opened={dbSettingsOpen} onClose={() => setDbSettingsOpen(false)} title="Database Settings" centered>
-          <DatabaseSettingsPanel />
-        </Modal>
+        <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 5 }}>
+          <ThemeToggle size={36} />
+        </div>
       </main>
 
       <style>{`
-        .vt-login { display: flex; min-height: 100dvh; background: var(--vt-sandal); }
+        .vt-login { display: flex; height: 100dvh; overflow: hidden; background: var(--vt-sandal); }
         .vt-login-art {
-          flex: 1.15; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; position: sticky; top: 0;
+          flex: 0 0 58%; overflow: hidden; display: flex; flex-direction: column; height: 100dvh; position: sticky; top: 0;
           background: linear-gradient(180deg, var(--vt-g3) 0%, var(--vt-g2) 28%, var(--vt-g1) 60%, var(--vt-g3) 100%);
         }
         .vt-login-kolam { position: absolute; inset: 0; background-size: 120px 120px; opacity: 0.05; }
@@ -179,7 +174,7 @@ export default function LoginPage() {
         .vt-login-glow-b { bottom: -140px; left: -100px; width: 320px; height: 320px; background: radial-gradient(circle, rgba(122,31,31,0.08) 0%, rgba(122,31,31,0) 70%); }
         .vt-login-mobile-brand { display: none; align-self: center; filter: drop-shadow(0 2px 6px rgba(90,20,20,0.15)); }
         .vt-login-mobile-img { height: 64px; width: auto; }
-        @media (max-width: 860px) {
+        @media (max-width: 1023px) {
           .vt-login-art { display: none; }
           .vt-login-mobile-brand { display: block; }
         }

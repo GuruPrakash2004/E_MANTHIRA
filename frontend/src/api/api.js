@@ -2,7 +2,6 @@
 // Every feature imports an endpoint module (see src/api/endpoints/*.js),
 // never axios directly — see /CLAUDE.md §5.
 import axios from 'axios'
-import { isDemoMode } from '../lib/demoMode'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL
 
@@ -73,12 +72,6 @@ api.interceptors.response.use(
     return Promise.reject(error)
   }
 )
-
-// Demo Data mode (src/lib/demoMode.js, src/lib/demo/*): when on, EVERY request, reads and writes alike, is answered
-// by the in-memory demo database (src/lib/demo/routes.js) through this axios adapter instead of the network, so all
-// screens are populated and saving works for the session. Nothing is persisted; a reload resets the demo data.
-const realAdapter = axios.getAdapter(axios.defaults.adapter)
-api.defaults.adapter = (config) => (isDemoMode() ? import('../lib/demo/adapter').then((m) => m.demoAdapter(config)) : realAdapter(config))
 
 // Small helpers so feature code reads cleanly: get/post/put/del/download
 export const get = (url, config) => api.get(url, config).then((r) => r.data)

@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as donationApi from '../../api/endpoints/donation'
 import * as metaApi from '../../api/endpoints/meta'
 import LookupSelect from '../../components/LookupSelect'
+import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
 import DynamicField from '../../components/DynamicField'
@@ -189,7 +190,7 @@ export default function DonationReceiptPage() {
     setForm((f) => ({ ...f, [field]: value }))
   }
 
-  async function onSave() {
+  async function onSave(mode) {
     if (!form.prefix) {
       notifications.show({ message: 'No document-number prefix configured', color: 'red' })
       return
@@ -221,7 +222,9 @@ export default function DonationReceiptPage() {
       }
       const result = await donationApi.createDonation(body)
       setLastSaved(result)
-      handleAfterSave({ docId: DOC_ID, recordId: result.donrec_id, openDialog: setPrintFor })
+      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      if (mode === 'print') directPrint(result.donrec_id)
+      else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.donrec_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setForm((f) => ({
         ...f,
@@ -248,7 +251,12 @@ export default function DonationReceiptPage() {
     }
   }
 
-  useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.donrec_id) })
+  const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+  useDocShortcuts({
+    onSave: () => !viewId && onSave('save'),
+    onPrint: () => lastSaved && setPrintFor(lastSaved.donrec_id),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
+  })
 
   const splitMismatch = lines.length > 0 && Math.round(linesTotal * 100) !== Math.round((Number(form.amount) || 0) * 100)
 
@@ -447,7 +455,8 @@ export default function DonationReceiptPage() {
           warning={splitMismatch ? 'Seva split does not add up to the amount.' : null}
           saving={saving}
           saveDisabled={Boolean(viewId)}
-          onSave={onSave}
+          onSave={() => onSave('save')}
+          onSavePrint={() => onSave('print')}
         />
         {lastSaved && (
           <SavedPanel

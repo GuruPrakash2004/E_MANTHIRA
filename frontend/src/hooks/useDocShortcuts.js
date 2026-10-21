@@ -11,6 +11,7 @@ import { useHotkeys } from 'react-hotkeys-hook'
  *
  *   Alt+N  New       Alt+E  Edit     Alt+S  Save      Alt+D  Delete
  *   Alt+C  Cancel    Alt+P  Print    Alt+O  Options   Alt+L  Close
+ *   F10    Direct print (no dialog, last-used format and printer)
  *   Shift+←/→  prev/next record      Ctrl+Shift+F/L  first/last record
  *   Ctrl+Shift+S  find
  */
@@ -21,6 +22,7 @@ export default function useDocShortcuts({
   onDelete,
   onCancel,
   onPrint,
+  onDirectPrint,
   onOptions,
   onClose,
   onPrev,
@@ -38,6 +40,7 @@ export default function useDocShortcuts({
   useHotkeys('alt+d', (e) => { e.preventDefault(); onDelete?.() }, altOpts, [onDelete])
   useHotkeys('alt+c', (e) => { e.preventDefault(); onCancel?.() }, altOpts, [onCancel])
   useHotkeys('alt+p', (e) => { e.preventDefault(); onPrint?.() }, altOpts, [onPrint])
+  useHotkeys('f10', (e) => { e.preventDefault(); onDirectPrint?.() }, altOpts, [onDirectPrint])
   useHotkeys('alt+o', (e) => { e.preventDefault(); onOptions?.() }, altOpts, [onOptions])
   useHotkeys('alt+l', (e) => { e.preventDefault(); onClose?.() }, altOpts, [onClose])
   useHotkeys('shift+left', (e) => { e.preventDefault(); onPrev?.() }, navOpts, [onPrev])

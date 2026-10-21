@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as voucherApi from '../../api/endpoints/voucher'
 import * as metaApi from '../../api/endpoints/meta'
 import LookupSelect from '../../components/LookupSelect'
+import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
 import DynamicField from '../../components/DynamicField'
@@ -99,7 +100,7 @@ export default function JournalVoucherPage() {
   const totalCr = lines.reduce((s, l) => s + (Number(l.cr_amt) || 0), 0)
   const balanced = Math.round(totalDr * 100) === Math.round(totalCr * 100) && totalDr > 0
 
-  async function onSave() {
+  async function onSave(mode) {
     if (mandatory('NARR') && !form.narration.trim()) {
       notifications.show({ message: `${caption('NARR', 'Narration')} should not be blank!`, color: 'red' })
       return
@@ -127,7 +128,9 @@ export default function JournalVoucherPage() {
       }
       const result = await voucherApi.createJournalVoucher(body)
       setLastSaved(result)
-      handleAfterSave({ docId: DOC_ID, recordId: result.jnrvch_id, openDialog: setPrintFor })
+      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      if (mode === 'print') directPrint(result.jnrvch_id)
+      else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.jnrvch_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setForm((f) => ({ ...f, narration: '', cheque_dd_no: '', cheque_date: null, cheque_dd_amt: '', cheque_no: '', bank_id: '', card_no: '', card_amt: 0 }))
       setExtra({})
@@ -141,7 +144,12 @@ export default function JournalVoucherPage() {
     }
   }
 
-  useDocShortcuts({ onSave, onPrint: () => lastSaved && setPrintFor(lastSaved.jnrvch_id) })
+  const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+  useDocShortcuts({
+    onSave: () => onSave('save'),
+    onPrint: () => lastSaved && setPrintFor(lastSaved.jnrvch_id),
+    onDirectPrint: () => onSave('print'),
+  })
 
   return (
     <Stack gap="lg" className="vt-rise">
@@ -318,7 +326,8 @@ export default function JournalVoucherPage() {
               words={totalDr}
               warning={balanced || (totalDr === 0 && totalCr === 0) ? null : 'Debit and Credit totals are NOT matching!'}
               saving={saving}
-              onSave={onSave}
+              onSave={() => onSave('save')}
+              onSavePrint={() => onSave('print')}
             />
             {lastSaved && (
               <SavedPanel
