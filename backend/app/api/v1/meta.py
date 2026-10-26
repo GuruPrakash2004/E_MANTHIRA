@@ -1,6 +1,8 @@
 """Menu tree + document field schema — data-driven, per CLAUDE.md rule 5."""
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -111,16 +113,56 @@ def get_doc_fields(doc_id: int, conn: Connection = Depends(get_conn), _: Current
     return cache.get_or_set(("docfields", doc_id), 300, load)
 
 
+@router.get("/docs/{doc_id}/refill/{field_code}")
+def get_refill(doc_id: int, field_code: str, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """`FldBlnRefill`: the distinct values this field already holds in the document's table (most recent first), offered
+    as suggestions so staff can reuse a bank name / category instead of retyping it."""
+    row = conn.execute(
+        text("SELECT FldSection, FldBlnRefill FROM UtlDocDsgrFlds WHERE DocID = :d AND FldCode = :f"), {"d": doc_id, "f": field_code}
+    ).mappings().first()
+    if row is None or (row["FldBlnRefill"] or "N").strip().upper() != "Y":
+        return []
+    doc = conn.execute(text("SELECT HdrTblName, DtlTblName FROM UtlTransactions WHERE DocID = :d"), {"d": doc_id}).mappings().first()
+    if doc is None:
+        return []
+    tbl = ((doc["DtlTblName"] if (row["FldSection"] or "").strip() == "Detail" else doc["HdrTblName"]) or "").strip()
+    if not (meta_lookups.IDENT_RE.match(tbl) and meta_lookups.IDENT_RE.match(field_code)):
+        return []
+    has_col = conn.execute(
+        text("SELECT 1 FROM information_schema.columns WHERE table_name = :t AND column_name = :c"), {"t": tbl, "c": field_code}
+    ).first()
+    if not has_col:
+        return []
+    rows = conn.execute(text(f"SELECT DISTINCT LTRIM(RTRIM({field_code})) AS v FROM {tbl} WHERE {field_code} IS NOT NULL ORDER BY v {limit_clause(200)}")).fetchall()
+    return [r[0] for r in rows if r[0]]
+
+
 @router.get("/lookup/{doc_id}/{field_code}")
 def get_lookup(
     doc_id: int,
     field_code: str,
     search: str = "",
+    ctx: str = "",
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(get_current_user),
 ):
-    """Options for a combo field — resolved live from UtlDocDsgrFlds.FldCmbTblName, exactly like the Windows app."""
-    return meta_lookups.resolve_lookup(conn, doc_id=doc_id, field_code=field_code, search=search)
+    """Options for a combo field — resolved live from UtlDocDsgrFlds.FldCmbTblName, exactly like the Windows app.
+    `ctx` (JSON of the screen's current FldCode values) feeds dependent combos such as Rashi-by-Nakshatra."""
+    try:
+        context = json.loads(ctx) if ctx else {}
+    except ValueError:
+        context = {}
+    return meta_lookups.resolve_lookup(conn, doc_id=doc_id, field_code=field_code, search=search, ctx=context if isinstance(context, dict) else {})
+
+
+class PickupRequest(BaseModel):
+    values: dict = {}
+
+
+@router.post("/docs/{doc_id}/pickup/{field_code}")
+def get_pickup(doc_id: int, field_code: str, body: PickupRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """`FldPickUP`: the value a field fills itself with once the field it depends on changes (Rashi from Nakshatra)."""
+    return meta_lookups.resolve_pickup(conn, doc_id=doc_id, field_code=field_code, values=body.values)
 
 
 @router.get("/ledgers")

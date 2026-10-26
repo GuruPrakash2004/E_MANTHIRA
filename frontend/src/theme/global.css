@@ -161,3 +161,20 @@ body {
 .vt-fld-readonly .mantine-InputWrapper-label,
 .vt-fld-readonly .mantine-Input-input { color: var(--vt-readonly-ink); }
 .vt-field-required .mantine-InputWrapper-label { color: var(--vt-required-ink); }
+
+/* Dropdown lists (Select / Autocomplete / Combobox): an opaque surface with a visible border and shadow, in both themes. */
+.mantine-Select-dropdown,
+.mantine-Autocomplete-dropdown,
+.mantine-Combobox-dropdown,
+.mantine-MultiSelect-dropdown {
+  background: var(--vt-surface);
+  border: 1px solid var(--mantine-color-kumkum-4, var(--vt-line));
+  box-shadow: 0 10px 28px rgba(90, 20, 20, 0.22);
+}
+:root[data-mantine-color-scheme='dark'] .mantine-Select-dropdown,
+:root[data-mantine-color-scheme='dark'] .mantine-Autocomplete-dropdown,
+:root[data-mantine-color-scheme='dark'] .mantine-Combobox-dropdown,
+:root[data-mantine-color-scheme='dark'] .mantine-MultiSelect-dropdown {
+  border-color: var(--mantine-color-gold-5, #c79a3d);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}

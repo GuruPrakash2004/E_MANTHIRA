@@ -23,3 +23,12 @@ Response headers describe the report's own paper: `X-Paper-Kind` (`Named` = A4 /
 
 `POST /print` -> `{"message":"sent"}` - same body plus `printer_name`, `copies`; `PrintToPrinter` on that printer.
 `GET /health`, `GET /inspect?rpt=<file>` (parameters, formulas, tables, sub-reports, texts, paper).
+
+## Fonts (Kannada / Telugu / Tamil / Hindi reports)
+
+Old reports draw regional-language text in non-Unicode fonts such as **BRH Kannada** or Nudi. On a machine without that font Windows
+swaps in Times New Roman and the output is Latin gibberish. At start-up the bridge installs every `.ttf` / `.otf` / `.ttc` found in
+`<RPT folder>\Fonts` (also `--fonts a;b` and `<exe folder>\fonts`) **for the current Windows user** (copy to
+`%LOCALAPPDATA%\Microsoft\Windows\Fonts` + HKCU registry; no admin rights, nothing system-wide; if that is blocked it loads the font
+privately into the process). `GET /fonts?rpt=<file>` lists the fonts a report uses and which are missing; the print dialog shows that
+as a warning, and ADMIN can add the font file from Admin Master > Print Options (`POST /print-options/font-files`, which restarts the bridge).

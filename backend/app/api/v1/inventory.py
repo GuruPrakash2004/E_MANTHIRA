@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
-from app.core.fy import FinancialYear, get_user_fy
+from app.core.fy import FinancialYear, get_user_fy, get_history_fy
 from app.core.security import CurrentUser, get_current_user, require_right
 from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_VIEW
 from app.services import inventory as inv
@@ -29,16 +29,14 @@ class StockAdjustmentLineRequest(BaseModel):
 
 
 class StockAdjustmentCreateRequest(BaseModel):
-    loc_id: int
-    adj_by: str
-    remarks: str = ""
+    fields: dict  # Header / Footer Designer fields keyed by FldCode
     doc_date: date
     lines: list[StockAdjustmentLineRequest]
 
 
 @router.get("/stock-adjustments")
 def list_stock_adjustments(
-    top: int = Query(50, le=200), fy: FinancialYear = Depends(get_user_fy), conn: Connection = Depends(get_conn),
+    top: int = Query(50, le=1000), fy: FinancialYear = Depends(get_history_fy), conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(inv.DOC_ID_SA, RIGHT_VIEW)),
 ):
     return inv.list_stock_adjustments(conn, fy=fy, top=top)
@@ -74,16 +72,14 @@ class StoreIssueLineRequest(BaseModel):
 
 
 class StoreIssueCreateRequest(BaseModel):
-    loc_id: int
-    issue_by: str
-    remarks: str = ""
+    fields: dict  # Header / Footer Designer fields keyed by FldCode
     doc_date: date
     lines: list[StoreIssueLineRequest]
 
 
 @router.get("/store-issues")
 def list_store_issues(
-    top: int = Query(50, le=200), fy: FinancialYear = Depends(get_user_fy), conn: Connection = Depends(get_conn),
+    top: int = Query(50, le=1000), fy: FinancialYear = Depends(get_history_fy), conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(inv.DOC_ID_ISS, RIGHT_VIEW)),
 ):
     return inv.list_store_issues(conn, fy=fy, top=top)
@@ -119,19 +115,15 @@ class PurchaseBillLineRequest(BaseModel):
 
 
 class PurchaseBillCreateRequest(BaseModel):
-    loc_id: int
     supp_id: int
-    ledid_pur: int
-    ref_no: str = ""
-    ref_date: date | None = None
-    remarks: str = ""
+    fields: dict  # Header / Footer Designer fields keyed by FldCode
     doc_date: date
     lines: list[PurchaseBillLineRequest]
 
 
 @router.get("/purchase-bills")
 def list_purchase_bills(
-    top: int = Query(50, le=200), fy: FinancialYear = Depends(get_user_fy), conn: Connection = Depends(get_conn),
+    top: int = Query(50, le=1000), fy: FinancialYear = Depends(get_history_fy), conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(inv.DOC_ID_PB, RIGHT_VIEW)),
 ):
     return inv.list_purchase_bills(conn, fy=fy, top=top)
@@ -167,14 +159,14 @@ class PurchaseVoucherLineRequest(BaseModel):
 
 class PurchaseVoucherCreateRequest(BaseModel):
     voucher_date: date
-    cr_period: int = 0
+    fields: dict  # Header Designer fields keyed by FldCode
     lines: list[PurchaseVoucherLineRequest]
     pb_id: int | None = None
 
 
 @router.get("/purchase-vouchers")
 def list_purchase_vouchers(
-    top: int = Query(50, le=200), fy: FinancialYear = Depends(get_user_fy), conn: Connection = Depends(get_conn),
+    top: int = Query(50, le=1000), fy: FinancialYear = Depends(get_history_fy), conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(inv.DOC_ID_PURVCH, RIGHT_VIEW)),
 ):
     return inv.list_purchase_vouchers(conn, fy=fy, top=top)
@@ -216,7 +208,7 @@ class BomCreateRequest(BaseModel):
 
 
 @router.get("/boms")
-def list_boms(top: int = Query(50, le=200), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(inv.DOC_ID_BOM, RIGHT_VIEW))):
+def list_boms(top: int = Query(50, le=1000), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(inv.DOC_ID_BOM, RIGHT_VIEW))):
     return inv.list_boms(conn, top=top)
 
 

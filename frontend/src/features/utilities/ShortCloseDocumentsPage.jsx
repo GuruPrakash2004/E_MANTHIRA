@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Alert, Button, Card, Checkbox, Group, Radio, Select, Stack, Text } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import { Info, ListChecks, Search, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -50,8 +50,8 @@ export default function ShortCloseDocumentsPage() {
           <Select className="vt-field-required" label="Document" placeholder="Choose a document" disabled={none} data={(docs || []).map((d) => ({ value: String(d.doc_id), label: d.name }))} value={doc} onChange={setDoc} w={260} searchable />
           <Select label="Doc No" disabled placeholder="All" data={[]} w={200} />
           <Checkbox color="kumkum" label="Date Range" checked={range} disabled={none} onChange={(e) => setRange(e.currentTarget.checked)} mb={8} />
-          <DatePickerInput label="From" valueFormat="DD/MM/YYYY" value={from} onChange={setFrom} disabled={none || !range} w={150} />
-          <DatePickerInput label="To" valueFormat="DD/MM/YYYY" value={to} onChange={setTo} disabled={none || !range} w={150} />
+          <DatePickerInput label="From" valueFormat="DD-MMM-YYYY" value={from} onChange={setFrom} disabled={none || !range} w={150} />
+          <DatePickerInput label="To" valueFormat="DD-MMM-YYYY" value={to} onChange={setTo} disabled={none || !range} w={150} />
           <Radio.Group value={state} onChange={setState} label="Show">
             <Group gap="md" mt={6}>
               <Radio color="kumkum" value="shortclosed" label="ShortClosed" disabled={none} />

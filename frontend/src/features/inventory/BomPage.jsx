@@ -1,7 +1,8 @@
+import { historyParams } from '../../lib/history'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
 import { ActionIcon, Grid, NumberInput, Stack, Table, TextInput, Button } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { Layers, Plus, Save, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -40,7 +41,7 @@ export default function BomPage() {
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
 
-  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['boms', 'recent'], queryFn: () => inventoryApi.listBoms({ top: 15 }) })
+  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['boms', 'recent'], queryFn: () => inventoryApi.listBoms(historyParams()) })
   const { byCode: fieldMeta } = useDocFields(DOC_ID)
   const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, { bom_item_id: bomItemId, remarks }[key]]))
   const hidden = (code) => isFieldHidden(fieldMeta[code], codeValues)
@@ -102,10 +103,10 @@ export default function BomPage() {
                   </Grid.Col>
                 )}
                 <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <DateInput label="Effective From" valueFormat="DD/MM/YYYY" value={effFrom} onChange={setEffFrom} />
+                  <DateInput label="Effective From" valueFormat="DD-MMM-YYYY" value={effFrom} onChange={setEffFrom} />
                 </Grid.Col>
                 <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <DateInput label="Effective To" valueFormat="DD/MM/YYYY" clearable value={effTo} onChange={setEffTo} />
+                  <DateInput label="Effective To" valueFormat="DD-MMM-YYYY" clearable value={effTo} onChange={setEffTo} />
                 </Grid.Col>
                 {!hidden('HRMKS') && (
                   <Grid.Col span={12}>
@@ -168,8 +169,8 @@ export default function BomPage() {
           <>
             <SummaryCard
               rows={[
-                { label: 'Effective from', value: effFrom ? dayjs(effFrom).format('DD/MM/YYYY') : '-' },
-                { label: 'Effective to', value: effTo ? dayjs(effTo).format('DD/MM/YYYY') : 'Open' },
+                { label: 'Effective from', value: effFrom ? dayjs(effFrom).format('DD-MMM-YYYY') : '-' },
+                { label: 'Effective to', value: effTo ? dayjs(effTo).format('DD-MMM-YYYY') : 'Open' },
               ]}
               totalLabel="Components"
               total={components.length}
@@ -186,7 +187,7 @@ export default function BomPage() {
               rows={recent || []}
               emptyTitle="No BOMs yet"
               emptyHint="Saved documents will be listed here."
-              renderRow={(r) => ({ key: r.BOMID, title: r.PrintBOMNO, subtitle: `Effective from ${dayjs(r.EffFrom).format('DD/MM/YYYY')}` })}
+              renderRow={(r) => ({ key: r.BOMID, title: r.PrintBOMNO, subtitle: `Effective from ${dayjs(r.EffFrom).format('DD-MMM-YYYY')}` })}
             />
           </>
         }

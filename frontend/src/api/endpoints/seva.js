@@ -1,9 +1,11 @@
-import { get, post, del } from '../api'
+import { get, post, put, del } from '../api'
 
 export const listSevas = (params) => get('/sevas', { params })
 export const getSeva = (id) => get(`/sevas/${id}`)
 export const lookupDevotee = (mobile, name) => get('/sevas/devotee', { params: { mobile, name } })
 export const createSeva = (body) => post('/sevas', body)
+export const updateSeva = (id, body) => put(`/sevas/${id}`, body)
+export const nextSevaNo = (sannidhiId) => get('/sevas/next-no', { params: { sannidhi_id: sannidhiId } })
 export const cancelSeva = (id, reason) => post(`/sevas/${id}/cancel`, { reason })
 export const deleteSeva = (id) => del(`/sevas/${id}`)
 export const regularDevotees = (params) => get('/sevas/regular-devotees', { params })

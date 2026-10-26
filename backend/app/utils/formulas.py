@@ -154,7 +154,7 @@ class _Parser:
             self.eat("(")
             if name == "SVTCOLSUM":
                 t = self.eat()
-                if t[0] not in ("FLD", "ID"):
+                if t[0] not in ("FLD", "ID", "NUM"):  # SVTCOLSUM(5): a grid column by its position
                     raise FormulaError("SVTCOLSUM needs a column name")
                 self.eat(")")
                 return sum((_num(x) for x in (_lookup(self.c, t[1]) or [])), Decimal(0))

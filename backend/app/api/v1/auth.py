@@ -10,7 +10,7 @@ from sqlalchemy.engine import Connection
 
 from app.core import audit
 from app.core.db import get_conn, with_transaction
-from app.core.fy import get_active_fy, list_fys
+from app.core.fy import get_active_fy, get_fy_by_id, list_fys
 from app.core.legacy_crypto import decrypt, encrypt
 from app.core.security import CurrentUser, create_token, get_current_user
 
@@ -92,7 +92,7 @@ def login(body: LoginRequest, conn: Connection = Depends(get_conn)):
             password_expired = True
 
     access = create_token(subject=str(row["UserID"]), extra={"type": "access", "fy": fy.id})
-    refresh = create_token(subject=str(row["UserID"]), extra={"type": "refresh"}, days=7)
+    refresh = create_token(subject=str(row["UserID"]), extra={"type": "refresh", "fy": fy.id}, days=7)
 
     with with_transaction() as tconn:
         audit.record(tconn, entity="Login", entity_id=row["UserID"], action="A", user_code=row["UserCode"])
@@ -104,7 +104,7 @@ def login(body: LoginRequest, conn: Connection = Depends(get_conn)):
         user_name=row["UserName"] or row["UserCode"],
         role_id=row["RoleID"] or 0,
         financial_year_id=fy.id,
-        financial_year_label=f"{fy.start_date:%d/%m/%Y} - {fy.end_date:%d/%m/%Y}",
+        financial_year_label=f"{fy.start_date:%d-%b-%Y} - {fy.end_date:%d-%b-%Y}",
         password_expired=password_expired,
     )
 
@@ -120,9 +120,9 @@ def refresh(refresh_token: str, conn: Connection = Depends(get_conn)):
     row = conn.execute(text("SELECT UserCode, UserName, RoleID, Inactive FROM MstUser WHERE UserID = :id"), {"id": user_id}).mappings().first()
     if row is None or (row["Inactive"] or "N").strip().upper() == "Y":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or inactive")
-    fy = get_active_fy(conn)
+    fy = get_fy_by_id(conn, int(payload["fy"])) if payload.get("fy") else get_active_fy(conn)
     access = create_token(subject=str(user_id), extra={"type": "access", "fy": fy.id})
-    new_refresh = create_token(subject=str(user_id), extra={"type": "refresh"}, days=7)
+    new_refresh = create_token(subject=str(user_id), extra={"type": "refresh", "fy": fy.id}, days=7)
     return LoginResponse(
         access_token=access,
         refresh_token=new_refresh,
@@ -130,7 +130,7 @@ def refresh(refresh_token: str, conn: Connection = Depends(get_conn)):
         user_name=row["UserName"] or row["UserCode"],
         role_id=row["RoleID"] or 0,
         financial_year_id=fy.id,
-        financial_year_label=f"{fy.start_date:%d/%m/%Y} - {fy.end_date:%d/%m/%Y}",
+        financial_year_label=f"{fy.start_date:%d-%b-%Y} - {fy.end_date:%d-%b-%Y}",
     )
 
 
@@ -161,6 +161,27 @@ def change_password(body: ChangePasswordRequest, user: CurrentUser = Depends(get
 def me(user: CurrentUser = Depends(get_current_user), conn: Connection = Depends(get_conn)):
     row = conn.execute(text("SELECT * FROM MstUser WHERE UserID = :id"), {"id": user.user_id}).mappings().first()
     return {"user_id": user.user_id, "user_code": user.user_code, "role_id": user.role_id, "user_name": row["UserName"] if row else user.user_code}
+
+
+@router.put("/financial-years/{fy_id}/select", response_model=LoginResponse)
+def select_financial_year(fy_id: int, user: CurrentUser = Depends(get_current_user), conn: Connection = Depends(get_conn)):
+    """
+    Work in another financial year (this user's session only - the company's Active year, which the old EXE also reads,
+    is not touched). Returns fresh tokens carrying the chosen year.
+    """
+    fy = get_fy_by_id(conn, fy_id)
+    row = conn.execute(text("SELECT UserCode, UserName, RoleID FROM MstUser WHERE UserID = :id"), {"id": user.user_id}).mappings().first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    return LoginResponse(
+        access_token=create_token(subject=str(user.user_id), extra={"type": "access", "fy": fy.id}),
+        refresh_token=create_token(subject=str(user.user_id), extra={"type": "refresh", "fy": fy.id}, days=7),
+        user_code=row["UserCode"],
+        user_name=row["UserName"] or row["UserCode"],
+        role_id=row["RoleID"] or 0,
+        financial_year_id=fy.id,
+        financial_year_label=f"{fy.start_date:%d-%b-%Y} - {fy.end_date:%d-%b-%Y}",
+    )
 
 
 @router.get("/financial-years")

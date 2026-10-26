@@ -7,6 +7,11 @@ import { Suspense } from 'react'
 import { Loader, Center } from '@mantine/core'
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
 import { getMenu } from '../api/endpoints/meta'
+import { getDbSettings } from '../api/endpoints/dbSettings'
+import { getFyShort, setSession } from '../api/api'
+import * as authApi from '../api/endpoints/auth'
+import { useQuery } from '@tanstack/react-query'
+import { notifications } from '@mantine/notifications'
 import { useAuth } from '../hooks/useAuth'
 import useAutoFocusFirstField from '../hooks/useAutoFocusFirstField'
 import DevotionalBackdrop from './DevotionalBackdrop'
@@ -34,13 +39,18 @@ const GROUP_ICON = { Transactions: Receipt, Vouchers: Wallet, Masters: Database,
 // same metadata-driven approach as the legacy frmMstGeneral (CLAUDE.md rule 5).
 const CAPTION_ROUTE = {
   'Seva Entry': '/sevas',
+  'Group Seva': '/group-seva',
   'Hall Booking': '/halls',
   'Hall Booking Entry': '/halls/entry',
   'Donation Reciept Entry': '/donations',
   'Payment Voucher': '/vouchers/payment',
   'Expense Entry': '/expenses',
+  'Asset Entry': '/assets',
   'Journal Voucher': '/vouchers/journal',
   'Receipt Voucher': '/vouchers/receipt',
+  'Credit Note': '/vouchers/credit-note',
+  'Debit Note': '/vouchers/debit-note',
+  'Contra Voucher': '/vouchers/contra',
   'Panchanga': '/panchanga',
   'Hall Status': '/halls/status',
   'Purchase Voucher': '/inventory/purchase-voucher',
@@ -186,6 +196,23 @@ export default function AppShellLayout() {
   const [openGroups, setOpenGroups] = useState(() => new Set())
   const { user, logout } = useAuth()
   const confirm = useConfirm()
+  // Which database this session is talking to (shown in the header), and the financial year it works in.
+  const { data: db } = useQuery({ queryKey: ['db-settings-name'], queryFn: getDbSettings, staleTime: 5 * 60_000 })
+  const dbName = db?.db_name || ''
+  const fyBadge = getFyShort()
+  const currentFyId = Number(localStorage.getItem('vtemple_fy_id')) || 0
+  const { data: fyList = [] } = useQuery({ queryKey: ['fy-list'], queryFn: authApi.financialYears, staleTime: 5 * 60_000 })
+  // Work in another financial year: this user only (the company's Active year, shared with the old EXE, is untouched).
+  async function switchFy(id) {
+    if (id === currentFyId) return
+    try {
+      const data = await authApi.selectFinancialYear(id)
+      setSession(data)
+      window.location.reload() // every list is re-read for the new year
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not change the financial year', color: 'red' })
+    }
+  }
   // Cinematic welcome, once per sign-in. LoginPage sets the flag; it is cleared in an effect (not in the
   // state initialiser, which React StrictMode runs twice). Skipped entirely for reduced-motion users.
   const [welcome, setWelcome] = useState(
@@ -382,9 +409,38 @@ export default function AppShellLayout() {
             <ShortcutHelp />
             {user?.user_code?.toUpperCase() === 'ADMIN' && <DesignerRefreshButton />}
             <ThemeToggle />
-            <Badge color="gold" variant="light" size="lg" c="var(--vt-badge-ink)" visibleFrom="lg">
-              FY 2026-27
-            </Badge>
+            {dbName && (
+              <Tooltip label={`Connected database: ${dbName}${db?.db_server ? ` on ${db.db_server}` : ''}`} withArrow>
+                <Badge color="kumkum" variant="light" size="lg" leftSection={<Database size={14} />} visibleFrom="md" style={{ textTransform: 'none' }}>
+                  {dbName}
+                </Badge>
+              </Tooltip>
+            )}
+            {fyBadge && (
+              <Menu shadow="md" width={290} position="bottom-end" withinPortal>
+                <Menu.Target>
+                  <Tooltip label="Financial year - click to change" withArrow>
+                    <Badge component="button" type="button" color="gold" variant="light" size="lg" c="var(--vt-badge-ink)" visibleFrom="lg" rightSection={<ChevronDown size={14} />} style={{ cursor: 'pointer' }} aria-label={`${fyBadge}. Change financial year`}>
+                      {fyBadge}
+                    </Badge>
+                  </Tooltip>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Show data of financial year</Menu.Label>
+                  {[...fyList].reverse().map((f) => (
+                    <Menu.Item
+                      key={f.id}
+                      onClick={() => switchFy(f.id)}
+                      rightSection={f.id === currentFyId ? <Text size="xs" c="dimmed">selected</Text> : null}
+                      fw={f.id === currentFyId ? 700 : 400}
+                    >
+                      FY {f.id}-{String(f.id + 1).slice(2)}
+                      {f.is_active ? <Text span size="xs" c="dimmed"> (company active)</Text> : null}
+                    </Menu.Item>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+            )}
             <Tooltip label={user?.user_name || user?.user_code} withArrow>
               <Avatar visibleFrom="xs" radius="xl" color="kumkum" variant="filled" size={40} aria-label={`Signed in as ${user?.user_name || user?.user_code}`}>
                 {(user?.user_code || '?').slice(0, 2).toUpperCase()}

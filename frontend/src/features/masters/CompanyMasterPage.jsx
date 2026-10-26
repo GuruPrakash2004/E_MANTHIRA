@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ActionIcon, Button, Card, Group, Modal, Skeleton, Stack, Table, Tabs, Text, TextInput, Title, Tooltip } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -37,6 +37,7 @@ function InfoFields({ fields, form, set }) {
           className={f.required ? 'vt-field-required' : undefined}
           label={f.caption || undefined}
           aria-label={f.caption || `Address line ${i}`}
+          placeholder={f.placeholder}
           required={f.required}
           data-autofocus={i === 0 || undefined}
           value={form[f.code] || ''}
@@ -194,15 +195,15 @@ function FinancialYearsTab() {
   const [newFrom, setNewFrom] = useState(null)
   const [newTo, setNewTo] = useState(null)
   const fy = years.find((y) => y.yrFdate === selected)
-  const fmt = (d) => dayjs(d).format('DD/MM/YYYY')
+  const fmt = (d) => dayjs(d).format('DD-MMM-YYYY')
   const fail = (err, fallback) => notifications.show({ message: err?.response?.data?.detail || fallback, color: 'red' })
 
   async function onSetActive() {
     if (!fy || fy.Active === 'Y') return
     if (!(await confirm({ title: 'Change the active financial year?', message: `${fmt(fy.yrFdate)} becomes the active financial year for the whole app.`, confirmLabel: 'Make active', tone: 'warning' }))) return
     try {
-      await companyApi.setActiveFinancialYear(isoDate(fy.yrFdate))
-      notifications.show({ message: 'Active financial year updated', color: 'teal' })
+      await companyApi.setActiveFinancialYear(dayjs(fy.yrFdate).format('YYYY-MM-DD'))
+      notifications.show({ message: 'Active financial year updated. Other users pick it up the next time they sign in.', color: 'teal' })
       refetch()
     } catch (err) { fail(err, 'Could not set active year') }
   }
@@ -210,11 +211,23 @@ function FinancialYearsTab() {
     if (!fy) return
     if (!(await confirm({ title: 'Remove this financial year?', message: `${fmt(fy.yrFdate)} to ${fmt(fy.yrTdate)} will be removed. This cannot be undone.`, confirmLabel: 'Remove' }))) return
     try {
-      await companyApi.removeFinancialYear(isoDate(fy.yrFdate))
+      await companyApi.removeFinancialYear(dayjs(fy.yrFdate).format('YYYY-MM-DD'))
       setSelected(null)
       notifications.show({ message: 'Financial year removed', color: 'teal' })
       refetch()
     } catch (err) { fail(err, 'Could not remove the financial year') }
+  }
+  // Like the desktop app: the next year starts the day after the last one ends and runs for one year.
+  function openCreate() {
+    const last = years.length ? years[years.length - 1] : null
+    const from = last ? dayjs(last.yrTdate).add(1, 'day') : dayjs().month(3).date(1)
+    setNewFrom(from.toDate())
+    setNewTo(from.add(1, 'year').subtract(1, 'day').toDate())
+    setCreateOpen(true)
+  }
+  function onFromChange(d) {
+    setNewFrom(d)
+    if (d) setNewTo(dayjs(d).add(1, 'year').subtract(1, 'day').toDate())
   }
   async function onCreate() {
     if (!newFrom || !newTo) return
@@ -251,15 +264,15 @@ function FinancialYearsTab() {
       <Group justify="flex-end" gap="xs" wrap="wrap">
         <Button variant="light" color="kumkum" leftSection={<CalendarCheck size={16} />} disabled={!fy || fy.Active === 'Y'} onClick={onSetActive}>Set Active Financial Year</Button>
         <Tooltip label="Stock carry forward is not available in the web app yet"><Button variant="default" leftSection={<Database size={16} />} disabled data-disabled>Stock Carry Forward</Button></Tooltip>
-        <Button color="kumkum" leftSection={<CalendarPlus size={16} />} onClick={() => setCreateOpen(true)}>Create Financial Year</Button>
+        <Button color="kumkum" leftSection={<CalendarPlus size={16} />} onClick={openCreate}>Create Financial Year</Button>
         <Button variant="light" color="red" leftSection={<CalendarX size={16} />} disabled={!fy || fy.Active === 'Y'} onClick={onRemove}>Remove Financial Year</Button>
       </Group>
       <Text size="xs" c="dimmed">The active year filters every list and document number in the app. The active year cannot be removed.</Text>
 
       <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title={<Text fw={700} size="lg" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>Create Financial Year</Text>} radius="lg">
         <Stack>
-          <DateInput data-autofocus label="From date" valueFormat="DD/MM/YYYY" value={newFrom} onChange={setNewFrom} />
-          <DateInput label="To date" valueFormat="DD/MM/YYYY" value={newTo} onChange={setNewTo} />
+          <DateInput data-autofocus label="From date" valueFormat="DD-MMM-YYYY" value={newFrom} onChange={onFromChange} />
+          <DateInput label="To date" valueFormat="DD-MMM-YYYY" value={newTo} onChange={setNewTo} />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button color="kumkum" disabled={!newFrom || !newTo} onClick={onCreate}>Create</Button>

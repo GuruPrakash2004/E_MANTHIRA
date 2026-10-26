@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Users, X } from 'lucide-react'
 import * as sevaApi from '../../api/endpoints/seva'
 import EmptyState from '../../components/ui/EmptyState'
-import { formatINR, isoDate } from '../../utils/format'
+import { formatINR } from '../../utils/format'
 
 /**
  * Group Seva (legacy frmTrnSeva "Group Seva" panel): pick a saved group, tick its members, and one Seva Entry is
@@ -14,7 +14,7 @@ import { formatINR, isoDate } from '../../utils/format'
 // Stable fallback: a fresh `[]` default on every render made the [members] effect below re-fire forever.
 const NO_MEMBERS = []
 
-export default function GroupSevaModal({ opened, onClose, form, dates, onDone }) {
+export default function GroupSevaModal({ opened, onClose, fields, docDate, dates, onDone }) {
   const queryClient = useQueryClient()
   const [pick, setPick] = useState(null) // "grpId:sevaId"
   const [ticked, setTicked] = useState(new Set())
@@ -45,24 +45,15 @@ export default function GroupSevaModal({ opened, onClose, form, dates, onDone })
 
   async function onGenerate() {
     if (!days) return notifications.show({ message: 'Please add at least one date before generating', color: 'red' })
-    if (!form.ledger_id || !form.cash_bank_ledger_id) return notifications.show({ message: 'Choose the Ledger and the Cash or Bank Account on the entry first', color: 'red' })
     setSaving(true)
     try {
       const r = await sevaApi.groupSevaGenerate({
         grp_id: grpId,
         seva_id: sevaId,
         member_ids: [...ticked],
-        payment_mode: form.payment_mode,
-        bank_name: form.bank_name || null,
-        cheque_no: form.cheque_no || null,
-        cheque_date: form.cheque_date ? isoDate(form.cheque_date) : null,
-        reference_no: form.reference_no || null,
-        ledger_id: Number(form.ledger_id),
-        cash_bank_ledger_id: Number(form.cash_bank_ledger_id),
-        voucher_type: form.voucher_type,
-        timing_text: form.timing_text || null,
+        fields, // the entry form's Designer fields (payment, ledgers, ...), shared by every generated seva
         dates,
-        doc_date: isoDate(form.doc_date),
+        doc_date: docDate,
       })
       setResult(r.created)
       queryClient.invalidateQueries({ queryKey: ['sevas'] })
@@ -159,7 +150,7 @@ export default function GroupSevaModal({ opened, onClose, form, dates, onDone })
                   </Group>
                 </Group>
                 <Text size="xs" c="dimmed">
-                  Each member gets their own Seva Entry. Payment, ledgers, dates and timing are taken from the entry form behind this window.
+                  Each member gets their own Seva Entry. The payment details and dates are taken from the entry form behind this window.
                 </Text>
               </>
             )}

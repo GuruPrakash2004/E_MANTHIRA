@@ -5,9 +5,9 @@ and `MstCompFinYear` / `UserCurFinYr`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -96,9 +96,21 @@ def get_user_fy(user: CurrentUser = Depends(get_current_user), conn: Connection 
     return get_active_fy(conn)
 
 
+def get_history_fy(days: int | None = Query(None, ge=0, le=36500), fy: FinancialYear = Depends(get_user_fy)) -> FinancialYear:
+    """
+    Dependency for the "recent / history" lists of the entry screens. `days` omitted = the user's financial year (as before);
+    `days=0` = every bill ever entered; `days=N` = the last N days, whichever financial year they fall in. The result is a
+    FinancialYear whose dates are the window, so every list service keeps filtering on `fy.start_date .. fy.end_date`.
+    """
+    if days is None:
+        return fy
+    start = date(1900, 1, 1) if days == 0 else date.today() - timedelta(days=days)
+    return FinancialYear(id=fy.id, start_date=start, end_date=date(2999, 12, 31), is_active=fy.is_active)
+
+
 def assert_date_in_fy(d: date, fy: FinancialYear) -> None:
     if not fy.contains(d):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            f"Doc Date Should be within the financial year ({fy.start_date:%d/%m/%Y} - {fy.end_date:%d/%m/%Y})",
+            f"Doc Date Should be within the financial year ({fy.start_date:%d-%b-%Y} - {fy.end_date:%d-%b-%Y})",
         )

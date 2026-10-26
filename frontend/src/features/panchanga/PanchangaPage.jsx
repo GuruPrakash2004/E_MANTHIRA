@@ -1,7 +1,8 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
-import { ActionIcon, Button, Card, Group, Modal, Skeleton, Stack, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
-import { CalendarDays, ChevronLeft, ChevronRight, FileSpreadsheet, MoonStar } from 'lucide-react'
+import { ActionIcon, Button, Card, Chip, Group, Modal, Skeleton, Stack, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
+import { DatePickerInput } from '../../components/ui/AppDates'
+import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, FileSpreadsheet, MoonStar } from 'lucide-react'
 import { downloadXls } from '../../utils/xls'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -9,6 +10,7 @@ import dayjs from 'dayjs'
 import * as panchangaApi from '../../api/endpoints/panchanga'
 import EmptyState from '../../components/ui/EmptyState'
 import { oleColorToCss } from '../../utils/color'
+import { WEEKDAY_LABELS, datesInRange } from '../../utils/dateRange'
 import { SectionCard } from '../../components/ui/EntryParts'
 import { PanchangaSymbol, symbolFor } from './symbols'
 
@@ -23,6 +25,10 @@ export default function PanchangaPage() {
   const [editDay, setEditDay] = useState(null)
   const [editName, setEditName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkRange, setBulkRange] = useState([null, null])
+  const [bulkDays, setBulkDays] = useState([])
+  const [bulkName, setBulkName] = useState('')
 
   const from = month.startOf('month')
   const to = month.endOf('month')
@@ -70,6 +76,25 @@ export default function PanchangaPage() {
     }
   }
 
+  const bulkDates = datesInRange(bulkRange[0], bulkRange[1], bulkDays, 400)
+
+  async function onSaveBulk() {
+    if (!bulkDates.length) return notifications.show({ message: 'No date in that range falls on the chosen days', color: 'red' })
+    if (!bulkName.trim() && !(await confirm({ title: 'Clear these days?', message: `The event name will be removed from ${bulkDates.length} days.`, confirmLabel: 'Clear' }))) return
+    setSaving(true)
+    try {
+      await panchangaApi.setPanchangaBulk(bulkDates, bulkName.trim())
+      notifications.show({ message: `${bulkDates.length} days updated`, color: 'teal' })
+      setBulkOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['panchanga'] })
+      refetch()
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Save failed', color: 'red' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <>
     <Stack gap="lg" className="vt-rise">
@@ -93,8 +118,11 @@ export default function PanchangaPage() {
           <ActionIcon variant="light" color="kumkum" size={40} aria-label="Next month" onClick={() => setMonth((m) => m.add(1, 'month'))}>
             <ChevronRight size={18} />
           </ActionIcon>
-          <Button variant="default" size="sm" leftSection={<FileSpreadsheet size={16} />} disabled={events.length === 0} onClick={() => downloadXls(`Panchanga ${month.format('MMM YYYY')}.xls`, events, [{ label: 'Date', value: (e) => dayjs(e.date).format('DD/MM/YYYY') }, { label: 'Day', value: (e) => dayjs(e.date).format('dddd') }, { label: 'Event Name', key: 'name' }])}>
+          <Button variant="default" size="sm" leftSection={<FileSpreadsheet size={16} />} disabled={events.length === 0} onClick={() => downloadXls(`Panchanga ${month.format('MMM YYYY')}.xls`, events, [{ label: 'Date', value: (e) => dayjs(e.date).format('DD-MMM-YYYY') }, { label: 'Day', value: (e) => dayjs(e.date).format('dddd') }, { label: 'Event Name', key: 'name' }])}>
             Export to Excel
+          </Button>
+          <Button variant="default" size="sm" leftSection={<CalendarRange size={16} />} onClick={() => setBulkOpen(true)}>
+            Set many days
           </Button>
           <Button variant="default" size="sm" disabled={isThisMonth} onClick={() => setMonth(dayjs().startOf('month'))}>
             This month
@@ -197,7 +225,7 @@ export default function PanchangaPage() {
                   {color && <span aria-hidden className="vt-pg-dot" style={{ background: color }} />}
                   <span className="vt-num" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <Text fw={600} size="sm">
-                      {dayjs(e.date).format('DD/MM/YYYY')}
+                      {dayjs(e.date).format('DD-MMM-YYYY')}
                     </Text>
                     <Text size="xs" c="dimmed">
                       {dayjs(e.date).format('dddd')}
@@ -234,6 +262,29 @@ export default function PanchangaPage() {
             <Button color="kumkum" loading={saving} onClick={onSaveDay}>
               {editName.trim() ? 'Save' : 'Clear'}
             </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal opened={bulkOpen} onClose={() => setBulkOpen(false)} title="Set many days at once" radius="lg">
+        <Stack>
+          <DatePickerInput type="range" label="From - To" valueFormat="DD-MMM-YYYY" value={bulkRange} onChange={setBulkRange} allowSingleDateInRange data-autofocus />
+          <div>
+            <Text size="sm" fw={500} mb={4}>Only on these days</Text>
+            <Chip.Group multiple value={bulkDays.map(String)} onChange={(v) => setBulkDays(v.map(Number))}>
+              <Group gap={6}>
+                {WEEKDAY_LABELS.map((label, i) => (
+                  <Chip key={label} value={String(i)} size="xs" color="kumkum" variant="light">{label}</Chip>
+                ))}
+              </Group>
+            </Chip.Group>
+            <Text size="xs" c="dimmed" mt={4}>Leave all unticked for every day in the range (all Mondays, all Tuesdays ... when you tick them).</Text>
+          </div>
+          <TextInput label="Event / Day Name" placeholder="e.g. Amavasya, Poornima" leftSection={<MoonStar size={16} />} description="Leave blank to clear the event from these days" value={bulkName} onChange={(e) => setBulkName(e.currentTarget.value)} />
+          <Text size="sm" c="dimmed">{bulkDates.length ? `${bulkDates.length} day${bulkDates.length === 1 ? '' : 's'} will be updated${bulkDates.length >= 400 ? ' (limit reached)' : ''}` : 'Pick a range to see how many days are affected'}</Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setBulkOpen(false)}>Cancel</Button>
+            <Button color="kumkum" loading={saving} disabled={!bulkDates.length} onClick={onSaveBulk}>Apply</Button>
           </Group>
         </Stack>
       </Modal>

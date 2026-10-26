@@ -21,6 +21,7 @@ export const api = axios.create({
 const TOKEN_KEY = 'vtemple_access_token'
 const REFRESH_KEY = 'vtemple_refresh_token'
 const FY_KEY = 'vtemple_fy_id'
+const FY_LABEL_KEY = 'vtemple_fy_label'
 
 export function getAccessToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -28,15 +29,26 @@ export function getAccessToken() {
 export function getRefreshToken() {
   return localStorage.getItem(REFRESH_KEY)
 }
-export function setSession({ access_token, refresh_token, financial_year_id }) {
+export function setSession({ access_token, refresh_token, financial_year_id, financial_year_label }) {
   if (access_token) localStorage.setItem(TOKEN_KEY, access_token)
   if (refresh_token) localStorage.setItem(REFRESH_KEY, refresh_token)
   if (financial_year_id) localStorage.setItem(FY_KEY, String(financial_year_id))
+  if (financial_year_label) localStorage.setItem(FY_LABEL_KEY, financial_year_label)
+}
+/** "DD-MMM-YYYY - DD-MMM-YYYY" of the year this session works in (from sign-in), or ''. */
+export function getFyLabel() {
+  return localStorage.getItem(FY_LABEL_KEY) || ''
+}
+/** "FY 2026-27" of the year this session works in, or ''. */
+export function getFyShort() {
+  const years = getFyLabel().match(/\d{4}/g)
+  return years && years.length >= 2 ? `FY ${years[0]}-${years[1].slice(2)}` : ''
 }
 export function clearSession() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(REFRESH_KEY)
   localStorage.removeItem(FY_KEY)
+  localStorage.removeItem(FY_LABEL_KEY)
 }
 
 api.interceptors.request.use((config) => {

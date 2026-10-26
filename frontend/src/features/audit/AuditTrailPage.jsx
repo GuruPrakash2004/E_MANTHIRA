@@ -1,7 +1,7 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
 import { Badge, Button, Card, Grid, Group, Select, Stack, Table, Text, Title } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery } from '@tanstack/react-query'
@@ -49,7 +49,7 @@ export default function AuditTrailPage() {
 
   const confirm = useConfirm()
   async function onPurge() {
-    if (!(await confirm({ title: 'Delete old audit entries?', message: `Every audit log entry before ${dayjs(fromDate).format('DD/MM/YYYY')} will be deleted. This cannot be undone.`, confirmLabel: 'Delete' }))) return
+    if (!(await confirm({ title: 'Delete old audit entries?', message: `Every audit log entry before ${dayjs(fromDate).format('DD-MMM-YYYY')} will be deleted. This cannot be undone.`, confirmLabel: 'Delete' }))) return
     try {
       const r = await auditApi.purgeAuditLog(dayjs(fromDate).format('YYYY-MM-DD'))
       notifications.show({ message: `Deleted ${r.deleted} entries`, color: 'teal' })
@@ -76,10 +76,10 @@ export default function AuditTrailPage() {
       <Card withBorder radius="lg" p="lg">
         <Grid align="flex-end">
           <Grid.Col span={{ base: 6, md: 2 }}>
-            <DateInput label="From" value={fromDate} onChange={setFromDate} valueFormat="DD/MM/YYYY" />
+            <DateInput label="From" value={fromDate} onChange={setFromDate} valueFormat="DD-MMM-YYYY" />
           </Grid.Col>
           <Grid.Col span={{ base: 6, md: 2 }}>
-            <DateInput label="To" value={toDate} onChange={setToDate} valueFormat="DD/MM/YYYY" />
+            <DateInput label="To" value={toDate} onChange={setToDate} valueFormat="DD-MMM-YYYY" />
           </Grid.Col>
           <Grid.Col span={{ base: 6, md: 2 }}>
             <Select label="Entity" data={filters?.entities || []} value={entity} onChange={setEntity} clearable searchable />
@@ -140,7 +140,7 @@ export default function AuditTrailPage() {
               )}
               {(rows || []).map((r) => (
                 <Table.Tr key={r.id}>
-                  <Table.Td>{dayjs(r.at).format('DD/MM/YYYY HH:mm:ss')}</Table.Td>
+                  <Table.Td>{dayjs(r.at).format('DD-MMM-YYYY HH:mm:ss')}</Table.Td>
                   <Table.Td>{r.entity}</Table.Td>
                   <Table.Td>
                     <Badge size="sm" color={ACTION_COLORS[r.action] || 'gray'} variant="light">

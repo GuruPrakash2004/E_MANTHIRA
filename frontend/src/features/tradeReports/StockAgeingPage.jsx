@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button, Card, Grid, Group, MultiSelect, Stack, TextInput } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { FileSpreadsheet, X } from 'lucide-react'
@@ -50,7 +50,7 @@ export default function StockAgeingPage() {
       <Card withBorder p="lg">
         <Grid align="flex-end">
           <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-            <DateInput label="As On" value={asOn} onChange={setAsOn} valueFormat="DD/MM/YYYY" />
+            <DateInput label="As On" value={asOn} onChange={setAsOn} valueFormat="DD-MMM-YYYY" />
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
             <MultiSelect label="Selected Group" placeholder={groupIds.length ? undefined : 'All item groups'} data={groupOptions} value={groupIds} onChange={setGroupIds} searchable clearable />

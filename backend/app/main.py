@@ -1,20 +1,26 @@
 from __future__ import annotations
 
+import logging
 import mimetypes
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.gzip_mw import SelectiveGZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy.exc import ProgrammingError
 
-from app.api.v1 import doc_actions, mail_settings, master_extras, audit, auth, bulk_update, company, db_settings, display, donations, expense, hall_booking_entry, halls, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, exports, trading_reports, users, utilities, vouchers, welcome
+from app.api.v1 import doc_actions, mail_settings, master_extras, audit, auth, bulk_update, company, db_settings, display, donations, expense, hall_booking_entry, gen_vouchers, halls, header_detail_docs, header_docs, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, exports, trading_reports, users, utilities, vouchers, welcome
 from app.core.config import get_settings
-from app.core.db import get_engine, healthcheck, with_transaction
+from app.core.db import DatabaseUnavailable, get_engine, healthcheck, with_transaction
 from app.core.audit import ensure_schema
 from app.print import rpt_bridge_manager
 from app.print.print_prefs import ensure_schema as ensure_print_prefs_schema
+
+
+log = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
@@ -32,6 +38,7 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         print(f"[startup] DB not reachable yet ({exc}) — server is still up; fix via Database Settings.")
     rpt_bridge_manager.start()  # real Crystal bridge, when RptBridge.exe exists (Windows); otherwise the configured bridge URL
+    rpt_bridge_manager.warm_up()
     try:
         yield
     finally:
@@ -41,6 +48,41 @@ async def lifespan(app: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title="vTemple Web API", version="0.1.0", lifespan=lifespan)
+
+@app.exception_handler(DatabaseUnavailable)
+async def _db_unavailable(_request, exc: DatabaseUnavailable):
+    # Clean 503 instead of a traceback-laden 500; fix the target via Database Settings.
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database unreachable. Check the server/network or the Database Settings.", "code": "DB_UNAVAILABLE"},
+    )
+
+
+@app.exception_handler(ProgrammingError)
+async def _missing_object(_request, exc: ProgrammingError):
+    # "Invalid object name 'X'" (SQL Server 208 / MySQL 1146): this temple's database simply has no such table
+    # (e.g. Hall Booking's TrnHdrHB) — say so instead of a 500 traceback. Any other SQL error stays a 500.
+    msg = str(getattr(exc, "orig", exc))
+    m = re.search(r"Invalid object name '([^']+)'|Table '[^']*\.([^']+)' doesn't exist", msg)
+    if not m:
+        raise exc
+    table = m.group(1) or m.group(2)
+    return JSONResponse(status_code=404, content={"detail": f"Not available in this database (no {table} table).", "code": "NO_SUCH_TABLE"})
+
+
+@app.exception_handler(Exception)
+async def _unhandled(request: Request, exc: Exception):
+    # Any uncaught error: log the full traceback on the server and tell the screen WHAT failed. This handler sits outside
+    # the CORS middleware, so without the Origin echo below the browser reports a misleading "blocked by CORS" instead.
+    log.error("Unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
+    root = getattr(exc, "orig", None) or exc  # DBAPI message only: SQLAlchemy's own text repeats the SQL and parameters
+    detail = f"{type(root).__name__}: {root}".strip()[:600]
+    headers = {}
+    origin = request.headers.get("origin")
+    if origin:
+        headers = {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true", "Vary": "Origin"}
+    return JSONResponse(status_code=500, content={"detail": f"Server error - {detail}", "code": "SERVER_ERROR"}, headers=headers)
+
 
 app.add_middleware(SelectiveGZipMiddleware, minimum_size=1024)
 app.add_middleware(
@@ -63,6 +105,9 @@ app.include_router(halls.router, prefix=settings.api_prefix)
 app.include_router(hall_booking_entry.router, prefix=settings.api_prefix)
 app.include_router(donations.router, prefix=settings.api_prefix)
 app.include_router(vouchers.router, prefix=settings.api_prefix)
+app.include_router(gen_vouchers.router, prefix=settings.api_prefix)
+app.include_router(header_docs.router, prefix=settings.api_prefix)
+app.include_router(header_detail_docs.router, prefix=settings.api_prefix)
 app.include_router(expense.router, prefix=settings.api_prefix)
 app.include_router(trading_reports.router, prefix=settings.api_prefix)
 app.include_router(print_router.router, prefix=settings.api_prefix)

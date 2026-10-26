@@ -27,9 +27,9 @@ def _cell(v):
     if isinstance(v, Decimal):
         return float(v)
     if isinstance(v, datetime):
-        return v.strftime("%d/%m/%Y %H:%M") if (v.hour or v.minute) else v.strftime("%d/%m/%Y")
+        return v.strftime("%d-%b-%Y %H:%M") if (v.hour or v.minute) else v.strftime("%d-%b-%Y")
     if isinstance(v, date):
-        return v.strftime("%d/%m/%Y")
+        return v.strftime("%d-%b-%Y")
     if isinstance(v, (int, float)):
         return v
     return str(v)[:32767]

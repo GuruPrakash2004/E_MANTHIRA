@@ -166,6 +166,18 @@ def health() -> dict:
         return {"ok": False, "reason": _raise(exc).detail}
 
 
+def fonts_of(rpt_path: str) -> dict:
+    """GET /fonts - every font the report uses and whether this machine has it: {fonts: [{font, objects, installed}]}."""
+    try:
+        resp = _client().get(f"{_base_url()}/fonts", params={"rpt": rpt_path}, headers=_headers(), timeout=_timeout())
+        resp.raise_for_status()
+        return resp.json()
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise _raise(exc)
+
+
 @dataclass(frozen=True)
 class Rendered:
     """The bridge's PDF plus what the .rpt itself says about its paper (Named = A4 / Letter ..., Custom = roll size)."""

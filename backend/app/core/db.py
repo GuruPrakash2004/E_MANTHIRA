@@ -9,6 +9,7 @@ Rules (see /CLAUDE.md):
 """
 from __future__ import annotations
 
+import socket
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -21,25 +22,50 @@ _engine: Engine | None = None
 _engine_driver: str | None = None  # which candidate actually connected — for diagnostics/display only
 
 
+_LOGIN_TIMEOUT_ARGS = {
+    "pyodbc": {"timeout": 8},  # SQL_ATTR_LOGIN_TIMEOUT, seconds
+    "pymssql": {"login_timeout": 8, "timeout": 30},
+}
+
+
+class DatabaseUnavailable(RuntimeError):
+    """No candidate driver could reach the configured database (mapped to HTTP 503 in main.py)."""
+
+
 def _connect_with_fallback(settings, **engine_kwargs) -> tuple[Engine, str]:
     """Tries each (driver, url) from `sqlalchemy_url_candidates` in order,
     keeping the first that can actually run a query — pyodbc first, then
     pymssql (see config.py's docstring for why). Raises the last error if
     none of them work."""
     errors: list[str] = []
+    if not settings.is_mysql and settings.db_server and "\\" not in settings.db_server:
+        # Fast reachability check: the drivers retry other protocols (named pipes) for tens of seconds.
+        try:
+            socket.create_connection((settings.db_server, settings.db_port or 1433), timeout=4).close()
+        except OSError as exc:
+            raise DatabaseUnavailable(
+                f"Cannot reach {settings.db_server}:{settings.db_port or 1433} ({exc.strerror or exc}). "
+                "Check the server name/IP, port and that SQL Server allows TCP/IP connections."
+            ) from exc
     for driver_name, url_or_factory in _candidates(settings):
         engine: Engine | None = None
         try:
             url = url_or_factory() if callable(url_or_factory) else url_or_factory
-            engine = create_engine(url, **engine_kwargs)
+            # Bound the login wait so an unreachable server fails in seconds, not minutes.
+            connect_args = _LOGIN_TIMEOUT_ARGS.get(driver_name, {})
+            engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             return engine, driver_name
         except Exception as exc:  # noqa: BLE001 — try the next candidate
-            errors.append(f"{driver_name}: {str(exc).splitlines()[0][:200]}")
+            msg = str(exc).splitlines()[0]
+            errors.append(f"{driver_name}: {msg[:200]}")
             if engine is not None:
                 engine.dispose()
-    raise RuntimeError(" | ".join(errors) or "no database driver available")
+            # The server answered and rejected the login / database: a second driver can't change that.
+            if driver_name == "pyodbc" and any(code in msg for code in ("28000", "42000", "(18456)", "(4060)")):
+                break
+    raise DatabaseUnavailable(" | ".join(errors) or "no database driver available")
 
 
 def _candidates(settings):

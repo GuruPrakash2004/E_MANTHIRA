@@ -1,8 +1,8 @@
-import { memo, useMemo, useState } from 'react'
+import { memo } from 'react'
 import { Select } from '@mantine/core'
-import { useDebouncedValue } from '@mantine/hooks'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import * as metaApi from '../api/endpoints/meta'
+import useSelectCommit from '../hooks/useSelectCommit'
 
 /**
  * A name-based dropdown for any foreign-key field, sourced live from the
@@ -12,20 +12,24 @@ import * as metaApi from '../api/endpoints/meta'
  * `ledgerPicker` for the generic MstLed picker used by voucher screens
  * whose Dr/Cr lines aren't tied to one specific document field.
  */
-function LookupSelect({ docId, field, ledgerPicker, label, ariaLabel, required, value, onChange, disabled, error }) {
-  const [typed, setTyped] = useState('')
-  // One request per pause in typing, not one per keystroke.
-  const [search] = useDebouncedValue(typed, 250)
-
-  const { data, isLoading } = useQuery({
-    queryKey: ledgerPicker ? ['lookup-ledgers', search] : ['lookup', docId, field, search],
-    queryFn: () => (ledgerPicker ? metaApi.getLedgers(search) : metaApi.getLookup(docId, field, search)),
-    enabled: ledgerPicker ? true : Boolean(docId && field),
-    placeholderData: keepPreviousData,
-    staleTime: search ? 30_000 : 5 * 60_000, // the unfiltered list rarely changes
+function LookupSelect({ docId, field, ledgerPicker, label, ariaLabel, required, value, onChange, disabled, error, ctx, onBlur, allowedValues }) {
+  const { options, notFound, selectProps, onBlurCheck } = useSelectCommit({
+    selectedValue: value,
+    commit: (v) => onChange(Number(v)),
+    // One request per pause in typing (the hook debounces), not one per keystroke.
+    useOptions: (search) => {
+      const { data, isLoading } = useQuery({
+        queryKey: ledgerPicker ? ['lookup-ledgers', search] : ['lookup', docId, field, search, ctx || null],
+        queryFn: () => (ledgerPicker ? metaApi.getLedgers(search) : metaApi.getLookup(docId, field, search, ctx)),
+        enabled: ledgerPicker ? true : Boolean(docId && field),
+        placeholderData: keepPreviousData,
+        staleTime: 30_000, // short: a master saved elsewhere (e.g. a new Rashi) must show up quickly
+      })
+      // `allowedValues` = the ids this user chose to work with (e.g. their Sannidhis); the value already on the form always stays selectable
+      const keep = (o) => !allowedValues?.length || allowedValues.includes(Number(o.value)) || String(o.value) === String(value)
+      return { data, loading: isLoading, options: (data || []).filter(keep).map((o) => ({ value: String(o.value), label: o.label })) }
+    },
   })
-
-  const options = useMemo(() => (data || []).map((o) => ({ value: String(o.value), label: o.label })), [data])
 
   return (
     <Select
@@ -33,17 +37,20 @@ function LookupSelect({ docId, field, ledgerPicker, label, ariaLabel, required, 
       aria-label={ariaLabel}
       required={required}
       disabled={disabled}
-      error={error}
+      error={error || (notFound ? 'Not found' : undefined)}
+      onBlur={(e) => {
+        onBlurCheck(e)
+        onBlur?.(e)
+      }}
       searchable
       clearable
       clearButtonProps={{ 'aria-label': `Clear ${label || ariaLabel || 'selection'}` }}
       data={options}
       value={value !== '' && value != null ? String(value) : null}
       onChange={(v) => onChange(v === null ? '' : Number(v))}
-      onSearchChange={setTyped}
-      nothingFoundMessage={isLoading ? 'Loading...' : 'No matches'}
       placeholder="Search..."
       comboboxProps={{ withinPortal: true }}
+      {...selectProps}
     />
   )
 }

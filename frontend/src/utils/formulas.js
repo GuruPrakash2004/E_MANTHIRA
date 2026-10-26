@@ -160,7 +160,7 @@ class Parser {
       this.eat("(");
       if (name === "SVTCOLSUM") {
         const t = this.eat();
-        if (t[0] !== "FLD" && t[0] !== "ID") throw new FormulaError("SVTCOLSUM needs a column name");
+        if (t[0] !== "FLD" && t[0] !== "ID" && t[0] !== "NUM") throw new FormulaError("SVTCOLSUM needs a column name"); // SVTCOLSUM(5): a grid column by its position
         this.eat(")");
         const list = lookup(this.c, t[1]) || [];
         return list.reduce((s, x) => add(s, toRat(x)), ZERO);

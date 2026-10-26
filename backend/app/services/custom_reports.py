@@ -150,7 +150,8 @@ def run_report(conn: Connection, *, crid: int, date_filters: list[dict] | None =
             where.append(f"({t['TblLinkCond']})")
     cond = (hdr["CondText"] or "").strip()
     if cond:
-        where.append(f"({re.sub(r'^\s*and\s+', '', cond, flags=re.I)})")
+        cond = re.sub(r"^\s*and\s+", "", cond, flags=re.I)
+        where.append(f"({cond})")
 
     params: dict = {}
     period_text, filter_text = "", ""

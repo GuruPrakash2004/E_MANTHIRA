@@ -118,6 +118,65 @@ def start() -> None:
     print(f"[print] real Crystal bridge starting on 127.0.0.1:{port}")
 
 
+_KEEP_WARM_SECONDS = 240  # the Crystal engine and its DB logon go cold after a few idle minutes (first print 8s+ instead of ~1s)
+
+
+def _reports_to_warm() -> list[str]:
+    """The .rpt files the print options actually point at (most-used documents first), else any report in the folder."""
+    from sqlalchemy import text
+
+    from app.core.db import get_engine
+    from app.print.rpt_registry import find_rpt, normalize_rpt_name
+
+    names: list[str] = []
+    try:
+        with get_engine().connect() as conn:
+            rows = conn.execute(text("SELECT DISTINCT CrptFileName FROM UtlOption WHERE DocID IN (1263, 1261, 1281, 1280, 1224, 1248)")).all()
+        for (raw,) in rows:
+            found = find_rpt(normalize_rpt_name(raw))
+            if found and found not in names:
+                names.append(found)
+    except Exception as exc:  # noqa: BLE001
+        log.info("print warm-up: could not read UtlOption (%s)", exc)
+    if not names:
+        names = [str(p) for p in sorted(Path(_rpt_dir()).glob("*.rpt"))[:1]]
+    return names[:8]
+
+
+def _warm_once() -> None:
+    for rpt in _reports_to_warm():
+        if _stop.is_set():
+            return
+        try:
+            t0 = time.monotonic()
+            rpt_bridge.fonts_of(rpt)  # opens the report + logs on to the DB, no PDF export
+            log.info("print bridge warmed with %s in %.1fs", Path(rpt).name, time.monotonic() - t0)
+        except Exception as exc:  # noqa: BLE001
+            log.info("print bridge warm-up skipped for %s: %s", Path(rpt).name, exc)
+
+
+def _warm_up() -> None:
+    """Wait for the bridge, open the reports people print so the Crystal runtime and DB logon are hot before the first
+    user clicks Print, then repeat every few minutes so it never goes cold. Best effort: failures are only logged."""
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline and not _stop.is_set():
+        if rpt_bridge.health().get("ok"):
+            break
+        time.sleep(2)
+    else:
+        return
+    while not _stop.is_set():
+        _warm_once()
+        print("[print] bridge warmed up")
+        if _stop.wait(_KEEP_WARM_SECONDS):
+            return
+
+
+def warm_up() -> None:
+    """Fire-and-forget; never delays or fails backend startup."""
+    threading.Thread(target=_warm_up, name="rpt-bridge-warmup", daemon=True).start()
+
+
 def stop() -> None:
     """Call at backend shutdown: stop supervising and end the child process."""
     global _thread

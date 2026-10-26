@@ -10,7 +10,7 @@ matching!" balance rule the legacy form enforces.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from fastapi import HTTPException, status
@@ -21,7 +21,7 @@ from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, update_row
 from app.meta.numbering import next_doc_no
-from app.services import ledger
+from app.services import ledger, voucher_fields
 from app.utils.amount_in_words import amount_in_words
 
 DOC_ID = 1254
@@ -38,25 +38,13 @@ class VoucherLine:
 
 @dataclass
 class JournalVoucherInput:
+    """The voucher's Header / Footer Designer fields keyed by FldCode (VCHTYP, NARR, cheque / card details ...)
+    plus the Dr/Cr account-head lines."""
+
     prefix: str
     voucher_date: date
-    vch_type: str  # Cash|Bank|Card
-    narration: str
+    fields: dict
     lines: list[VoucherLine]
-    # UtlDocDsgrFlds (DocID 1254): all hidden unless VCHTYP=Bank (cheque_dd_no,
-    # cheque_date, cheque_dd_amt [CHQAMT is varchar in the real schema, not
-    # numeric — kept as str], cheque_no, bank_id [BANK is an int FK to
-    # MstBANK, confirmed via INFORMATION_SCHEMA/FldCmbTblName]) or VCHTYP=Card
-    # (card_no, card_amt) — the legacy frmTrnVch's bank/card detail fields,
-    # previously never collected (hardcoded to blank/zero placeholders).
-    cheque_dd_no: str | None = None
-    cheque_date: date | None = None
-    cheque_dd_amt: str | None = None
-    cheque_no: str | None = None
-    bank_id: int | None = None
-    card_no: str | None = None
-    card_amt: float | None = None
-    extra_fields: dict = field(default_factory=dict)
 
 
 def validate(data: JournalVoucherInput, fy: FinancialYear) -> None:
@@ -69,12 +57,12 @@ def validate(data: JournalVoucherInput, fy: FinancialYear) -> None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
     if abs(total_dr - total_cr) > 0.005:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Debit and Credit totals are NOT matching!")
-    if not (data.narration or "").strip():
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Narration should not be blank!")
 
 
 def create(conn: Connection, *, data: JournalVoucherInput, fy: FinancialYear, user_code: str) -> dict:
     validate(data, fy)
+    header, values = voucher_fields.header_columns(conn, DOC_ID, TABLE, data.fields)
+    narration = str(values.get("NARR") or "")
 
     doc_no = next_doc_no(
         conn,
@@ -100,19 +88,10 @@ def create(conn: Connection, *, data: JournalVoucherInput, fy: FinancialYear, us
             "AddedOn": datetime.now(),
             "Authorised": "Y",
             "Cancelled": "N",
-            "CHQDDNO": data.cheque_dd_no or " ",
-            "CHQDT": data.cheque_date,
-            "CHQAMT": data.cheque_dd_amt or " ",
-            "CARDNO": data.card_no or "0",
-            "CRDAMT": data.card_amt or 0,
-            "CHQNO": data.cheque_no or " ",
-            "BANK": data.bank_id or 0,
             "AMTINWORDS": amount_in_words(total_dr, "Rupees", "Paise"),
-            "NARR": data.narration,
-            "VCHTYP": data.vch_type,
             "TOTDR": total_dr,
             "TOTCR": total_cr,
-            **data.extra_fields,
+            **header,
         },
         returning="JNRVCHID",
     )
@@ -141,7 +120,7 @@ def create(conn: Connection, *, data: JournalVoucherInput, fy: FinancialYear, us
         trn_no=doc_no,
         trn_date=data.voucher_date,
         due_date=data.voucher_date,
-        narration=data.narration,
+        narration=narration,
         lines=[
             ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
             for l in data.lines

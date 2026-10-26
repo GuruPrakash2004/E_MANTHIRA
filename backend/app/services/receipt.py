@@ -18,7 +18,7 @@ from sqlalchemy.engine import Connection
 from app.core.fy import FinancialYear
 from app.legacy.tables import insert_row, update_row
 from app.meta.numbering import next_receipt_no
-from app.services import ledger
+from app.services import ledger, voucher_fields
 from app.utils.amount_in_words import amount_in_words
 
 
@@ -41,22 +41,9 @@ def create_receipt_voucher(
     fy: FinancialYear,
     prefix: str,
     receipt_date: date,
-    vch_type: str,
-    narration: str,
+    fields: dict,  # Header / Footer Designer fields of DocID 1248 keyed by FldCode (VCHTYP, NARR, cheque / card ...)
     lines: list[VoucherLine],
     user_code: str = "",
-    # UtlDocDsgrFlds (DocID 1248): same Bank/Card detail fields as Payment
-    # Voucher (DocID 1224) — see payment.py's PaymentVoucherInput for the
-    # real-column-type notes (CHQAMT is varchar, BANK is an int FK to
-    # MstBANK). Previously hardcoded to blank/zero placeholders.
-    cheque_dd_no: str | None = None,
-    cheque_date: date | None = None,
-    cheque_dd_amt: str | None = None,
-    cheque_no: str | None = None,
-    bank_id: int | None = None,
-    card_no: str | None = None,
-    card_amt: float | None = None,
-    extra_fields: dict | None = None,
 ) -> ReceiptResult:
     """
     Standalone Receipt Voucher screen (DocID 1248) — a full Dr/Cr GRID like
@@ -75,8 +62,8 @@ def create_receipt_voucher(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
     if abs(total_dr - total_cr) > 0.005:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Debit and Credit totals are NOT matching!")
-    if not (narration or "").strip():
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Narration should not be blank!")
+    header, values = voucher_fields.header_columns(conn, 1248, "TrnHdrRCPTVCH", fields)
+    narration = str(values.get("NARR") or "")
 
     from datetime import datetime as _datetime
 
@@ -96,19 +83,10 @@ def create_receipt_voucher(
             "AddedOn": _datetime.now(),
             "Authorised": "Y",
             "Cancelled": "N",
-            "CHQDDNO": cheque_dd_no or " ",
-            "CHQDT": cheque_date,
-            "CHQAMT": cheque_dd_amt or " ",
-            "CARDNO": card_no or "0",
-            "CRDAMT": card_amt or 0,
-            "CHQNO": cheque_no or " ",
-            "BANK": bank_id or 0,
             "AMTINWORDS": amount_in_words(total_cr, "Rupees", "Paise"),
-            "NARR": narration,
-            "VCHTYP": vch_type,
             "TOTDR": total_dr,
             "TOTCR": total_cr,
-            **(extra_fields or {}),
+            **header,
         },
         returning="RCPTVCHID",
     )
@@ -161,6 +139,11 @@ def create_receipt(
     rcpt_type: str | None = None,  # 'ADV' | 'Partial' | 'Final' (hall booking payments)
     user_code: str = "",
 ) -> ReceiptResult:
+    if int(cr_led_id) == int(dr_led_id):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "The Ledger Name (income) and the Cash or Bank Account are the same ledger - choose a different Cash or Bank Account.",
+        )
     receipt_no = next_receipt_no(
         conn, prefix=prefix, fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat()
     )

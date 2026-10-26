@@ -5,7 +5,7 @@ import CustomReportsPanel from './CustomReportsPanel'
 import SubsidiaryCatalogPanel from './SubsidiaryCatalogPanel'
 import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, Checkbox, Grid, Group, Select, SimpleGrid, Skeleton, Stack, Table, Tabs, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { BookOpen, Building, Coins, CalendarCheck, ClipboardList, Download, FileSearch, HandCoins, LayoutList, Play, SlidersHorizontal, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import dayjs from 'dayjs'
@@ -46,15 +46,15 @@ const PRESETS = [
   { label: 'Last month', range: () => [dayjs().subtract(1, 'month').startOf('month'), dayjs().subtract(1, 'month').endOf('month')] },
 ]
 
-/** From/To dates plus one-tap presets. Dates show as DD/MM/YYYY. */
+/** From/To dates plus one-tap presets. Dates show as DD-MMM-YYYY. */
 function DateRange({ from, to, onFrom, onTo }) {
   return (
     <>
       <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-        <DateInput label="From Date" valueFormat="DD/MM/YYYY" value={from} onChange={onFrom} />
+        <DateInput label="From Date" valueFormat="DD-MMM-YYYY" value={from} onChange={onFrom} />
       </Grid.Col>
       <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-        <DateInput label="To Date" valueFormat="DD/MM/YYYY" value={to} onChange={onTo} />
+        <DateInput label="To Date" valueFormat="DD-MMM-YYYY" value={to} onChange={onTo} />
       </Grid.Col>
       <Grid.Col span={{ base: 12, md: 6 }} style={{ display: 'flex', alignItems: 'flex-end' }}>
         <Group gap={6}>
@@ -207,7 +207,7 @@ function ReportPanel({ runFn, columns, filename, withSevaFilters = true, extraSu
       ) : (
         <>
           <SimpleGrid cols={{ base: 1, xs: result.total_amount != null ? 2 : 1 }}>
-            <StatCard label="Records" value={result.total_count} icon={ClipboardList} footer={`${dayjs(fromDate).format('DD/MM/YYYY')} to ${dayjs(toDate).format('DD/MM/YYYY')}`} />
+            <StatCard label="Records" value={result.total_count} icon={ClipboardList} footer={`${dayjs(fromDate).format('DD-MMM-YYYY')} to ${dayjs(toDate).format('DD-MMM-YYYY')}`} />
             {result.total_amount != null && <StatCard label="Total amount" value={money(result.total_amount)} icon={Coins} tone="dark" footer="For the records shown" />}
           </SimpleGrid>
           {extraSummary?.(result)}
@@ -220,7 +220,7 @@ function ReportPanel({ runFn, columns, filename, withSevaFilters = true, extraSu
 
 const collectionColumns = [
   { key: 'SEVANO', label: 'Seva No' },
-  { key: 'SEVADate', label: 'Date', value: (r) => dayjs(r.SEVADate).format('DD/MM/YYYY') },
+  { key: 'SEVADate', label: 'Date', value: (r) => dayjs(r.SEVADate).format('DD-MMM-YYYY') },
   { key: 'Name1', label: 'Name' },
   { key: 'Sannadhi', label: 'Sannidhi' },
   { key: 'Seva', label: 'Seva' },
@@ -230,7 +230,7 @@ const collectionColumns = [
 ]
 
 const sevaIssueColumns = [
-  { key: 'PDATE', label: 'Seva Date', value: (r) => dayjs(r.PDATE).format('DD/MM/YYYY') },
+  { key: 'PDATE', label: 'Seva Date', value: (r) => dayjs(r.PDATE).format('DD-MMM-YYYY') },
   { key: 'PrintSevaNo', label: 'Receipt No' },
   { key: 'NAME1', label: 'Name' },
   { key: 'SANNADHI', label: 'Sannidhi' },
@@ -243,7 +243,7 @@ const sevaIssueColumns = [
 
 const donationColumns = [
   { key: 'PrintDONRECNO', label: 'Receipt No' },
-  { key: 'DONRECDate', label: 'Date', value: (r) => dayjs(r.DONRECDate).format('DD/MM/YYYY') },
+  { key: 'DONRECDate', label: 'Date', value: (r) => dayjs(r.DONRECDate).format('DD-MMM-YYYY') },
   { key: 'DONOR', label: 'Donor' },
   { key: 'CONTACTNO', label: 'Contact' },
   { key: 'PANNO', label: 'PAN' },
@@ -254,12 +254,12 @@ const donationColumns = [
 
 const hallBookingVoucherColumns = [
   { key: 'PrintHBNO', label: 'Booking No' },
-  { key: 'HBDate', label: 'Date', value: (r) => dayjs(r.HBDate).format('DD/MM/YYYY') },
+  { key: 'HBDate', label: 'Date', value: (r) => dayjs(r.HBDate).format('DD-MMM-YYYY') },
   { key: 'NMEOFFUNC', label: 'Function' },
   { key: 'CONPRS', label: 'Contact Person' },
   { key: 'CONTACTNO', label: 'Contact No' },
-  { key: 'HBSTARTDT', label: 'Start', value: (r) => dayjs(r.HBSTARTDT).format('DD/MM/YYYY') },
-  { key: 'HBENDDT', label: 'End', value: (r) => dayjs(r.HBENDDT).format('DD/MM/YYYY') },
+  { key: 'HBSTARTDT', label: 'Start', value: (r) => dayjs(r.HBSTARTDT).format('DD-MMM-YYYY') },
+  { key: 'HBENDDT', label: 'End', value: (r) => dayjs(r.HBENDDT).format('DD-MMM-YYYY') },
   { key: 'AMOUNT', label: 'Amount', num: true, value: (r) => money(r.AMOUNT) },
   { key: 'RCPTVCHNO', label: 'Receipt Voucher No' },
   { key: 'RCPTTYPE', label: 'Receipt Type' },
@@ -463,7 +463,7 @@ function GeneralLedgerPanel() {
                   <Table.Tbody>
                     {c.rows.map((r, i) => (
                       <Table.Tr key={i}>
-                        <Table.Td className="vt-num">{dayjs(r.date).format('DD/MM/YYYY')}</Table.Td>
+                        <Table.Td className="vt-num">{dayjs(r.date).format('DD-MMM-YYYY')}</Table.Td>
                         <Table.Td>{r.doc_type}</Table.Td>
                         <Table.Td className="vt-num">{r.trn_no}</Table.Td>
                         <Table.Td>{r.narration}</Table.Td>

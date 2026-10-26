@@ -95,6 +95,20 @@ export default function LocalPrinterSetting() {
           No printer chosen — this PC's Windows default ({agent.default || 'none set'}) will be used.
         </Text>
       )}
+      <Group gap="xs">
+        <Button
+          component="a"
+          href={printApi.agentDownloadUrl()}
+          leftSection={<Download size={14} />}
+          variant="default"
+          size="xs"
+        >
+          Download / reinstall Print Agent
+        </Button>
+        <Text size="xs" c="dimmed">
+          Use this if printing says the page is not allowed, or to set up another PC.
+        </Text>
+      </Group>
     </Stack>
   )
 }

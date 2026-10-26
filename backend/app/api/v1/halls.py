@@ -5,11 +5,12 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
-from app.core.fy import FinancialYear, get_user_fy
+from app.core.fy import FinancialYear, get_user_fy, get_history_fy
 from app.core.security import CurrentUser, get_current_user, require_right
 from app.meta.menu import RIGHT_ADD, RIGHT_EDIT, RIGHT_VIEW
 from app.services import hall as hall_service
@@ -29,28 +30,8 @@ def availability(hall_id: int, from_date: date = Query(...), months: int = 6, to
 
 
 class HallBookingCreateRequest(BaseModel):
-    booking_type: str
-    hall_id: int | None = None
-    function_name: str | None = None
-    start_at: datetime | None = None
-    end_at: datetime | None = None
-    start_time_text: str | None = None
-    end_time_text: str | None = None
-    contact_person: str | None = None
-    contact_no: str
-    mobile: str | None = None
-    address: str | None = None
-    email: str | None = None
-    pan: str | None = None
-    remarks: str | None = None
-    amount: float
-    cgst_pct: float = 0
-    sgst_pct: float = 0
-    deposit: float = 0
-    ledger_id: int
-    cash_bank_ledger_id: int
+    fields: dict  # Designer fields keyed by FldCode (TYPE, HALLID, HBSTARTDT, AMOUNT ...)
     doc_date: date | None = None
-    extra_fields: dict = {}
 
 
 class PaymentRequest(BaseModel):
@@ -70,8 +51,8 @@ class CancelRequest(BaseModel):
 @router.get("/bookings")
 def list_bookings(
     search: str = "",
-    top: int = Query(50, le=200),
-    fy: FinancialYear = Depends(get_user_fy),
+    top: int = Query(50, le=1000),
+    fy: FinancialYear = Depends(get_history_fy),
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(hall_service.DOC_ID, RIGHT_VIEW)),
 ):
@@ -83,7 +64,13 @@ def list_bookings(
     from app.core.db import limit_clause
 
     sql += f" ORDER BY HBID DESC {limit_clause(top)}"
-    rows = conn.execute(text(sql), params).mappings().all()
+    try:
+        rows = conn.execute(text(sql), params).mappings().all()
+    except ProgrammingError as exc:
+        # Some temples' databases have no TrnHdrHB (hall booking unused there): empty list, not a 500.
+        if "Invalid object name" in str(exc.orig):
+            return []
+        raise
     return [dict(r) for r in rows]
 
 
@@ -94,7 +81,7 @@ def get_booking(hb_id: int, conn: Connection = Depends(get_conn), _: CurrentUser
 
 @router.post("/bookings", status_code=201)
 def create_booking(body: HallBookingCreateRequest, fy: FinancialYear = Depends(get_user_fy), user: CurrentUser = Depends(require_right(hall_service.DOC_ID, RIGHT_ADD))):
-    data = hall_service.HallBookingInput(**body.model_dump())
+    data = hall_service.HallBookingInput(fields=body.fields, doc_date=body.doc_date)
     with with_transaction() as conn:
         return hall_service.create(conn, data=data, fy=fy, user_code=user.user_code)
 

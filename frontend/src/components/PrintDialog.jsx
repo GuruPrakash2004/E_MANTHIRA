@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { AlertTriangle, Download, FileText, Printer } from 'lucide-react'
 import * as printApi from '../api/endpoints/print'
+import { ReportFontsNotice } from './ReportFonts'
 import { agentNow, detectAgent, getRememberedPrinter, rememberPrinter, warmAgent } from '../lib/localPrint'
 import { loadFormats, pickFormat, printErrorMessage, printInBrowser, printOnServer, printOnThisPc, renderToPreview, renderToUrl, rememberFormat, setPrintDialogOpen } from '../lib/printing'
 
@@ -285,6 +286,7 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
               Up/Down format · Enter or F10 print · Esc close
             </Text>
           </Group>
+          <ReportFontsNotice docId={docId} optionName={selected} />
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '0.75rem' }}>
             {loading && <Loader mt="xl" color="kumkum" />}
             {!loading && error && (

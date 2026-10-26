@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Badge, Button, Card, Checkbox, Grid, Group, Select, Stack, Text, TextInput } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -126,8 +126,8 @@ export default function ItemReferencerPage() {
             <Group align="flex-end" gap="md" wrap="wrap">
               <Checkbox color="kumkum" label="Transactions" checked={useTrn} onChange={(e) => setUseTrn(e.currentTarget.checked)} mb={8} />
               <Select aria-label="Transaction document" placeholder="All documents" data={info.docs} value={doc} onChange={setDoc} disabled={!useTrn} searchable clearable w={240} />
-              <DatePickerInput className="vt-field-required" label="From" valueFormat="DD/MM/YYYY" value={from} onChange={setFrom} w={150} />
-              <DatePickerInput className="vt-field-required" label="To" valueFormat="DD/MM/YYYY" value={to} onChange={setTo} w={150} />
+              <DatePickerInput className="vt-field-required" label="From" valueFormat="DD-MMM-YYYY" value={from} onChange={setFrom} w={150} />
+              <DatePickerInput className="vt-field-required" label="To" valueFormat="DD-MMM-YYYY" value={to} onChange={setTo} w={150} />
               <Button color="kumkum" onClick={load} disabled={!from || !to}>Load</Button>
             </Group>
           </Card>
@@ -136,7 +136,7 @@ export default function ItemReferencerPage() {
             columns={[
               { key: 'doc_name', label: 'Doc Name' },
               { key: 'doc_no', label: 'Doc No' },
-              { key: 'doc_date', label: 'Doc Date', render: (r) => dayjs(r.doc_date).format('DD/MM/YYYY') },
+              { key: 'doc_date', label: 'Doc Date', render: (r) => dayjs(r.doc_date).format('DD-MMM-YYYY') },
               { key: 'party_code', label: 'Party Code' },
               { key: 'qty', label: 'Doc Qty', num: true },
               { key: 'uom', label: 'UOM' },

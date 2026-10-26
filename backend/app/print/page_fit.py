@@ -35,12 +35,55 @@ def _content_bottom_pt(page: "fitz.Page") -> float | None:
     return None
 
 
+def _content_span_pt(page: "fitz.Page") -> tuple[float, float] | None:
+    """(top, bottom) in points of the printed content on `page`, or None for a blank page."""
+    pix = page.get_pixmap(matrix=fitz.Matrix(_ZOOM, _ZOOM), colorspace=fitz.csGRAY, alpha=False)
+    w, h, samples = pix.width, pix.height, pix.samples
+    rows = [y for y in range(h) if min(samples[y * w : (y + 1) * w]) < _WHITE]
+    if not rows:
+        return None
+    return rows[0] / _ZOOM, (rows[-1] + 1) / _ZOOM
+
+
+def _join_roll_pages(doc: "fitz.Document", bottom_margin_pt: float) -> tuple[bytes, Page]:
+    """A roll receipt is one continuous strip. When the bridge PC's default printer is shorter than the receipt, Crystal splits
+    it over several short pages; stack them back into one page (vector content, nothing redrawn), dropping each page's blank
+    margins where the break fell."""
+    slices: list[tuple["fitz.Page", float, float]] = []
+    for i, page in enumerate(doc):
+        span = _content_span_pt(page)
+        if span is None:
+            continue
+        top = 0.0 if not slices else span[0]
+        bottom = span[1] + (max(0.0, bottom_margin_pt) if i == len(doc) - 1 else 0.0)
+        slices.append((page, top, min(page.rect.height, bottom)))
+    if not slices:
+        last = doc[-1]
+        return doc.tobytes(), Page(round(last.rect.width, 2), round(last.rect.height, 2), False)
+    width = slices[0][0].rect.width
+    total = max(_MIN_HEIGHT_PT, sum(b - t for _, t, b in slices))
+    out = fitz.open()
+    target = out.new_page(width=width, height=total)
+    y = 0.0
+    for page, top, bottom in slices:
+        h = bottom - top
+        if h <= 0:
+            continue
+        target.show_pdf_page(fitz.Rect(0, y, width, y + h), doc, page.number, clip=fitz.Rect(0, top, width, bottom))
+        y += h
+    data = out.tobytes(garbage=3, deflate=True)
+    out.close()
+    return data, Page(round(width, 2), round(total, 2), True)
+
+
 def fit_pdf(pdf: bytes, *, paper_kind: str, bottom_margin_pt: float = 0.0) -> tuple[bytes, Page]:
     """(pdf, page) - `page` is the size of the LAST page after fitting. Named paper sizes come back byte-for-byte."""
     with fitz.open(stream=pdf, filetype="pdf") as doc:
         last = doc[-1]
         if paper_kind.strip().lower() != "custom":
             return pdf, Page(round(last.rect.width, 2), round(last.rect.height, 2), False)
+        if len(doc) > 1:
+            return _join_roll_pages(doc, bottom_margin_pt)
         bottom = _content_bottom_pt(last)
         if bottom is None:
             return pdf, Page(round(last.rect.width, 2), round(last.rect.height, 2), False)

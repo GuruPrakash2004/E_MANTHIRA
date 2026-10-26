@@ -1,3 +1,4 @@
+import ExportExcelButton from '../../components/ui/ExportExcelButton'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -99,6 +100,11 @@ function AttachmentsSection({ docId, rowId }) {
       </Stack>
     </div>
   )
+}
+
+// Dropdowns elsewhere are cached for a short while; a master saved or deleted here must appear in them straight away.
+function refreshLookups(queryClient) {
+  for (const key of ['lookup', 'lookup-ledgers', 'master-core-lookup']) queryClient.invalidateQueries({ queryKey: [key] })
 }
 
 export default function MasterPage() {
@@ -270,6 +276,7 @@ export default function MasterPage() {
       if (saved && (layout?.options || []).some((o) => o.name === 'Send Mail for Approval')) sendApproval(saved[meta.id_col])
       setMode('view')
       await queryClient.invalidateQueries({ queryKey: ['master', docId] })
+      refreshLookups(queryClient)
       refetch()
     } catch (err) {
       const detail = err?.response?.data?.detail
@@ -290,6 +297,7 @@ export default function MasterPage() {
       notifications.show({ message: 'Deleted Successfully!', color: 'teal' })
       setSelectedId(null)
       await queryClient.invalidateQueries({ queryKey: ['master', docId] })
+      refreshLookups(queryClient)
       refetch()
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Delete failed', color: 'red' })
@@ -385,6 +393,16 @@ export default function MasterPage() {
                 { value: 'active', label: 'Active' },
                 { value: 'inactive', label: 'Inactive' },
               ]}
+            />
+            <ExportExcelButton
+              filename={caption}
+              rows={rows}
+              columns={[
+                { label: 'Code', value: (r) => r[meta.code_col] },
+                ...(meta?.name_col && meta.name_col !== meta.code_col ? [{ label: 'Name', value: (r) => r[meta.name_col] }] : []),
+                { label: 'Active', value: (r) => (isInactive(r) ? 'N' : 'Y') },
+              ]}
+              fullWidth
             />
             <div ref={listRef} className="vt-master-list" role="listbox" aria-label={`${caption} records`}>
               {isLoading ? (
@@ -688,6 +706,7 @@ export default function MasterPage() {
                               try {
                                 await mastersApi.approveMasterRow(docId, selectedId, !approved)
                                 await queryClient.invalidateQueries({ queryKey: ['master', docId] })
+      refreshLookups(queryClient)
                                 refetch()
                               } catch (err) {
                                 notifications.show({ message: err?.response?.data?.detail || 'Could not update approval', color: 'red' })

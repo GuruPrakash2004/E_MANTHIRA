@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
-from app.core.fy import FinancialYear, get_user_fy
+from app.core.fy import FinancialYear, get_user_fy, get_history_fy
 from app.core.security import CurrentUser, get_current_user, require_right
 from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
 from app.services import journal as journal_service
@@ -34,24 +34,15 @@ class VoucherLineRequest(BaseModel):
 class PaymentVoucherCreateRequest(BaseModel):
     prefix: str
     voucher_date: date
-    vch_type: str
-    narration: str
+    fields: dict  # Header / Footer Designer fields keyed by FldCode
     lines: list[VoucherLineRequest]
-    cheque_dd_no: str | None = None
-    cheque_date: date | None = None
-    cheque_dd_amt: str | None = None
-    cheque_no: str | None = None
-    bank_id: int | None = None
-    card_no: str | None = None
-    card_amt: float | None = None
-    extra_fields: dict = {}
 
 
 @router.get("/vouchers/payments")
 def list_payment_vouchers(
     search: str = "",
-    top: int = Query(50, le=200),
-    fy: FinancialYear = Depends(get_user_fy),
+    top: int = Query(50, le=1000),
+    fy: FinancialYear = Depends(get_history_fy),
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(payment_service.DOC_ID, RIGHT_VIEW)),
 ):
@@ -91,24 +82,15 @@ def delete_payment_voucher(pmtvch_id: int, user: CurrentUser = Depends(require_r
 class ReceiptVoucherCreateRequest(BaseModel):
     prefix: str
     receipt_date: date
-    vch_type: str
-    narration: str
+    fields: dict  # Header / Footer Designer fields keyed by FldCode
     lines: list[VoucherLineRequest]
-    cheque_dd_no: str | None = None
-    cheque_date: date | None = None
-    cheque_dd_amt: str | None = None
-    cheque_no: str | None = None
-    bank_id: int | None = None
-    card_no: str | None = None
-    card_amt: float | None = None
-    extra_fields: dict = {}
 
 
 @router.get("/vouchers/receipts")
 def list_receipt_vouchers(
     search: str = "",
-    top: int = Query(50, le=200),
-    fy: FinancialYear = Depends(get_user_fy),
+    top: int = Query(50, le=1000),
+    fy: FinancialYear = Depends(get_history_fy),
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(1248, RIGHT_VIEW)),
 ):
@@ -127,18 +109,9 @@ def create_receipt_voucher(
             fy=fy,
             prefix=body.prefix,
             receipt_date=body.receipt_date,
-            vch_type=body.vch_type,
-            narration=body.narration,
+            fields=body.fields,
             lines=[receipt_service.VoucherLine(**l.model_dump()) for l in body.lines],
             user_code=user.user_code,
-            cheque_dd_no=body.cheque_dd_no,
-            cheque_date=body.cheque_date,
-            cheque_dd_amt=body.cheque_dd_amt,
-            cheque_no=body.cheque_no,
-            bank_id=body.bank_id,
-            card_no=body.card_no,
-            card_amt=body.card_amt,
-            extra_fields=body.extra_fields,
         )
         return {"receipt_id": r.receipt_id, "receipt_no": r.receipt_no}
 
@@ -167,8 +140,8 @@ class JournalVoucherCreateRequest(PaymentVoucherCreateRequest):
 @router.get("/vouchers/journals")
 def list_journal_vouchers(
     search: str = "",
-    top: int = Query(50, le=200),
-    fy: FinancialYear = Depends(get_user_fy),
+    top: int = Query(50, le=1000),
+    fy: FinancialYear = Depends(get_history_fy),
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(journal_service.DOC_ID, RIGHT_VIEW)),
 ):

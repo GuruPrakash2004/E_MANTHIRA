@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
-from app.core.fy import FinancialYear, get_user_fy
+from app.core.fy import FinancialYear, get_user_fy, get_history_fy
 from app.core.security import CurrentUser, require_right
 from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
 from app.services import expense as svc
@@ -16,25 +16,11 @@ from app.services import expense as svc
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
 
-class LineIn(BaseModel):
-    led_id: int
-    amount: float
-    item_desc: str = ""
-    remarks: str = ""
-
-
 class ExpenseCreateRequest(BaseModel):
     prefix: str = ""
     expense_date: date
-    payment_mode: str
-    lines: list[LineIn]
-    ref_no: str = ""
-    remarks: str = ""
-    cheque_no: str = ""
-    cheque_date: date | None = None
-    cheque_amount: float | None = None
-    bank_name: str = ""
-    extra_fields: dict = {}
+    fields: dict  # Header / Footer Designer fields keyed by FldCode
+    lines: list[dict]  # Detail Designer fields keyed by FldCode, one dict per line
 
 
 class CancelRequest(BaseModel):
@@ -44,8 +30,8 @@ class CancelRequest(BaseModel):
 @router.get("")
 def list_expenses(
     search: str = "",
-    top: int = Query(50, le=200),
-    fy: FinancialYear = Depends(get_user_fy),
+    top: int = Query(50, le=1000),
+    fy: FinancialYear = Depends(get_history_fy),
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(svc.DOC_ID, RIGHT_VIEW)),
 ):
@@ -63,9 +49,7 @@ def create_expense(
     fy: FinancialYear = Depends(get_user_fy),
     user: CurrentUser = Depends(require_right(svc.DOC_ID, RIGHT_ADD)),
 ):
-    values = body.model_dump()
-    lines = [svc.ExpenseLine(**l) for l in values.pop("lines")]
-    data = svc.ExpenseInput(**values, lines=lines)
+    data = svc.ExpenseInput(prefix=body.prefix, expense_date=body.expense_date, fields=body.fields, lines=body.lines)
     with with_transaction() as conn:
         return svc.create(conn, data=data, fy=fy, user_code=user.user_code)
 

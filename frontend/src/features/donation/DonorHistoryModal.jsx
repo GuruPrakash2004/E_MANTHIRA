@@ -38,7 +38,7 @@ export default function DonorHistoryModal({ opened, onClose, onPick, initialName
               {data.map((r, i) => (
                 <Table.Tr key={`${r.DONRECID}-${i}`} style={{ cursor: 'pointer' }} onClick={() => onPick(r)}>
                   <Table.Td className="vt-num">{r.PrintDONRECNO || r.DONRECNO}</Table.Td>
-                  <Table.Td className="vt-num">{r.DONRECDate ? dayjs(r.DONRECDate).format('DD/MM/YYYY') : ''}</Table.Td>
+                  <Table.Td className="vt-num">{r.DONRECDate ? dayjs(r.DONRECDate).format('DD-MMM-YYYY') : ''}</Table.Td>
                   <Table.Td>{r.DONOR}</Table.Td>
                   <Table.Td>{r.CONTACTNO}</Table.Td>
                   <Table.Td>{r.SEVANME}</Table.Td>

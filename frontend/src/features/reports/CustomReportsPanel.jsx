@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Checkbox, Grid, Group, Modal, ScrollArea, Select, Stack, Table, Text, TextInput, Textarea, Tooltip } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import { Eraser, FileSpreadsheet, KeyRound, ListFilter, Mail, Palette, Play, Printer, Save, Search, Trash2, Upload, X } from 'lucide-react'
@@ -16,7 +16,7 @@ import usePrintKey from '../../hooks/usePrintKey'
 const fmtCell = (v) => {
   if (v == null) return ''
   if (typeof v === 'number') return v.toLocaleString('en-IN', { maximumFractionDigits: 2 })
-  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return dayjs(v).format('DD/MM/YYYY')
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return dayjs(v).format('DD-MMM-YYYY')
   return String(v)
 }
 const keyOf = (f) => `${f.table}|${f.code}`
@@ -168,8 +168,8 @@ export default function CustomReportsPanel() {
               {dateFilters.map((f) => (
                 <Group key={keyOf(f)} align="flex-end" gap="sm" wrap="wrap">
                   <Text w={180} size="sm">{f.caption}</Text>
-                  <DatePickerInput aria-label={`${f.caption} from`} valueFormat="DD/MM/YYYY" value={dates[keyOf(f)]?.from || null} onChange={(v) => setDates((d) => ({ ...d, [keyOf(f)]: { ...d[keyOf(f)], from: v } }))} w={140} />
-                  <DatePickerInput aria-label={`${f.caption} to`} valueFormat="DD/MM/YYYY" value={dates[keyOf(f)]?.to || null} onChange={(v) => setDates((d) => ({ ...d, [keyOf(f)]: { ...d[keyOf(f)], to: v } }))} w={140} />
+                  <DatePickerInput aria-label={`${f.caption} from`} valueFormat="DD-MMM-YYYY" value={dates[keyOf(f)]?.from || null} onChange={(v) => setDates((d) => ({ ...d, [keyOf(f)]: { ...d[keyOf(f)], from: v } }))} w={140} />
+                  <DatePickerInput aria-label={`${f.caption} to`} valueFormat="DD-MMM-YYYY" value={dates[keyOf(f)]?.to || null} onChange={(v) => setDates((d) => ({ ...d, [keyOf(f)]: { ...d[keyOf(f)], to: v } }))} w={140} />
                 </Group>
               ))}
               {listFilters.map((f) => (

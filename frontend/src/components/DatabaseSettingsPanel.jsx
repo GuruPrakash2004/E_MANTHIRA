@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { PasswordInput, Select, TextInput } from '@mantine/core'
 import { AlertCircle, CircleCheck, Database, Loader2, PlugZap } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import * as dbSettingsApi from '../api/endpoints/dbSettings'
+import { useAuth } from '../hooks/useAuth'
 
 /**
  * Lets staff repoint this backend at a different SQL Server without a
@@ -30,6 +33,9 @@ export default function DatabaseSettingsPanel({ onClose } = {}) {
     db_password: '',
     db_trust_cert: 'yes',
   })
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+  const qc = useQueryClient()
   const [passwordSet, setPasswordSet] = useState(false)
   const [current, setCurrent] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -111,6 +117,13 @@ export default function DatabaseSettingsPanel({ onClose } = {}) {
       if (r.ok) {
         setPasswordSet(Boolean(form.db_password))
         set('db_password', '')
+        // A different database means a different user table: end any session and go to sign-in.
+        setTimeout(() => {
+          logout()
+          qc.clear()
+          onClose?.()
+          navigate('/login', { replace: true })
+        }, 900)
       }
     } catch (err) {
       setResult({ ok: false, detail: err?.response?.data?.detail || 'Could not reach the backend' })

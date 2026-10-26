@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Alert, Button, Card, Checkbox, Grid, Group, MultiSelect, Radio, Select, Stack, Text } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import { Eye, FileSpreadsheet, Printer, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -94,8 +94,8 @@ export default function StockBalanceReportPage() {
           <Grid.Col span={{ base: 12, md: 7 }}>
             <Stack gap="sm">
               <Group gap="md" align="flex-end" wrap="wrap">
-                <DatePickerInput className="vt-field-required" label="From" valueFormat="DD/MM/YYYY" value={from} onChange={setFrom} w={150} />
-                <DatePickerInput className="vt-field-required" label="To" valueFormat="DD/MM/YYYY" value={to} onChange={setTo} w={150} />
+                <DatePickerInput className="vt-field-required" label="From" valueFormat="DD-MMM-YYYY" value={from} onChange={setFrom} w={150} />
+                <DatePickerInput className="vt-field-required" label="To" valueFormat="DD-MMM-YYYY" value={to} onChange={setTo} w={150} />
                 <Button color="kumkum" leftSection={<Eye size={16} />} loading={loading} onClick={view}>View</Button>
               </Group>
               <Select label="Location" placeholder="All locations" clearable searchable data={(lookups?.locations || []).map((l) => ({ value: String(l.id), label: l.name }))} value={locId ? String(locId) : null} onChange={(v) => setLocId(v ? Number(v) : null)} w={300} />

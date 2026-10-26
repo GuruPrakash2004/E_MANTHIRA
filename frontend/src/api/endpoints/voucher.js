@@ -16,3 +16,9 @@ export const cancelJournalVoucher = (id, reason) => post(`/vouchers/journals/${i
 export const deleteJournalVoucher = (id) => del(`/vouchers/journals/${id}`)
 
 export const getVoucher = (kind, id) => get(`/vouchers/${kind}/${id}`)
+
+// Credit Note / Debit Note / Contra Voucher (same shape: Designer fields + Dr/Cr lines)
+export const listGenVouchers = (kind, params) => get(`/vouchers/${kind}`, { params })
+export const createGenVoucher = (kind, body) => post(`/vouchers/${kind}`, body)
+export const cancelGenVoucher = (kind, id, reason) => post(`/vouchers/${kind}/${id}/cancel`, { reason })
+export const deleteGenVoucher = (kind, id) => del(`/vouchers/${kind}/${id}`)

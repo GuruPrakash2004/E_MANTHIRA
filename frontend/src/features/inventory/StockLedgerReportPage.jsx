@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button, Card, Checkbox, Grid, Group, MultiSelect, Select, Stack } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import { Eye, FileSpreadsheet, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -57,7 +57,7 @@ export default function StockLedgerReportPage() {
     { key: 'item_code', label: 'Item Code', width: 120 },
     { key: 'item_name', label: 'Item Name', width: 220 },
     { key: 'uom', label: 'UOM', width: 80 },
-    { key: 'doc_date', label: 'Doc Date', width: 110, render: (r) => (r.doc_date ? dayjs(r.doc_date).format('DD/MM/YYYY') : '') },
+    { key: 'doc_date', label: 'Doc Date', width: 110, render: (r) => (r.doc_date ? dayjs(r.doc_date).format('DD-MMM-YYYY') : '') },
     { key: 'doc_type', label: 'Doc Type', width: 150 },
     { key: 'doc_no', label: 'Doc No', width: 130 },
     { key: 'particulars', label: 'Particulars', width: 220 },
@@ -75,8 +75,8 @@ export default function StockLedgerReportPage() {
           <Grid.Col span={{ base: 12, md: 7 }}>
             <Stack gap="sm">
               <Group gap="md" align="flex-end" wrap="wrap">
-                <DatePickerInput className="vt-field-required" label="For the Period from" valueFormat="DD/MM/YYYY" value={from} onChange={setFrom} w={160} />
-                <DatePickerInput className="vt-field-required" label="To" valueFormat="DD/MM/YYYY" value={to} onChange={setTo} w={160} />
+                <DatePickerInput className="vt-field-required" label="For the Period from" valueFormat="DD-MMM-YYYY" value={from} onChange={setFrom} w={160} />
+                <DatePickerInput className="vt-field-required" label="To" valueFormat="DD-MMM-YYYY" value={to} onChange={setTo} w={160} />
               </Group>
               <Group gap="md" align="flex-end" wrap="wrap">
                 <Select label="Select Location" placeholder="All locations" clearable searchable data={(lookups?.locations || []).map((l) => ({ value: String(l.id), label: l.name }))} value={locId ? String(locId) : null} onChange={(v) => setLocId(v ? Number(v) : null)} w={300} />
@@ -103,7 +103,7 @@ export default function StockLedgerReportPage() {
       )}
 
       <Group justify="space-between">
-        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!result?.rows?.length} onClick={() => downloadXls('Stock Ledger.xls', result.rows, columns.map((c) => ({ label: c.label, value: (r) => (c.key === 'doc_date' ? (r.doc_date ? dayjs(r.doc_date).format('DD/MM/YYYY') : '') : r[c.key]) })))}>
+        <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!result?.rows?.length} onClick={() => downloadXls('Stock Ledger.xls', result.rows, columns.map((c) => ({ label: c.label, value: (r) => (c.key === 'doc_date' ? (r.doc_date ? dayjs(r.doc_date).format('DD-MMM-YYYY') : '') : r[c.key]) })))}>
           Export to Excel
         </Button>
         <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>Close</Button>

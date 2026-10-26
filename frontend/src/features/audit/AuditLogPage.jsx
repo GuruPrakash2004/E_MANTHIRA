@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Checkbox, Group, Radio, Select, Stack, Text } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import { FileSpreadsheet, ListChecks, Pin, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -48,7 +48,7 @@ export default function AuditLogPage() {
 
   const columns = useMemo(
     () => [
-      { key: 'at', label: 'Action Date Time', width: 170, render: (r) => dayjs(r.at).format('DD/MM/YYYY HH:mm:ss') },
+      { key: 'at', label: 'Action Date Time', width: 170, render: (r) => dayjs(r.at).format('DD-MMM-YYYY HH:mm:ss') },
       { key: 'entity', label: 'Document', width: 200 },
       { key: 'entity_id', label: 'Record', width: 110 },
       { key: 'action_label', label: 'Action', width: 110 },
@@ -71,8 +71,8 @@ export default function AuditLogPage() {
           <Checkbox color="kumkum" label="Modified Between Date Range" checked={useDate} onChange={(e) => setUseDate(e.currentTarget.checked)} />
           {useDate && (
             <Group gap="md" align="flex-end">
-              <DatePickerInput label="From" valueFormat="DD/MM/YYYY" value={from} onChange={setFrom} w={150} />
-              <DatePickerInput label="To" valueFormat="DD/MM/YYYY" value={to} onChange={setTo} w={150} />
+              <DatePickerInput label="From" valueFormat="DD-MMM-YYYY" value={from} onChange={setFrom} w={150} />
+              <DatePickerInput label="To" valueFormat="DD-MMM-YYYY" value={to} onChange={setTo} w={150} />
               <Button color="kumkum" leftSection={<ListChecks size={16} />} loading={loading} onClick={load}>Load</Button>
             </Group>
           )}

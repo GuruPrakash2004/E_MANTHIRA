@@ -134,6 +134,16 @@ def _check_required(meta: MasterMeta, merged: dict) -> None:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{caption} should not be blank!")
 
 
+def _check_designer(conn: Connection, meta: MasterMeta, merged: dict) -> None:
+    """The temple's own Doc Designer rules for this master's extra fields (mandatory, lists, widths, hide conditions),
+    enforced here as well as on screen so a direct API call can't skip them (CLAUDE.md rule 5)."""
+    from app.meta import doc_rules
+
+    rows = [r for r in doc_rules.load_fields(conn, meta.doc_id) if r.get("FldCode") not in (meta.code_col, meta.name_col)]
+    if rows:
+        doc_rules.validate(rows, doc_rules.effective_values(rows, merged))
+
+
 def create(conn: Connection, meta: MasterMeta, *, values: dict, user_code: str) -> dict:
     code = (values.get(meta.code_col) or "").strip()
     name = (values.get(meta.name_col) or "").strip()
@@ -142,6 +152,7 @@ def create(conn: Connection, meta: MasterMeta, *, values: dict, user_code: str) 
     if not name:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{meta.short_form} Name should not be blank!")
     _check_required(meta, values)
+    _check_designer(conn, meta, values)
     values = _prepare_values(meta, values)
     code, name = values[meta.code_col], values[meta.name_col]
     from app.services import master_extras
@@ -217,6 +228,7 @@ def _sync_mstacled(conn: Connection, meta: MasterMeta, ledger_id: int, code: str
 def update(conn: Connection, meta: MasterMeta, row_id: int, *, values: dict, user_code: str) -> dict:
     existing = get_row(conn, meta, row_id)
     _check_required(meta, {**existing, **values})
+    _check_designer(conn, meta, {**existing, **values})
     values = _prepare_values(meta, {**values, **{k: values.get(k, existing.get(k)) for k in (meta.code_col, meta.name_col)}})
     code, name = values[meta.code_col], values[meta.name_col]
     if not code:

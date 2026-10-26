@@ -419,7 +419,7 @@ export function ActivitiesModal({ opened, onClose, docId, rowId, party }) {
       {notes !== null ? (
         <Stack gap="sm">
           <Text size="xs" c="dimmed">
-            Date: {dayjs().format('DD/MM/YYYY HH:mm')} (recorded when you save)
+            Date: {dayjs().format('DD-MMM-YYYY HH:mm')} (recorded when you save)
           </Text>
           <Textarea className="vt-field-required" label="Notes" required data-autofocus autosize minRows={3} value={notes} onChange={(e) => setNotes(e.currentTarget.value)} />
           <Group justify="flex-end">
@@ -445,7 +445,7 @@ export function ActivitiesModal({ opened, onClose, docId, rowId, party }) {
               <Table.Tbody>
                 {rows.map((r) => (
                   <Table.Tr key={r.act_id} onClick={() => setSelected(r.act_id)} style={{ cursor: 'pointer', background: selected === r.act_id ? 'var(--vt-gold-chip)' : undefined }}>
-                    <Table.Td className="vt-num">{dayjs(r.act_date).format('DD/MM/YYYY HH:mm')}</Table.Td>
+                    <Table.Td className="vt-num">{dayjs(r.act_date).format('DD-MMM-YYYY HH:mm')}</Table.Td>
                     <Table.Td style={{ whiteSpace: 'pre-line' }}>{r.notes}</Table.Td>
                     <Table.Td>{r.user_code}</Table.Td>
                   </Table.Tr>

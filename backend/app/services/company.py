@@ -25,13 +25,13 @@ _COMPANY_COLUMNS = [
 # "Company Info" tab: plain MstComp columns with no UtlDocDsgrFlds rows (the "Additional Fields" tab is the DocID 17
 # designer metadata). Served to the web UI so captions/order/mandatory are not hard-coded in the frontend.
 COMPANY_INFO_FIELDS = [
-    {"code": "CompName", "caption": "Company Name", "required": True},
-    {"code": "Address1", "caption": "Address", "required": False},
-    {"code": "Address2", "caption": "", "required": False},
-    {"code": "Address3", "caption": "", "required": False},
-    {"code": "Address4", "caption": "", "required": False},
-    {"code": "Address5", "caption": "", "required": False},
-    {"code": "EMAIL", "caption": "Email ID", "required": False},
+    {"code": "CompName", "caption": "Company Name", "required": True, "placeholder": "Name of the temple / trust"},
+    {"code": "Address1", "caption": "Address", "required": False, "placeholder": "Address line 1 - building / street"},
+    {"code": "Address2", "caption": "", "required": False, "placeholder": "Address line 2 - area / locality"},
+    {"code": "Address3", "caption": "", "required": False, "placeholder": "Address line 3 - city / district"},
+    {"code": "Address4", "caption": "", "required": False, "placeholder": "Address line 4 - state / PIN code"},
+    {"code": "Address5", "caption": "", "required": False, "placeholder": "Address line 5 - country / landmark"},
+    {"code": "EMAIL", "caption": "Email ID", "required": False, "placeholder": "name@example.com"},
 ]
 
 

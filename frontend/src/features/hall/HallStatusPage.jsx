@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Button, Card, Group, SimpleGrid, Skeleton, Stack, Table, Text, Title, Tooltip } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { Building, CalendarCheck, CalendarDays, DoorOpen, FileDown, Search } from 'lucide-react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
@@ -73,7 +73,7 @@ export default function HallStatusPage() {
 
   const hallCount = (halls || []).length
   const todayInRange = !dayjs(today).isBefore(range.from, 'day') && !dayjs(today).isAfter(range.to, 'day')
-  const fmt = (iso) => dayjs(iso).format('DD/MM/YYYY')
+  const fmt = (iso) => dayjs(iso).format('DD-MMM-YYYY')
   function onExport() {
     const head = ['Date', ...rows.map((r) => r.hall.HALLNAME)]
     const lines = days.map((d) => [fmt(d.format('YYYY-MM-DD')), ...rows.map((r) => (r.byDay[d.format('YYYY-MM-DD')] ? `Booked ${r.byDay[d.format('YYYY-MM-DD')].PrintHBNO || ''}`.trim() : ''))])
@@ -93,8 +93,8 @@ export default function HallStatusPage() {
           </div>
         </Group>
         <Group gap="xs" align="flex-end" wrap="wrap">
-          <DateInput label="From" valueFormat="DD/MM/YYYY" value={draft.from} onChange={(v) => setDraft((d) => ({ ...d, from: v }))} w={150} />
-          <DateInput label="To" valueFormat="DD/MM/YYYY" value={draft.to} onChange={(v) => setDraft((d) => ({ ...d, to: v }))} w={150} minDate={draft.from || undefined} />
+          <DateInput label="From" valueFormat="DD-MMM-YYYY" value={draft.from} onChange={(v) => setDraft((d) => ({ ...d, from: v }))} w={150} />
+          <DateInput label="To" valueFormat="DD-MMM-YYYY" value={draft.to} onChange={(v) => setDraft((d) => ({ ...d, to: v }))} w={150} minDate={draft.from || undefined} />
           <Button color="kumkum" leftSection={<Search size={16} />} onClick={onView}>
             View
           </Button>

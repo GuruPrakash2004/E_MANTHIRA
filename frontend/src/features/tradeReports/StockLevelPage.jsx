@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Alert, Button, Card, Grid, Group, Select, Stack, Text } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { FileSpreadsheet, X } from 'lucide-react'
@@ -44,7 +44,7 @@ export default function StockLevelPage() {
             <Select label="Select Report" data={templates} value={template} onChange={setTemplate} searchable placeholder={loadingTemplates ? 'Loading...' : 'Choose a report'} />
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-            <DateInput label="As On" value={asOn} onChange={setAsOn} valueFormat="DD/MM/YYYY" />
+            <DateInput label="As On" value={asOn} onChange={setAsOn} valueFormat="DD-MMM-YYYY" />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 4 }}>
             <Group justify="flex-end" gap="sm">

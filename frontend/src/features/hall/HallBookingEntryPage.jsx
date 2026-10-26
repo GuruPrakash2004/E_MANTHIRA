@@ -1,116 +1,83 @@
-import { useConfirm } from '../../components/ui/ConfirmProvider'
-import { useState } from 'react'
-import { ActionIcon, Button, Grid, Group, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
-import { CalendarRange, Plus, Trash2 } from 'lucide-react'
+import { historyParams } from '../../lib/history'
+import { useEffect, useState } from 'react'
+import { Group, Stack, Text, Title } from '@mantine/core'
+import { CalendarRange } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as hbeApi from '../../api/endpoints/hallBookingEntry'
 import useDocFields from '../../hooks/useDocFields'
-import { isFieldHidden, isFieldMandatory, fieldCaption, fieldListOptions } from '../../utils/docFieldConditions'
+import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
+import DocDetailGrid, { blankLine, detailErrors } from '../../components/DocDetailGrid'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
 import { formatINR, isoDate } from '../../utils/format'
+import { useAuth } from '../../hooks/useAuth'
+import { columnsFromLines, computeFormulas, withComputed } from '../../utils/docCompute'
 
 const DOC_ID = 1280
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
-
-const TYPE_OPTIONS = ['HALL BOOKING', 'CARPUS FUND', 'KESHAVA SADANA', 'ANNAPOORNA DHYANA MANDIRA']
-const PAYMENT_MODES = ['Cash', 'Card', 'Cheque', 'UPI']
-
-// Maps this screen's own form-state keys to the legacy FldCode UtlDocDsgrFlds
-// uses — same pattern as every other transaction screen (CLAUDE.md rule 5).
-const FIELD_CODE_MAP = {
-  TYPE: 'type', NMEOFFUNC: 'name_of_func', CONPRS: 'contact_person', CONTACTNO: 'contact_no',
-  SECCONTNO: 'mobile_no', ADDRESS: 'address', PAYMNTMODE: 'payment_mode', REFNO: 'reference_no',
-  EMAILID: 'email_id', PAN: 'pan', RMKS: 'remarks', ISSUEDBY: 'issued_by',
-}
-
-const EMPTY_LINE = { name_of_hall: '', amount: 0, rate: 0, hrs: 0 }
+// Calculated from the lines (shown in the summary), so not drawn as inputs.
+const COMPUTED_CODES = ['TOTAMT', 'TOTGSTAMT', 'AMTAFTTAX', 'NETPAY', 'AMTINWORDS', 'TOTAMTIWRDS', 'ISSUEDBY']
 
 /**
- * Hall Booking Entry (DocID 1280, table TrnHdrHBE) — a simpler, non-ledger
- * receipt screen, confirmed distinct from the already-built Hall Booking
- * (DocID 1281/TrnHdrHB, which posts to the GL). Zero real rows in this
- * client's data today — built anyway per explicit request, faithfully
- * against the real schema. See app/services/hall_booking_entry.py.
+ * Hall Booking Entry (DocID 1280, table TrnHdrHBE) — a flat receipt screen, drawn entirely from the temple's
+ * Doc Designer (UtlDocDsgrFlds): its Header / Footer / Total fields, and its Detail line columns.
+ * See app/services/hall_booking_entry.py.
  */
 export default function HallBookingEntryPage() {
-  const confirm = useConfirm()
   const queryClient = useQueryClient()
-  const [form, setForm] = useState({
-    type: 'HALL BOOKING',
-    hb_start_dt: new Date(),
-    hb_end_dt: new Date(),
-    start_time: '',
-    end_time: '',
-    name_of_func: '',
-    contact_person: '',
-    contact_no: '',
-    mobile_no: '',
-    address: '',
-    payment_mode: 'Cash',
-    reference_no: '',
-    email_id: '',
-    pan: '',
-    cgst: 0,
-    sgst: 0,
-    security_deposit_amt: 0,
-    advance_amt: 0,
-    bank: '',
-    cash_cheque_no: '',
-    remarks: '',
-    issued_by: '',
-  })
-  const [lines, setLines] = useState([{ ...EMPTY_LINE }])
+  const [values, setValues] = useState({})
+  const [resetKey, setResetKey] = useState(0)
+  const [lines, setLines] = useState([])
+  const [attempted, setAttempted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
 
-  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['hbe', 'recent'], queryFn: () => hbeApi.listHbe({ top: 15 }) })
-  const { byCode: fieldMeta } = useDocFields(DOC_ID)
-  const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, form[key]]))
-  const hidden = (code) => isFieldHidden(fieldMeta[code], codeValues)
-  const mandatory = (code) => isFieldMandatory(fieldMeta[code], codeValues)
-  const caption = (code, fallback) => fieldCaption(fieldMeta[code], fallback)
+  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['hbe', 'recent'], queryFn: () => hbeApi.listHbe(historyParams()) })
+  const { fields } = useDocFields(DOC_ID)
+  const { user } = useAuth()
+  const setValue = (code, v) => setValues((cur) => ({ ...cur, [code]: v }))
+  const dateCodes = new Set(fields.filter((f) => f.FldDataType === 'Date').map((f) => f.FldCode))
+  const caption = (code, fallback) => fields.find((f) => f.FldCode === code)?.FldCaption || fallback
+  const has = (code) => fields.some((f) => f.FldCode === code)
 
-  function set(field, value) {
-    setForm((f) => ({ ...f, [field]: value }))
-  }
-  function updateLine(i, patch) {
-    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
-  }
-  function addLine() {
-    setLines((ls) => [...ls, { ...EMPTY_LINE }])
-  }
-  function removeLine(i) {
-    setLines((ls) => (ls.length > 1 ? ls.filter((_, idx) => idx !== i) : ls))
-  }
+  useEffect(() => {
+    if (fields.length && lines.length === 0) setLines([blankLine(fields)])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields, lines.length])
 
-  const totalAmt = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
-  const totGst = (Number(form.cgst) || 0) + (Number(form.sgst) || 0)
-  const netPay = totalAmt + totGst - (Number(form.security_deposit_amt) || 0) - (Number(form.advance_amt) || 0)
+  // Totals follow the Designer's formulas (e.g. Net Pay = Amount After Tax); a temple without them gets the plain arithmetic
+  const computed = computeFormulas(fields, values, columnsFromLines(lines), { userCode: user?.user_code || '', aliases: { CGSTAMT: 'CGST', SGSTAMT: 'SGST' } })
+  const shown = withComputed(fields, values, computed)
+  const totalAmt = Number(computed.TOTAMT ?? lines.reduce((s, l) => s + (Number(l.AMOUNT) || 0), 0))
+  const totGst = Number(computed.TOTGSTAMT ?? (Number(shown.CGST) || 0) + (Number(shown.SGST) || 0))
+  const netPay = Number(computed.NETPAY ?? totalAmt + totGst - (Number(values.SDEPAMT) || 0) - (Number(values.ADV) || 0))
+
+  const headErrors = docFieldErrors(fields.filter((f) => f.FldSection !== 'Detail'), values, COMPUTED_CODES)
+  const lineErrors = detailErrors(fields, lines, values)
+  const firstError = Object.values(headErrors)[0] || Object.values(Object.values(lineErrors)[0] || {})[0] || (!(totalAmt > 0) ? 'Enter an amount greater than 0' : null)
 
   async function onSave() {
-    if (!form.contact_no) {
-      notifications.show({ message: `${caption('CONTACTNO', 'Contact Number')} is mandatory`, color: 'red' })
+    setAttempted(true)
+    if (firstError) {
+      notifications.show({ message: firstError, color: 'red' })
       return
     }
     setSaving(true)
     try {
-      const body = {
-        ...form,
-        hb_start_dt: isoDate(form.hb_start_dt),
-        hb_end_dt: isoDate(form.hb_end_dt),
-        cgst: Number(form.cgst) || 0,
-        sgst: Number(form.sgst) || 0,
-        security_deposit_amt: Number(form.security_deposit_amt) || 0,
-        advance_amt: Number(form.advance_amt) || 0,
-        lines: lines.map((l) => ({ name_of_hall: l.name_of_hall, amount: Number(l.amount), rate: Number(l.rate) || 0, hrs: Number(l.hrs) || 0 })),
-      }
-      const result = await hbeApi.createHbe(body)
+      const fieldsPayload = Object.fromEntries(
+        Object.entries(values)
+          .filter(([k, v]) => v !== '' && v !== null && v !== undefined && !COMPUTED_CODES.includes(k))
+          .map(([k, v]) => [k, dateCodes.has(k) ? isoDate(v) : v])
+      )
+      const cleanLines = lines.map((l) => Object.fromEntries(Object.entries(l).filter(([, v]) => v !== '' && v !== null && v !== undefined)))
+      const result = await hbeApi.createHbe({ fields: fieldsPayload, lines: cleanLines })
       setLastSaved(result)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setLines([{ ...EMPTY_LINE }])
+      setValues({})
+      setLines([])
+      setAttempted(false)
+      setResetKey((k) => k + 1)
       queryClient.invalidateQueries({ queryKey: ['hbe'] })
       refetch()
     } catch (err) {
@@ -122,7 +89,7 @@ export default function HallBookingEntryPage() {
 
   useDocShortcuts({ onSave })
 
-  const dateFmt = 'DD/MM/YYYY'
+  const common = { docId: DOC_ID, values, setValue, setValues, resetKey, errors: attempted ? headErrors : {}, computed }
 
   return (
     <Stack gap="lg" className="vt-rise">
@@ -141,151 +108,20 @@ export default function HallBookingEntryPage() {
       <EntryLayout
         main={
           <Stack gap="lg">
-            <SectionCard title="Booking" hint="What the booking is for and when.">
-              <Grid>
-                <Grid.Col span={{ base: 12, sm: 4 }}>
-                  <Select label={caption('TYPE', 'Type')} required={mandatory('TYPE')} data={fieldListOptions(fieldMeta.TYPE, TYPE_OPTIONS)} value={form.type} onChange={(v) => set('type', v)} />
-                </Grid.Col>
-                {!hidden('NMEOFFUNC') && (
-                  <Grid.Col span={{ base: 12, sm: 8 }}>
-                    <TextInput label={caption('NMEOFFUNC', 'Name of Function')} required={mandatory('NMEOFFUNC')} value={form.name_of_func} onChange={(e) => set('name_of_func', e.currentTarget.value)} />
-                  </Grid.Col>
-                )}
-                <Grid.Col span={{ base: 6, md: 3 }}>
-                  <DateInput label={caption('HBSTARTDT', 'Start Date')} required={mandatory('HBSTARTDT')} valueFormat={dateFmt} value={form.hb_start_dt} onChange={(v) => set('hb_start_dt', v)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 6, md: 3 }}>
-                  <TextInput label={caption('STTIME', 'Start Time')} value={form.start_time} onChange={(e) => set('start_time', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 6, md: 3 }}>
-                  <DateInput label={caption('HBENDDT', 'End Date')} required={mandatory('HBENDDT')} valueFormat={dateFmt} value={form.hb_end_dt} onChange={(v) => set('hb_end_dt', v)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 6, md: 3 }}>
-                  <TextInput label={caption('ENDTIME', 'End Time')} value={form.end_time} onChange={(e) => set('end_time', e.currentTarget.value)} />
-                </Grid.Col>
-              </Grid>
+            <SectionCard title="Booking" hint="Drawn from this temple's Doc Designer.">
+              <DocFieldsForm {...common} section="Header" />
             </SectionCard>
 
-            <SectionCard title="Contact" hint="Who is booking.">
-              <Grid>
-                <Grid.Col span={{ base: 12, sm: 4 }}>
-                  <TextInput label={caption('CONPRS', 'Contact Person')} value={form.contact_person} onChange={(e) => set('contact_person', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 4 }}>
-                  <TextInput label={caption('CONTACTNO', 'Contact Number')} required={mandatory('CONTACTNO')} value={form.contact_no} onChange={(e) => set('contact_no', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 4 }}>
-                  <TextInput label={caption('SECCONTNO', 'Mobile No')} value={form.mobile_no} onChange={(e) => set('mobile_no', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={12}>
-                  <TextInput label={caption('ADDRESS', 'Address')} value={form.address} onChange={(e) => set('address', e.currentTarget.value)} />
-                </Grid.Col>
-              </Grid>
+            <SectionCard title={caption('NAMEOFHALL', 'Halls and items')} hint="One line per hall or item; the line amounts make up the total.">
+              <DocDetailGrid docId={DOC_ID} rows={lines} setRows={setLines} values={values} errors={attempted ? lineErrors : {}} />
             </SectionCard>
 
-            <SectionCard title="Payment details" hint="How it is paid, plus billing details.">
-              <Grid>
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <Select
-                    label={caption('PAYMNTMODE', 'Payment Mode')}
-                    required={mandatory('PAYMNTMODE')}
-                    data={fieldListOptions(fieldMeta.PAYMNTMODE, PAYMENT_MODES)}
-                    value={form.payment_mode}
-                    onChange={(v) => set('payment_mode', v)}
-                  />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <TextInput label={caption('REFNO', 'Reference Number')} required={mandatory('REFNO')} value={form.reference_no} onChange={(e) => set('reference_no', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <TextInput label={caption('EMAILID', 'Email ID')} value={form.email_id} onChange={(e) => set('email_id', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <TextInput label={caption('PAN', 'PAN No')} value={form.pan} onChange={(e) => set('pan', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <TextInput label={caption('BANK', 'Bank Branch')} value={form.bank} onChange={(e) => set('bank', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <TextInput label={caption('CASHCHEQ', 'Cash / Cheque No')} value={form.cash_cheque_no} onChange={(e) => set('cash_cheque_no', e.currentTarget.value)} />
-                </Grid.Col>
-              </Grid>
+            <SectionCard title="Payment details">
+              <DocFieldsForm {...common} section="Footer" />
             </SectionCard>
 
-            <SectionCard
-              title="Halls and items"
-              hint="One line per hall or item; the line amounts make up the total."
-              action={
-                <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
-                  Add line
-                </Button>
-              }
-            >
-              <Table.ScrollContainer minWidth={560}>
-                <Table>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>{caption('NAMEOFHALL', 'Name of the Hall / Room')}</Table.Th>
-                      <Table.Th w={110}>Rate</Table.Th>
-                      <Table.Th w={100}>Hrs</Table.Th>
-                      <Table.Th w={140}>{caption('AMOUNT', 'Amount')}</Table.Th>
-                      <Table.Th w={48} aria-label="Remove" />
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {lines.map((l, i) => (
-                      <Table.Tr key={i}>
-                        <Table.Td>
-                          <TextInput aria-label={`Hall or item, line ${i + 1}`} value={l.name_of_hall} onChange={(e) => updateLine(i, { name_of_hall: e.currentTarget.value })} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label={`Rate, line ${i + 1}`} value={l.rate} onChange={(v) => updateLine(i, { rate: v })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label={`Hours, line ${i + 1}`} value={l.hrs} onChange={(v) => updateLine(i, { hrs: v })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label={`Amount, line ${i + 1}`} value={l.amount} onChange={(v) => updateLine(i, { amount: v })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <ActionIcon
-                            color="red"
-                            variant="subtle"
-                            size={36}
-                            aria-label={`Remove line ${i + 1}`}
-                            disabled={lines.length <= 1}
-                            onClick={async () => {
-                              if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeLine(i)
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </ActionIcon>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-              </Table.ScrollContainer>
-            </SectionCard>
-
-            <SectionCard title="Taxes and adjustments" hint="GST is entered as an amount here. Deposit and advance are deducted from the net.">
-              <Grid>
-                <Grid.Col span={{ base: 6, md: 3 }}>
-                  <NumberInput label="CGST" value={form.cgst} onChange={(v) => set('cgst', v)} decimalScale={2} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 6, md: 3 }}>
-                  <NumberInput label="SGST" value={form.sgst} onChange={(v) => set('sgst', v)} decimalScale={2} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 6, md: 3 }}>
-                  <NumberInput label={caption('SDEPAMT', 'Security Deposit Amount')} value={form.security_deposit_amt} onChange={(v) => set('security_deposit_amt', v)} decimalScale={2} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 6, md: 3 }}>
-                  <NumberInput label={caption('ADV', 'Advance Amount')} value={form.advance_amt} onChange={(v) => set('advance_amt', v)} decimalScale={2} />
-                </Grid.Col>
-                <Grid.Col span={12}>
-                  <TextInput label={caption('RMKS', 'Remarks')} value={form.remarks} onChange={(e) => set('remarks', e.currentTarget.value)} />
-                </Grid.Col>
-              </Grid>
+            <SectionCard title="Taxes and adjustments" hint="Deposit and advance are deducted from the net.">
+              <DocFieldsForm {...common} section="Total" />
             </SectionCard>
           </Stack>
         }
@@ -294,13 +130,14 @@ export default function HallBookingEntryPage() {
             <SummaryCard
               rows={[
                 { label: caption('TOTAMT', 'Total amount'), value: formatINR(totalAmt) },
-                { label: caption('TOTGSTAMT', 'Total GST amount'), value: formatINR(totGst) },
-                { label: 'Security deposit', value: `- ${formatINR(Number(form.security_deposit_amt) || 0)}` },
-                { label: 'Advance', value: `- ${formatINR(Number(form.advance_amt) || 0)}` },
+                ...(has('CGST') || has('SGST') ? [{ label: caption('TOTGSTAMT', 'Total GST amount'), value: formatINR(totGst) }] : []),
+                ...(has('SDEPAMT') ? [{ label: caption('SDEPAMT', 'Security deposit'), value: `- ${formatINR(Number(values.SDEPAMT) || 0)}` }] : []),
+                ...(has('ADV') ? [{ label: caption('ADV', 'Advance'), value: `- ${formatINR(Number(values.ADV) || 0)}` }] : []),
               ]}
               totalLabel={caption('NETPAY', 'Net pay')}
               total={formatINR(netPay)}
               words={netPay}
+              warning={firstError || null}
               saveLabel="Save"
               saving={saving}
               onSave={onSave}
@@ -315,8 +152,8 @@ export default function HallBookingEntryPage() {
               emptyHint="Saved entries will be listed here."
               renderRow={(r) => ({
                 key: r.HBEID,
-                title: `${r.PrintHBENO} \u00b7 ${r.TYPE}`,
-                subtitle: `${r.NMEOFFUNC} \u00b7 ${formatINR(r.NETPAY)}`,
+                title: `${r.PrintHBENO}${r.TYPE ? ` · ${r.TYPE}` : ''}`,
+                subtitle: `${r.NMEOFFUNC || ''} · ${formatINR(r.NETPAY)}`,
               })}
             />
           </>

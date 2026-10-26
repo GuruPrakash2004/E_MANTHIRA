@@ -11,7 +11,7 @@ mandatory per line, cheque fields apply only when Payment Mode = Cheque, Total A
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from fastapi import HTTPException, status
@@ -20,80 +20,74 @@ from sqlalchemy.engine import Connection
 
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
-from app.legacy.tables import insert_row, update_row
+from app.legacy.tables import insert_row, table, update_row
+from app.meta import doc_rules
 from app.meta.numbering import next_doc_no
 
 DOC_ID = 1260
 TABLE = "TrnHdrEXP"
 NO_COLUMN = "EXPNO"
-PAYMENT_MODES = ("Cash", "Card", "Online", "Cheque")
-
-
-@dataclass
-class ExpenseLine:
-    led_id: int
-    amount: float
-    item_desc: str = ""
-    remarks: str = ""
 
 
 @dataclass
 class ExpenseInput:
+    """Header / Footer Designer fields keyed by FldCode (PAYMNTMODE, REFNO, RMKS, cheque block ...) and the Detail
+    lines (LEDID, ITEMDESC, AMOUNT, DRMKS), all as configured in UtlDocDsgrFlds."""
+
     prefix: str
     expense_date: date
-    payment_mode: str
-    lines: list[ExpenseLine]
-    ref_no: str = ""
-    remarks: str = ""
-    cheque_no: str = ""
-    cheque_date: date | None = None
-    cheque_amount: float | None = None
-    bank_name: str = ""
-    extra_fields: dict = field(default_factory=dict)
+    fields: dict
+    lines: list[dict]
 
 
-def validate(data: ExpenseInput, fy: FinancialYear) -> None:
-    assert_date_in_fy(data.expense_date, fy)
-    if data.payment_mode not in PAYMENT_MODES:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Payment Mode is mandatory")
-    if not data.lines:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please add at least one expense line")
-    for l in data.lines:
-        if not l.led_id:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Every line needs a ledger")
-        if l.amount is None or l.amount <= 0:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
+COMPUTED = ("TOTAMT",)
+
+
+def _amount(line: dict) -> float:
+    try:
+        return round(float(line.get("AMOUNT") or 0), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Amount must be a number")
 
 
 def create(conn: Connection, *, data: ExpenseInput, fy: FinancialYear, user_code: str) -> dict:
-    validate(data, fy)
+    assert_date_in_fy(data.expense_date, fy)
+    rows = doc_rules.load_fields(conn, DOC_ID)
+    if not rows:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Expense Entry has no fields configured in the Doc Designer")
+    values = doc_rules.effective_values(rows, {k: v for k, v in data.fields.items() if k not in COMPUTED})
+    head = [r for r in rows if (r.get("FldSection") or "Header") in ("Header", "Footer")]
+    detail = [r for r in rows if r.get("FldSection") == "Detail"]
+    if not data.lines:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please add at least one expense line")
+    doc_rules.validate(head, values, skip=COMPUTED, fy=fy)
+    doc_rules.check_duplicate_lines(detail, data.lines)
+    for i, l in enumerate(data.lines, start=1):
+        try:
+            doc_rules.validate(detail, {**values, **l})
+        except HTTPException as exc:
+            raise HTTPException(exc.status_code, f"Line {i}: {exc.detail}")
+        if _amount(l) <= 0:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
+
     doc_no = next_doc_no(
         conn, table_name=TABLE, no_column=NO_COLUMN, prefix=data.prefix,
         fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
     )
-    total = round(sum(l.amount for l in data.lines), 2)
-    is_cheque = data.payment_mode == "Cheque"
-    exp_id = insert_row(
-        conn, TABLE,
+    total = round(sum(_amount(l) for l in data.lines), 2)
+    cols = doc_rules.column_values(head, values, table(TABLE))
+    cols.update(
         {
             NO_COLUMN: doc_no, "Prefix": data.prefix, "PrintEXPNO": doc_no, "EXPDate": data.expense_date,
-            "AddedBy": user_code, "AddedOn": datetime.now(), "Authorised": "Y", "Cancelled": "N",
-            "REFNO": data.ref_no, "PAYMNTMODE": data.payment_mode, "RMKS": data.remarks, "TOTAMT": total,
-            # cheque block is hidden (and left empty) unless Payment Mode = Cheque
-            "CHEQUENO": data.cheque_no if is_cheque else "",
-            "CHEQUEDT": data.cheque_date if is_cheque else None,
-            "CHEQUEAMT": (data.cheque_amount or 0) if is_cheque else 0,
-            "BANKNAME": data.bank_name if is_cheque else "",
-            **data.extra_fields,
-        },
-        returning="EXPID",
+            "AddedBy": user_code, "AddedOn": datetime.now(), "Authorised": "Y", "Cancelled": "N", "TOTAMT": total,
+        }
     )
+    exp_id = insert_row(conn, TABLE, cols, returning="EXPID")
     for i, l in enumerate(data.lines, start=1):
-        insert_row(
-            conn, "TrnDtlEXP",
-            {"EXPID": exp_id, "SlNo": i, "ItemSlNO": i, "ShortClosed": "N", "ShortClosedBy": 0,
-             "LEDID": l.led_id, "ITEMDESC": l.item_desc, "AMOUNT": l.amount, "DRMKS": l.remarks},
-        )
+        lv = doc_rules.effective_values(detail, l)
+        dcols = doc_rules.column_values(detail, lv, table("TrnDtlEXP"))
+        dcols.update({"EXPID": exp_id, "SlNo": i, "ItemSlNO": i, "ShortClosed": "N", "ShortClosedBy": 0, "AMOUNT": _amount(l)})
+        insert_row(conn, "TrnDtlEXP", dcols)
     audit.record(conn, entity="Expense Entry", entity_id=exp_id, action="A", user_code=user_code, details=doc_no)
     return {"exp_id": exp_id, "exp_no": doc_no, "total_amt": total}
 
@@ -101,7 +95,7 @@ def create(conn: Connection, *, data: ExpenseInput, fy: FinancialYear, user_code
 def list_recent(conn: Connection, *, fy: FinancialYear, search: str = "", top: int = 50) -> list[dict]:
     from app.core.db import limit_clause
 
-    sql = f"SELECT EXPID, EXPNO, PrintEXPNO, EXPDate, PAYMNTMODE, RMKS, TOTAMT, Cancelled FROM {TABLE} WHERE EXPDate BETWEEN :fs AND :fe"
+    sql = f"SELECT * FROM {TABLE} WHERE EXPDate BETWEEN :fs AND :fe"
     params: dict = {"fs": fy.start_date, "fe": fy.end_date}
     if search:
         sql += " AND (EXPNO LIKE :q OR RMKS LIKE :q OR REFNO LIKE :q)"

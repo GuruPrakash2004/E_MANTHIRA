@@ -27,8 +27,9 @@ from sqlalchemy.engine import Connection
 
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
-from app.legacy.tables import insert_row
-from app.meta.numbering import next_doc_no
+from app.legacy.tables import insert_row, table
+from app.meta import doc_rules
+from app.meta.numbering import next_doc_no, resolve_prefix
 from app.utils.amount_in_words import amount_in_words
 
 DOC_ID = 1280
@@ -36,96 +37,92 @@ TABLE = "TrnHdrHBE"
 NO_COLUMN = "HBENO"
 
 
-def _prefix_for_type(doc_type: str) -> str:
-    return "CF" if (doc_type or "").strip().upper() == "CARPUS FUND" else "HB"
-
-
-@dataclass
-class HbeLine:
-    name_of_hall: str
-    amount: float
-    rate: float = 0
-    hrs: float = 0
-
-
 @dataclass
 class HbeInput:
-    type: str  # 'HALL BOOKING' | 'CARPUS FUND'
-    hb_start_dt: date
-    hb_end_dt: date
-    start_time: str = ""
-    end_time: str = ""
-    name_of_func: str = ""
-    contact_person: str = ""
-    contact_no: str = ""
-    mobile_no: str = ""
-    address: str = ""
-    payment_mode: str = "Cash"
-    reference_no: str = ""
-    email_id: str = ""
-    pan: str = ""
-    cgst: float = 0
-    sgst: float = 0
-    security_deposit_amt: float = 0
-    advance_amt: float = 0
-    bank: str = ""
-    cash_cheque_no: str = ""
+    """The screen submits Designer fields keyed by FldCode (Header / Footer / Total) and the Detail lines."""
+
+    fields: dict
+    lines: list[dict]
     receipt_date: date | None = None
-    remarks: str = ""
-    issued_by: str = ""
-    lines: list[HbeLine] = None
+
+
+# Where a Designer code differs from its TrnHdrHBE column.
+ALIASES = {"CGST": "CGSTAMT", "SGST": "SGSTAMT"}
+# Formulas refer to the column names; the Designer fields carrying those values are CGST / SGST.
+FORMULA_NAMES = {"CGSTAMT": "CGST", "SGSTAMT": "SGST"}
+# Calculated here from the lines: whatever the browser sends for them is ignored.
+COMPUTED = ("TOTAMT", "TOTGSTAMT", "AMTAFTTAX", "NETPAY", "AMTINWORDS", "TOTAMTIWRDS", "ISSUEDBY")
+
+
+def _num(v) -> float:
+    try:
+        return round(float(v or 0), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Amounts must be numbers")
 
 
 def create_hbe(conn: Connection, *, data: HbeInput, fy: FinancialYear, user_code: str) -> dict:
-    assert_date_in_fy(data.hb_start_dt, fy)
+    rows = doc_rules.load_fields(conn, DOC_ID)
+    if not rows:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Hall Booking Entry has no fields configured in the Doc Designer")
+    values = doc_rules.effective_values(rows, {k: v for k, v in data.fields.items() if k not in COMPUTED})
+    head = [r for r in rows if r.get("FldSection") != "Detail"]
+    detail = [r for r in rows if r.get("FldSection") == "Detail"]
+
+    start = values.get("HBSTARTDT")
+    assert_date_in_fy(doc_rules._to_date(start) if start else date.today(), fy)
     if not data.lines:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please add at least one item line")
-    for l in data.lines:
-        if l.amount <= 0:
+    doc_rules.validate(head, values, skip=COMPUTED, fy=fy)
+    doc_rules.check_duplicate_lines(detail, data.lines)
+    for i, l in enumerate(data.lines, start=1):
+        try:
+            doc_rules.validate(detail, {**values, **l})
+        except HTTPException as exc:
+            raise HTTPException(exc.status_code, f"Line {i}: {exc.detail}")
+        if _num(l.get("AMOUNT")) <= 0:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
-    if not data.contact_no:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Contact Number is mandatory")
 
-    prefix = _prefix_for_type(data.type)
+    prefixes = resolve_prefix(conn, doc_id=DOC_ID, field_values={k: str(v) for k, v in values.items()})
+    if not prefixes:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No document-number prefix configured for this booking")
+    prefix = prefixes[0]
     doc_no = next_doc_no(
         conn, table_name=TABLE, no_column=NO_COLUMN, prefix=prefix,
         fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
     )
 
-    total_amt = round(sum(l.amount for l in data.lines), 2)
-    tot_gst_amt = round((data.cgst or 0) + (data.sgst or 0), 2)
-    amt_after_tax = round(total_amt + tot_gst_amt, 2)
-    net_pay = round(amt_after_tax - (data.security_deposit_amt or 0) - (data.advance_amt or 0), 2)
-    amt_in_words = amount_in_words(net_pay)
+    # Totals come from the Designer's formulas (TOTAMT = SVTCOLSUM(#AMOUNT#), AMTAFTTAX, NETPAY, GST ...); where this
+    # temple has no formula for one of them the plain arithmetic is used.
+    computed = doc_rules.compute_formulas(rows, values, doc_rules.columns_from_lines(data.lines), user_code=user_code, aliases=FORMULA_NAMES)
+    final = doc_rules.apply_computed(rows, values, computed)
+    total_amt = round(_num(computed["TOTAMT"]) if "TOTAMT" in computed else sum(_num(l.get("AMOUNT")) for l in data.lines), 2)
+    cgst, sgst = _num(final.get("CGST")), _num(final.get("SGST"))
+    tot_gst_amt = round(_num(computed["TOTGSTAMT"]) if "TOTGSTAMT" in computed else cgst + sgst, 2)
+    amt_after_tax = round(_num(computed["AMTAFTTAX"]) if "AMTAFTTAX" in computed else total_amt + tot_gst_amt, 2)
+    net_pay = round(
+        _num(computed["NETPAY"]) if "NETPAY" in computed else amt_after_tax - _num(values.get("SDEPAMT")) - _num(values.get("ADV")), 2
+    )
+    amt_in_words = str(computed.get("AMTINWORDS") or amount_in_words(net_pay))
+    tot_words = str(computed.get("TOTAMTIWRDS") or amount_in_words(net_pay))
+    values = final  # CGST / SGST may have come from their formula
 
-    hbe_id = insert_row(
-        conn, TABLE,
+    cols = doc_rules.column_values(head, values, table(TABLE), ALIASES)
+    cols.update(
         {
             NO_COLUMN: doc_no, "Prefix": prefix, "PrintHBENO": doc_no, "HBEDate": datetime.now(),
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
-            "TYPE": data.type, "NMEOFFUNC": data.name_of_func,
-            "HBSTARTDT": data.hb_start_dt, "STTIME": data.start_time, "HBENDDT": data.hb_end_dt, "ENDTIME": data.end_time,
-            "CONPRS": data.contact_person, "CONTACTNO": data.contact_no,
-            # SECCONTNO is `numeric` in the real DB despite its "Mobile No" caption.
-            "SECCONTNO": int(data.mobile_no) if (data.mobile_no or "").strip().isdigit() else 0,
-            "ADDRESS": data.address, "PAYMNTMODE": data.payment_mode, "REFNO": data.reference_no,
-            "EMAILID": data.email_id, "PAN": data.pan,
-            "TOTAMT": total_amt, "CGSTAMT": data.cgst or 0, "SGSTAMT": data.sgst or 0, "TOTGSTAMT": tot_gst_amt,
-            "AMTAFTTAX": amt_after_tax, "SDEPAMT": data.security_deposit_amt or 0, "ADV": data.advance_amt or 0,
-            "NETPAY": net_pay, "BANK": data.bank, "CASHCHEQ": data.cash_cheque_no,
-            "RCPDT": data.receipt_date or data.hb_start_dt, "RMKS": data.remarks, "ISSUEDBY": data.issued_by or user_code,
-            "AMTINWORDS": amt_in_words, "TOTAMTIWRDS": amt_in_words,
-        },
-        returning="HBEID",
+            "TOTAMT": total_amt, "TOTGSTAMT": tot_gst_amt, "AMTAFTTAX": amt_after_tax, "NETPAY": net_pay,
+            "RCPDT": data.receipt_date or (doc_rules._to_date(start) if start else date.today()),
+            "ISSUEDBY": user_code, "AMTINWORDS": amt_in_words, "TOTAMTIWRDS": tot_words,
+        }
     )
+    hbe_id = insert_row(conn, TABLE, cols, returning="HBEID")
     for i, l in enumerate(data.lines, start=1):
-        insert_row(
-            conn, "TrnDtlHBE",
-            {
-                "HBEID": hbe_id, "SlNo": i, "ItemSlNO": i, "ShortClosed": "N", "ShortClosedBy": 0,
-                "NAMEOFHALL": l.name_of_hall, "AMOUNT": l.amount, "RATE": l.rate or 0, "HRS": l.hrs or 0,
-            },
-        )
+        lv = doc_rules.effective_values(detail, l)
+        dcols = doc_rules.column_values(detail, lv, table("TrnDtlHBE"))
+        dcols.update({"HBEID": hbe_id, "SlNo": i, "ItemSlNO": i, "ShortClosed": "N", "ShortClosedBy": 0, "AMOUNT": _num(l.get("AMOUNT"))})
+        insert_row(conn, "TrnDtlHBE", dcols)
 
     audit.record(conn, entity="Hall Booking Entry", entity_id=hbe_id, action="A", user_code=user_code, details=doc_no)
     return {"hbe_id": hbe_id, "hbe_no": doc_no, "total_amt": total_amt, "net_pay": net_pay}
@@ -135,7 +132,8 @@ def list_hbe(conn: Connection, *, fy: FinancialYear, top: int = 50) -> list[dict
     from app.core.db import limit_clause
 
     sql = (
-        f"SELECT HBEID, HBENO, PrintHBENO, HBEDate, TYPE, NMEOFFUNC, CONTACTNO, TOTAMT, NETPAY, Cancelled "
+        f"SELECT * "  # not a fixed column list: TYPE etc. exist only in some temples' databases
+        
         f"FROM {TABLE} WHERE HBEDate BETWEEN :fs AND :fe ORDER BY HBEID DESC {limit_clause(top)}"
     )
     rows = conn.execute(text(sql), {"fs": fy.start_date, "fe": fy.end_date}).mappings().all()

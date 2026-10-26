@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Alert, Button, Card, Checkbox, Group, Select, Stack, Text } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import { Eye, FileSpreadsheet, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -48,8 +48,8 @@ function Filters({ s, daily }) {
       <Stack gap="sm">
         <Group gap="md" align="flex-end" wrap="wrap">
           <Checkbox color="kumkum" label="Date Range" checked disabled mb={8} />
-          <DatePickerInput className="vt-field-required" label="From" valueFormat="DD/MM/YYYY" value={s.from} onChange={s.setFrom} w={150} />
-          <DatePickerInput className="vt-field-required" label="To" valueFormat="DD/MM/YYYY" value={s.to} onChange={s.setTo} w={150} />
+          <DatePickerInput className="vt-field-required" label="From" valueFormat="DD-MMM-YYYY" value={s.from} onChange={s.setFrom} w={150} />
+          <DatePickerInput className="vt-field-required" label="To" valueFormat="DD-MMM-YYYY" value={s.to} onChange={s.setTo} w={150} />
           <Select label="Trip No" placeholder="All trips" clearable searchable data={s.trips} value={s.trip} onChange={s.setTrip} w={220} />
           {daily && <Checkbox color="kumkum" label="Select Sales Person" checked={s.byUser} onChange={(e) => s.setByUser(e.currentTarget.checked)} mb={8} />}
           <Button color="kumkum" leftSection={<Eye size={16} />} loading={s.loading} onClick={s.view}>View</Button>

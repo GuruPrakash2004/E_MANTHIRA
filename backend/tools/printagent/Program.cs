@@ -86,6 +86,17 @@ namespace VTemplePrintAgent
             }
         }
 
+        private static string NotAllowedJson(string origin)
+        {
+            var file = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "printagent.txt");
+            var shown = string.IsNullOrEmpty(origin) ? "(none sent)" : origin;
+            Log("403 refused origin " + shown + " - not listed in " + file);
+            return "{\"error\":" + JsonQuote(
+                "This PC's Print Agent does not allow this page (" + shown + "). "
+                + "Open Print Settings on this address and run the Print Agent setup again, "
+                + "or add that exact address as a line in " + file + " and restart the agent.") + "}";
+        }
+
         private static bool OriginAllowed(string origin)
         {
             if (string.IsNullOrEmpty(origin)) return false;
@@ -126,7 +137,7 @@ namespace VTemplePrintAgent
                         // a web page that is not on the allow-list must not learn this PC's name or printers
                         if (origin.Length > 0 && !OriginAllowed(origin))
                         {
-                            WriteJson(stream, 403, origin, "{\"error\":\"This page is not allowed to use the print agent\"}");
+                            WriteJson(stream, 403, origin, NotAllowedJson(origin));
                             return;
                         }
                         HandleHealth(stream, origin);
@@ -137,7 +148,7 @@ namespace VTemplePrintAgent
                     {
                         if (!OriginAllowed(origin))
                         {
-                            WriteJson(stream, 403, origin, "{\"error\":\"This page is not allowed to use the print agent\"}");
+                            WriteJson(stream, 403, origin, NotAllowedJson(origin));
                             return;
                         }
                         HandlePrint(stream, origin, req.Body);

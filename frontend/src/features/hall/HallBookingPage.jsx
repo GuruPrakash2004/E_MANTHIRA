@@ -1,60 +1,44 @@
+import { historyParams } from '../../lib/history'
 import { useState } from 'react'
-import { Button, Grid, Group, Menu, NumberInput, Select, Stack, Text, TextInput, Title } from '@mantine/core'
-import { DateTimePicker } from '@mantine/dates'
+import { Button, Group, Menu, Stack, Text, Title } from '@mantine/core'
+import { DateInput } from '../../components/ui/AppDates'
 import { notifications } from '@mantine/notifications'
 import { Building, ChevronDown } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as hallApi from '../../api/endpoints/hall'
-import LookupSelect from '../../components/LookupSelect'
 import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
-import DynamicField from '../../components/DynamicField'
+import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import useDocFields from '../../hooks/useDocFields'
-import { isFieldHidden, isFieldMandatory, fieldCaption } from '../../utils/docFieldConditions'
 import HallPaymentPanel from './HallPaymentPanel'
 import DocNavBar from '../../components/ui/DocNavBar'
 import { useNavigate } from 'react-router-dom'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
-import { formatINR } from '../../utils/format'
+import { formatINR, isoDate } from '../../utils/format'
 
 const DOC_ID = 1281
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
+// Calculated by the server (or owned by the payment flow), so not drawn as inputs.
+const COMPUTED_CODES = [
+  'TOTAMT', 'CGSTAMT', 'SGSTAMT', 'TOTGSTAMT', 'AMTAFTTAX', 'NETPAY', 'BALAMT', 'NOD',
+  'ADV', 'PMT2', 'FULLPAIDAMT', 'AMTINWORDS', 'TOTAMTIWRDS', 'ISSUEDBY',
+  // advance / part / final payment details are recorded through Receipt Info, not on the booking itself
+  'PAYMNTMODE', 'REFNO', 'PAYMODE2', 'REFNO3', 'PAYMODE', 'REF2', 'PAYMODFH', 'CASHCHEQ', 'RCPDT', 'BANK',
+]
 
-// Maps this screen's own form-state keys to the legacy FldCode UtlDocDsgrFlds
-// uses — same pattern as SevaEntryPage/DonationReceiptPage (CLAUDE.md rule 5).
-const FIELD_CODE_MAP = {
-  TYPE: 'booking_type', HALLID: 'hall_id', NMEOFFUNC: 'function_name',
-  CONPRS: 'contact_person', CONTACTNO: 'contact_no', MOBNO: 'mobile',
-  ADDRESS: 'address', EMAILID: 'email', PAN: 'pan', RMKS: 'remarks',
-  AMOUNT: 'amount', CGSTPER: 'cgst_pct', SGSTPER: 'sgst_pct',
-  SDEPAMT: 'deposit', LEDGER: 'ledger_id', LEDID: 'cash_bank_ledger_id',
-}
-
+/**
+ * Hall Booking (DocID 1281): the booking form is drawn entirely from the temple's Doc Designer (UtlDocDsgrFlds) —
+ * which fields exist, their order, captions, lists, mandatory / hide rules. Advance and final payments are added
+ * afterwards through Receipt Info. See app/services/hall.py.
+ */
 export default function HallBookingPage() {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState({
-    booking_type: 'HALL BOOKING',
-    hall_id: '',
-    function_name: '',
-    contact_person: '',
-    contact_no: '',
-    mobile: '',
-    address: '',
-    email: '',
-    pan: '',
-    remarks: '',
-    amount: 0,
-    cgst_pct: 9,
-    sgst_pct: 9,
-    deposit: 0,
-    ledger_id: '',
-    cash_bank_ledger_id: '',
-  })
-  const [extra, setExtra] = useState({})
-  const [startAt, setStartAt] = useState(null)
-  const [endAt, setEndAt] = useState(null)
+  const [values, setValues] = useState({})
+  const [resetKey, setResetKey] = useState(0)
+  const [docDate, setDocDate] = useState(new Date())
+  const [attempted, setAttempted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
   const [printFor, setPrintFor] = useState(null)
@@ -64,102 +48,71 @@ export default function HallBookingPage() {
   const navigate = useNavigate()
   const { data: hbOptions = [] } = useQuery({ queryKey: ['hall-booking-options'], queryFn: hallApi.bookingOptions, staleTime: 5 * 60_000 })
 
-  const { byCode: fieldMeta } = useDocFields(DOC_ID)
-  const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, form[key]]))
-  const hidden = (code) => isFieldHidden(fieldMeta[code], codeValues)
-  const mandatory = (code) => isFieldMandatory(fieldMeta[code], codeValues)
-  const caption = (code, fallback) => fieldCaption(fieldMeta[code], fallback)
-  const knownCodes = new Set(Object.keys(FIELD_CODE_MAP))
-  const extraDesignerFields = Object.values(fieldMeta).filter(
-    (f) => !knownCodes.has(f.FldCode) && !hidden(f.FldCode) && f.FldSection === 'Header'
-  )
+  const { fields, isLoading: fieldsLoading } = useDocFields(DOC_ID)
+  const setValue = (code, v) => setValues((cur) => ({ ...cur, [code]: v }))
+  const dateCodes = new Set(fields.filter((f) => f.FldDataType === 'Date').map((f) => f.FldCode))
+  const caption = (code, fallback) => fields.find((f) => f.FldCode === code)?.FldCaption || fallback
+  const has = (code) => fields.some((f) => f.FldCode === code)
 
   const { data: bookings, isLoading: recentLoading, refetch } = useQuery({
     queryKey: ['hall-bookings', 'recent'],
-    queryFn: () => hallApi.listBookings({ top: 15 }),
+    queryFn: () => hallApi.listBookings(historyParams()),
   })
 
-  function set(field, value) {
-    setForm((f) => ({ ...f, [field]: value }))
-  }
-
-  const gross = Number(form.amount) || 0
-  const cgst = (gross * (Number(form.cgst_pct) || 0)) / 100
-  const sgst = (gross * (Number(form.sgst_pct) || 0)) / 100
+  const gross = Number(values.AMOUNT) || 0
+  const cgst = (gross * (Number(values.CGSTPER) || 0)) / 100
+  const sgst = (gross * (Number(values.SGSTPER) || 0)) / 100
   const net = gross + cgst + sgst
 
-  function fmtTime(d) {
-    return d ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : null
-  }
+  const errors = docFieldErrors(fields, values, COMPUTED_CODES)
+  const firstError = Object.values(errors)[0] || (!(gross > 0) ? 'Enter the amount' : null)
 
   async function onSave(mode) {
-    if (mandatory('HALLID') && !form.hall_id) {
-      notifications.show({ message: `${caption('HALLID', 'Name of the Hall / Room')} is mandatory`, color: 'red' })
-      return
-    }
-    if (mandatory('CONTACTNO') && !form.contact_no) {
-      notifications.show({ message: `${caption('CONTACTNO', 'Contact Number')} is mandatory`, color: 'red' })
+    setAttempted(true)
+    if (firstError) {
+      notifications.show({ message: firstError, color: 'red' })
       return
     }
     setSaving(true)
     try {
-      const body = {
-        ...form,
-        hall_id: form.hall_id ? Number(form.hall_id) : null,
-        amount: Number(form.amount),
-        cgst_pct: Number(form.cgst_pct),
-        sgst_pct: Number(form.sgst_pct),
-        deposit: Number(form.deposit) || 0,
-        ledger_id: Number(form.ledger_id),
-        cash_bank_ledger_id: Number(form.cash_bank_ledger_id),
-        start_at: startAt ? startAt.toISOString() : null,
-        end_at: endAt ? endAt.toISOString() : null,
-        start_time_text: fmtTime(startAt),
-        end_time_text: fmtTime(endAt),
-        extra_fields: extra,
-      }
-      const result = await hallApi.createBooking(body)
+      const fieldsPayload = Object.fromEntries(
+        Object.entries(values)
+          .filter(([k, v]) => v !== '' && v !== null && v !== undefined && !COMPUTED_CODES.includes(k))
+          .map(([k, v]) => [k, dateCodes.has(k) ? isoDate(v) : v])
+      )
+      const result = await hallApi.createBooking({ fields: fieldsPayload, doc_date: isoDate(docDate) })
       setLastSaved(result)
       // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
       if (mode === 'print') directPrint(result.hb_id)
       else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.hb_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setExtra({})
+      setValues({})
+      setAttempted(false)
+      setResetKey((k) => k + 1)
       queryClient.invalidateQueries({ queryKey: ['hall-bookings'] })
       refetch()
     } catch (err) {
-      const detail = err?.response?.data?.detail
-      notifications.show({ message: detail || 'Save failed', color: 'red' })
+      notifications.show({ message: err?.response?.data?.detail || 'Save failed', color: 'red' })
     } finally {
       setSaving(false)
     }
   }
 
-  // Record navigation: show a saved booking read-only; New goes back to a blank entry
+  // Record navigation: show a saved booking read-only; New goes back to a blank entry. Columns are the Designer FldCodes.
   async function viewRecord(id) {
     try {
       const b = await hallApi.getBooking(id)
-      setForm((f) => ({
-        ...f,
-        booking_type: b.TYPE || f.booking_type,
-        hall_id: b.HALLID ?? '',
-        function_name: b.NMEOFFUNC || '',
-        contact_person: b.CONPRS || '',
-        contact_no: b.CONTACTNO || '',
-        mobile: b.MOBNO || '',
-        address: b.ADDRESS || '',
-        email: b.EMAILID || '',
-        pan: b.PAN || '',
-        remarks: b.RMKS || '',
-        amount: Number(b.AMOUNT) || 0,
-        cgst_pct: Number(b.CGSTPER) || 0,
-        sgst_pct: Number(b.SGSTPER) || 0,
-        deposit: Number(b.SDEPAMT) || 0,
-        ledger_id: b.LEDGER ?? f.ledger_id,
-        cash_bank_ledger_id: b.LEDID ?? f.cash_bank_ledger_id,
-      }))
-      setStartAt(b.HBSTARTDT ? new Date(b.HBSTARTDT) : null)
-      setEndAt(b.HBENDDT ? new Date(b.HBENDDT) : null)
+      const next = {}
+      for (const f of fields) {
+        if (COMPUTED_CODES.includes(f.FldCode)) continue
+        const v = b[f.FldCode]
+        if (v === null || v === undefined) next[f.FldCode] = ''
+        else if (f.FldDataType === 'Date') next[f.FldCode] = new Date(v)
+        else if (f.FldBlnComboData === 'Y') next[f.FldCode] = Number(v) || ''
+        else next[f.FldCode] = String(v).trim()
+      }
+      setValues(next)
+      if (b.HBDate) setDocDate(new Date(b.HBDate))
       setViewId(id)
       setViewNo(b.PrintHBNO || b.HBNO)
     } catch (err) {
@@ -169,12 +122,13 @@ export default function HallBookingPage() {
   function startNew() {
     setViewId(null)
     setViewNo('')
-    setStartAt(null)
-    setEndAt(null)
-    setForm((f) => ({ ...f, hall_id: '', function_name: '', contact_person: '', contact_no: '', mobile: '', address: '', email: '', pan: '', remarks: '', amount: 0, deposit: 0 }))
+    setValues({})
+    setAttempted(false)
+    setResetKey((k) => k + 1) // re-applies the Designer defaults
+    setDocDate(new Date())
   }
   async function findBookings(q) {
-    const rows = await hallApi.listBookings({ search: q, top: 30 })
+    const rows = await hallApi.listBookings({ search: q, top: 30, days: 0 })
     return rows.map((r) => ({ id: r.HBID, label: r.PrintHBNO || r.HBNO, sub: `${r.NMEOFFUNC || ''} ${r.CONTACTNO || ''}`.trim() }))
   }
 
@@ -197,117 +151,49 @@ export default function HallBookingPage() {
             </Text>
           </div>
         </Group>
+        <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={Boolean(viewId)} w={150} />
       </Group>
 
       <EntryLayout
         viewing={Boolean(viewId)}
         main={
           <Stack gap="lg">
-            <SectionCard title="Booking" hint="Which hall, for what function, and when.">
-              <Grid>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <Select
-                    label={caption('TYPE', 'Type')}
-                    required={mandatory('TYPE')}
-                    data={['HALL BOOKING', 'CARPUS FUND']}
-                    value={form.booking_type}
-                    onChange={(v) => set('booking_type', v)}
-                  />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <LookupSelect docId={DOC_ID} field="HALLID" label={caption('HALLID', 'Name of the Hall / Room')} required={mandatory('HALLID')} value={form.hall_id} onChange={(v) => set('hall_id', v)} />
-                </Grid.Col>
-                {!hidden('NMEOFFUNC') && (
-                  <Grid.Col span={12}>
-                    <TextInput label={caption('NMEOFFUNC', 'Name of Function')} required={mandatory('NMEOFFUNC')} value={form.function_name} onChange={(e) => set('function_name', e.currentTarget.value)} />
-                  </Grid.Col>
-                )}
-                {!hidden('HBSTARTDT') && (
-                  <Grid.Col span={{ base: 12, sm: 6 }}>
-                    <DateTimePicker label={caption('HBSTARTDT', 'Start Date & Time')} required={mandatory('HBSTARTDT')} valueFormat="DD/MM/YYYY hh:mm A" value={startAt} onChange={setStartAt} />
-                  </Grid.Col>
-                )}
-                {!hidden('HBENDDT') && (
-                  <Grid.Col span={{ base: 12, sm: 6 }}>
-                    <DateTimePicker label={caption('HBENDDT', 'End Date & Time')} required={mandatory('HBENDDT')} valueFormat="DD/MM/YYYY hh:mm A" value={endAt} onChange={setEndAt} />
-                  </Grid.Col>
-                )}
-              </Grid>
-            </SectionCard>
-
-            <SectionCard title="Contact" hint="Who is booking the hall.">
-              <Grid>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <TextInput label={caption('CONPRS', 'Contact Person')} required={mandatory('CONPRS')} value={form.contact_person} onChange={(e) => set('contact_person', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <TextInput label={caption('CONTACTNO', 'Contact Number')} required={mandatory('CONTACTNO')} value={form.contact_no} onChange={(e) => set('contact_no', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <TextInput label={caption('MOBNO', 'Mobile No')} required={mandatory('MOBNO')} value={form.mobile} onChange={(e) => set('mobile', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <TextInput label={caption('EMAILID', 'Email ID')} required={mandatory('EMAILID')} value={form.email} onChange={(e) => set('email', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, md: 8 }}>
-                  <TextInput label={caption('ADDRESS', 'Address')} required={mandatory('ADDRESS')} value={form.address} onChange={(e) => set('address', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, md: 4 }}>
-                  <TextInput label={caption('PAN', 'PAN NO')} required={mandatory('PAN')} value={form.pan} onChange={(e) => set('pan', e.currentTarget.value)} />
-                </Grid.Col>
-                <Grid.Col span={12}>
-                  <TextInput label={caption('RMKS', 'Remarks')} required={mandatory('RMKS')} value={form.remarks} onChange={(e) => set('remarks', e.currentTarget.value)} />
-                </Grid.Col>
-              </Grid>
-            </SectionCard>
-
-            <SectionCard title="Charges and accounts" hint="Hall charges with GST, the security deposit, and the accounts it posts to.">
-              <Grid>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <NumberInput label={caption('AMOUNT', 'Hall Charges Amount')} required={mandatory('AMOUNT')} value={form.amount} onChange={(v) => set('amount', v)} decimalScale={2} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 6, sm: 3 }}>
-                  <NumberInput label={caption('CGSTPER', 'CGST %')} required={mandatory('CGSTPER')} value={form.cgst_pct} onChange={(v) => set('cgst_pct', v)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 6, sm: 3 }}>
-                  <NumberInput label={caption('SGSTPER', 'SGST %')} required={mandatory('SGSTPER')} value={form.sgst_pct} onChange={(v) => set('sgst_pct', v)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <NumberInput label={caption('SDEPAMT', 'Security Deposit Amount')} required={mandatory('SDEPAMT')} value={form.deposit} onChange={(v) => set('deposit', v)} decimalScale={2} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <LookupSelect docId={DOC_ID} field="LEDGER" label={caption('LEDGER', 'Income Ledger')} required={mandatory('LEDGER')} value={form.ledger_id} onChange={(v) => set('ledger_id', v)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6 }}>
-                  <LookupSelect docId={DOC_ID} field="LEDID" label={caption('LEDID', 'Cash / Bank Account')} required={mandatory('LEDID')} value={form.cash_bank_ledger_id} onChange={(v) => set('cash_bank_ledger_id', v)} />
-                </Grid.Col>
-                {extraDesignerFields.map((f) => (
-                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }} key={f.FldCode}>
-                    <DynamicField
-                      docId={DOC_ID}
-                      field={f}
-                      value={extra[f.FldCode]}
-                      onChange={(v) => setExtra((e) => ({ ...e, [f.FldCode]: v }))}
-                      required={mandatory(f.FldCode)}
-                    />
-                  </Grid.Col>
-                ))}
-              </Grid>
-            </SectionCard>
+            {!fieldsLoading && fields.length === 0 ? (
+              <SectionCard title="Hall Booking">
+                <Text size="sm" c="dimmed">
+                  Hall Booking has no fields configured in this temple's Doc Designer, so there is nothing to enter here.
+                </Text>
+              </SectionCard>
+            ) : (
+              <SectionCard title="Booking" hint="Drawn from this temple's Doc Designer.">
+                <DocFieldsForm
+                  docId={DOC_ID}
+                  section="Header"
+                  values={values}
+                  setValue={setValue}
+                  setValues={setValues}
+                  resetKey={resetKey}
+                  errors={attempted ? errors : {}}
+                  skip={COMPUTED_CODES}
+                  readOnly={Boolean(viewId)}
+                />
+              </SectionCard>
+            )}
           </Stack>
         }
         side={
           <>
             <SummaryCard
               rows={[
-                { label: 'Hall charges', value: formatINR(gross) },
-                { label: `CGST ${Number(form.cgst_pct) || 0}%`, value: formatINR(cgst) },
-                { label: `SGST ${Number(form.sgst_pct) || 0}%`, value: formatINR(sgst) },
-                { label: 'Security deposit', value: formatINR(Number(form.deposit) || 0) },
+                { label: caption('AMOUNT', 'Hall charges'), value: formatINR(gross) },
+                ...(has('CGSTPER') ? [{ label: `${caption('CGSTPER', 'CGST')} ${Number(values.CGSTPER) || 0}%`, value: formatINR(cgst) }] : []),
+                ...(has('SGSTPER') ? [{ label: `${caption('SGSTPER', 'SGST')} ${Number(values.SGSTPER) || 0}%`, value: formatINR(sgst) }] : []),
+                ...(has('SDEPAMT') ? [{ label: caption('SDEPAMT', 'Security deposit'), value: formatINR(Number(values.SDEPAMT) || 0) }] : []),
               ]}
-              totalLabel="Net payable"
+              totalLabel={caption('NETPAY', 'Net payable')}
               total={formatINR(net)}
               words={net}
+              warning={firstError || null}
               saving={saving}
               saveDisabled={Boolean(viewId)}
               onSave={() => onSave('save')}
@@ -330,7 +216,7 @@ export default function HallBookingPage() {
               renderRow={(b) => ({
                 key: b.HBID,
                 title: b.PrintHBNO,
-                subtitle: `${b.NMEOFFUNC} \u00b7 Bal ${formatINR(b.BALAMT)}`,
+                subtitle: `${b.NMEOFFUNC || ''} · Bal ${formatINR(b.BALAMT)}`,
                 printLabel: `Print ${b.PrintHBNO}`,
                 onPrint: () => setPrintFor(b.HBID),
                 extra: (

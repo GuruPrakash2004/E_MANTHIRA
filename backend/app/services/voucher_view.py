@@ -14,6 +14,9 @@ _KINDS = {
     "receipts": ("TrnHdrRCPTVCH", "RCPTVCHID", "TrnDtlRCPTVCH"),
     "journals": ("TrnHdrJNRVCH", "JNRVCHID", "TrnDtlJNRVCH"),
     "purchase": ("TrnHdrPURVCH", "PURVCHID", "TrnDtlPURVCH"),
+    "credit-notes": ("TrnHdrCRDNT", "CRDNTID", "TrnDtlCRDNT"),
+    "debit-notes": ("TrnHdrDBTNT", "DBTNTID", "TrnDtlDBTNT"),
+    "contra": ("TrnHdrCNTVCH", "CNTVCHID", "TrnDtlCNTVCH"),
 }
 
 

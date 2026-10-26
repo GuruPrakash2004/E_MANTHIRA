@@ -3,6 +3,8 @@ import { Badge, Card, Checkbox, Group, NumberInput, Select, Skeleton, Stack, Tab
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as printOptionsApi from '../../api/endpoints/printOptions'
+import { detectAgent } from '../../lib/localPrint'
+import { ReportFontsCard } from '../../components/ReportFonts'
 
 const AFTER_SAVE_ACTIONS = [
   { value: 'P', label: 'Print' },
@@ -20,6 +22,23 @@ export default function PrintOptionsTab() {
   const queryClient = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['print-options-admin'], queryFn: printOptionsApi.listAllPrintOptions })
   const [savingKey, setSavingKey] = useState(null)
+  const { data: serverPrinters } = useQuery({ queryKey: ['server-printers'], queryFn: () => printOptionsApi.listServerPrinters(true), staleTime: 15000 })
+  const { data: agent } = useQuery({ queryKey: ['print-agent'], queryFn: detectAgent, staleTime: 15000 })
+
+  // Dropdown list: server printers, then this PC's (Print Agent), plus the saved name if it is in neither.
+  function printerData(current) {
+    const seen = new Set()
+    const group = (label, names) => ({
+      group: label,
+      items: (names || []).filter((n) => n && !seen.has(n) && seen.add(n)),
+    })
+    const groups = [
+      group('Server printers', serverPrinters?.printers),
+      group('This PC (Print Agent)', agent?.printers),
+    ].filter((g) => g.items.length)
+    if (current && !seen.has(current)) groups.push({ group: 'Saved (not detected)', items: [current] })
+    return groups
+  }
 
   const rows = data || []
 
@@ -49,6 +68,7 @@ export default function PrintOptionsTab() {
     <Text size="sm" c="dimmed">
       Which printer each print format sends to, what happens after a save, and the default format. Each change saves as soon as you leave the field.
     </Text>
+    <ReportFontsCard />
     <Card withBorder p={0} style={{ overflow: 'hidden' }}>
     <Table.ScrollContainer minWidth={900}>
     <Table highlightOnHover>
@@ -90,15 +110,18 @@ export default function PrintOptionsTab() {
                 </Text>
               </Table.Td>
               <Table.Td>
-                <TextInput
+                <Select
                   size="xs"
+                  searchable
+                  clearable
+                  placeholder="Default printer"
+                  nothingFoundMessage="No printers found"
                   aria-label={`Direct printer, ${row.MenuItemCaption || row.DocID} ${row.OptionName}`}
                   disabled={busy}
-                  defaultValue={(row.DirectPrinterName || '').trim()}
-                  onBlur={(e) => {
-                    const v = e.currentTarget.value
-                    if (v !== (row.DirectPrinterName || '').trim()) save(row, { direct_printer_name: v })
-                  }}
+                  data={printerData((row.DirectPrinterName || '').trim())}
+                  value={(row.DirectPrinterName || '').trim() || null}
+                  onDropdownOpen={() => queryClient.invalidateQueries({ queryKey: ['server-printers'] })}
+                  onChange={(v) => save(row, { direct_printer_name: v || '' })}
                 />
               </Table.Td>
               <Table.Td>

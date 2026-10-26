@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Badge, Button, Card, Checkbox, Grid, Group, MultiSelect, Radio, Select, Stack, Table, Text } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { Download, FileDown, ListChecks, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery } from '@tanstack/react-query'
@@ -150,10 +150,10 @@ export default function PdfGeneratorPage() {
               )}
             </Grid.Col>
             <Grid.Col span={{ base: 6, md: 3 }}>
-              <DatePickerInput className="vt-field-required" label="From" required valueFormat="DD/MM/YYYY" value={fromDate} onChange={setFromDate} />
+              <DatePickerInput className="vt-field-required" label="From" required valueFormat="DD-MMM-YYYY" value={fromDate} onChange={setFromDate} />
             </Grid.Col>
             <Grid.Col span={{ base: 6, md: 3 }}>
-              <DatePickerInput className="vt-field-required" label="To" required valueFormat="DD/MM/YYYY" value={toDate} onChange={setToDate} />
+              <DatePickerInput className="vt-field-required" label="To" required valueFormat="DD-MMM-YYYY" value={toDate} onChange={setToDate} />
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 2 }}>
               <Button fullWidth color="kumkum" leftSection={<ListChecks size={16} />} loading={loading} onClick={onLoad}>
@@ -190,7 +190,7 @@ export default function PdfGeneratorPage() {
                       <Checkbox color="kumkum" aria-label={`Select ${r.doc_no}`} checked={sel.has(r.id)} onChange={() => toggle(r.id)} onClick={(e) => e.stopPropagation()} />
                     </Table.Td>
                     <Table.Td fw={600}>{r.doc_no}</Table.Td>
-                    <Table.Td>{dayjs(r.doc_date).format('DD/MM/YYYY')}</Table.Td>
+                    <Table.Td>{dayjs(r.doc_date).format('DD-MMM-YYYY')}</Table.Td>
                     <Table.Td>{r.party}</Table.Td>
                     <Table.Td>{exported.has(r.id) && sel.has(r.id) ? <Badge color="teal" variant="light">Exported</Badge> : ''}</Table.Td>
                   </Table.Tr>

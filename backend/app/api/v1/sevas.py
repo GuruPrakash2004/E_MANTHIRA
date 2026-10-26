@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
-from app.core.fy import FinancialYear, get_user_fy
+from app.core.fy import FinancialYear, get_user_fy, get_history_fy
 from app.core.security import CurrentUser, get_current_user, require_right
 from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
 from app.services import seva as seva_service
@@ -22,38 +22,9 @@ class SevaDateIn(BaseModel):
 
 
 class SevaCreateRequest(BaseModel):
-    sannidhi_id: int
-    seva_id: int
-    mobile: str
-    name: str
-    name_kn: str | None = None
-    gothra_id: int | None = None
-    nakshatra_id: int | None = None
-    rashi_id: int | None = None
-    name2: str | None = None
-    nakshatra2_id: int | None = None
-    rashi2_id: int | None = None
-    timing_text: str | None = None
-    payment_mode: str
-    bank_name: str | None = None
-    cheque_no: str | None = None
-    cheque_date: date | None = None
-    reference_no: str | None = None
-    address: str | None = None
-    ledger_id: int
-    cash_bank_ledger_id: int
-    voucher_type: str
-    rate: float
+    fields: dict  # Designer fields keyed by FldCode (the screen is rendered from UtlDocDsgrFlds)
     dates: list[SevaDateIn]
     doc_date: date
-    is_regular: bool = False
-    prasada: bool = False
-    add1: str | None = None
-    add2: str | None = None
-    add3: str | None = None
-    add4: str | None = None
-    mobile_no: str | None = None
-    extra_fields: dict = {}
 
 
 class CancelRequest(BaseModel):
@@ -69,19 +40,9 @@ class GroupGenerateRequest(BaseModel):
     grp_id: int
     seva_id: int
     member_ids: list[int]
-    # everything the entry form supplies for every generated seva
-    payment_mode: str
-    bank_name: str | None = None
-    cheque_no: str | None = None
-    cheque_date: date | None = None
-    reference_no: str | None = None
-    ledger_id: int
-    cash_bank_ledger_id: int
-    voucher_type: str
-    timing_text: str | None = None
+    fields: dict  # the entry form's Designer fields (payment, ledgers, ...) shared by every generated seva
     dates: list[SevaDateIn]
     doc_date: date
-    extra_fields: dict = {}
 
 
 @router.get("/group-seva/groups")
@@ -101,12 +62,9 @@ def group_seva_generate(
     user: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_ADD)),
 ):
     template = seva_service.SevaInput(
-        sannidhi_id=0, seva_id=body.seva_id, mobile="", name="", name_kn=None, gothra_id=None, nakshatra_id=None, rashi_id=None,
-        name2=None, nakshatra2_id=None, rashi2_id=None, timing_text=body.timing_text, payment_mode=body.payment_mode, bank_name=body.bank_name,
-        cheque_no=body.cheque_no, cheque_date=body.cheque_date, reference_no=body.reference_no, address=None, ledger_id=body.ledger_id,
-        cash_bank_ledger_id=body.cash_bank_ledger_id, voucher_type=body.voucher_type, rate=0,
+        fields={**body.fields, "SVAID": body.seva_id},
         dates=[seva_service.SevaDate(perform_date=d.perform_date, remarks=d.remarks) for d in body.dates],
-        doc_date=body.doc_date, extra_fields=body.extra_fields,
+        doc_date=body.doc_date,
     )
     with with_transaction() as conn:
         created = seva_service.generate_group(conn, grp_id=body.grp_id, seva_id=body.seva_id, member_ids=body.member_ids, template=template, fy=fy, user_code=user.user_code)
@@ -126,12 +84,23 @@ def last_seva(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(req
 @router.get("")
 def list_sevas(
     search: str = "",
-    top: int = Query(50, le=200),
-    fy: FinancialYear = Depends(get_user_fy),
+    top: int = Query(50, le=1000),
+    fy: FinancialYear = Depends(get_history_fy),
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_VIEW)),
 ):
     return seva_service.list_recent(conn, fy=fy, search=search, top=top)
+
+
+@router.get("/next-no")
+def next_no(
+    sannidhi_id: int,
+    fy: FinancialYear = Depends(get_user_fy),
+    conn: Connection = Depends(get_conn),
+    _: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_VIEW)),
+):
+    """The bill no the next save for this Sannidhi would get (a preview only: nothing is reserved)."""
+    return seva_service.preview_no(conn, sannidhi_id=sannidhi_id, fy=fy)
 
 
 @router.get("/{seva_id}")
@@ -146,10 +115,28 @@ def create_seva(
     user: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_ADD)),
 ):
     data = seva_service.SevaInput(
-        **{**body.model_dump(exclude={"dates"}), "dates": [seva_service.SevaDate(perform_date=d.perform_date, remarks=d.remarks) for d in body.dates]}
+        fields=body.fields,
+        dates=[seva_service.SevaDate(perform_date=d.perform_date, remarks=d.remarks) for d in body.dates],
+        doc_date=body.doc_date,
     )
     with with_transaction() as conn:
         return seva_service.create(conn, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.put("/{seva_id}")
+def update_seva(
+    seva_id: int,
+    body: SevaCreateRequest,
+    fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(seva_service.DOC_ID, RIGHT_EDIT)),
+):
+    data = seva_service.SevaInput(
+        fields=body.fields,
+        dates=[seva_service.SevaDate(perform_date=d.perform_date, remarks=d.remarks) for d in body.dates],
+        doc_date=body.doc_date,
+    )
+    with with_transaction() as conn:
+        return seva_service.update(conn, seva_id=seva_id, data=data, fy=fy, user_code=user.user_code)
 
 
 @router.post("/{seva_id}/cancel")

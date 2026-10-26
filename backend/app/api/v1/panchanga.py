@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
@@ -29,6 +29,24 @@ def set_panchanga_day(body: SetDayRequest, _: CurrentUser = Depends(get_current_
     with with_transaction() as conn:
         panchanga_service.set_day(conn, day=body.date, name=body.name)
     return {"message": "Updated"}
+
+
+class BulkSetRequest(BaseModel):
+    dates: list[date]
+    name: str
+
+
+@router.put("/bulk")
+def set_panchanga_bulk(body: BulkSetRequest, _: CurrentUser = Depends(get_current_user)):
+    """The same event name on many days at once (e.g. every Monday of a range); one transaction, all or nothing."""
+    if not body.dates:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Choose at least one date")
+    if len(body.dates) > 400:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Too many dates at once (limit 400)")
+    with with_transaction() as conn:
+        for day in sorted(set(body.dates)):
+            panchanga_service.set_day(conn, day=day, name=body.name)
+    return {"message": "Updated", "count": len(set(body.dates))}
 
 
 @router.delete("/{day}")

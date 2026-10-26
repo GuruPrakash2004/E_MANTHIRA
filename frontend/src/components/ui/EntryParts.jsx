@@ -1,5 +1,10 @@
-import { ActionIcon, Button, Card, Divider, Group, Kbd, Skeleton, Text, Title, Stack } from '@mantine/core'
-import { Printer, Save } from 'lucide-react'
+import ExportExcelButton from './ExportExcelButton'
+import { getFyShort } from '../../api/api'
+import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { ActionIcon, Button, Card, Divider, Group, Kbd, Menu, NumberInput, Skeleton, Text, Title, Stack, Tooltip } from '@mantine/core'
+import { Check, History, Printer, Save } from 'lucide-react'
+import { HISTORY_TOP, getHistory, historyLabel, setHistory } from '../../lib/history'
 import useEnterAsTab from '../../hooks/useEnterAsTab'
 import { AnimatePresence, motion } from 'framer-motion'
 import EmptyState from './EmptyState'
@@ -168,12 +173,66 @@ export function SavedPanel({ lines, onPrint, printLabel = 'Print receipt' }) {
 }
 
 // rows: array; renderRow(row) => { key, title, subtitle, onPrint? (omit for no print button), printLabel, extra? (node shown before the print button) }
+// Every column the list's rows carry (plain values only), so the export holds all the data, not just the two lines shown.
+function exportColumns(rows) {
+  const sample = rows[0] || {}
+  return Object.keys(sample).filter((k) => sample[k] === null || typeof sample[k] !== 'object').map((k) => ({ label: k, key: k }))
+}
+
+// "How far back": all bills, the last N days (any financial year) or this financial year. Saved per browser; every
+// "Recent ..." list reloads when it changes.
+function HistoryMenu() {
+  const queryClient = useQueryClient()
+  const [h, setH] = useState(getHistory)
+  const [custom, setCustom] = useState(h.days)
+  function choose(next) {
+    setHistory(next)
+    setH(next)
+    queryClient.invalidateQueries({ predicate: (q) => q.queryKey[1] === 'recent' })
+  }
+  const item = (label, active, onClick) => (
+    <Menu.Item key={label} onClick={onClick} rightSection={active ? <Check size={14} /> : null} fw={active ? 700 : 400}>
+      {label}
+    </Menu.Item>
+  )
+  return (
+    <Menu shadow="md" width={230} position="bottom-end" withinPortal closeOnItemClick>
+      <Menu.Target>
+        <Tooltip label={`History: ${historyLabel(h)}`} withArrow>
+          <ActionIcon variant="light" color="kumkum" size={32} aria-label={`Show history: ${historyLabel(h)}`}>
+            <History size={16} />
+          </ActionIcon>
+        </Tooltip>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Label>Show bills from</Menu.Label>
+        {item('All bills', h.mode === 'all', () => choose({ ...h, mode: 'all' }))}
+        {[7, 30, 90, 365].map((d) => item(`Last ${d} days`, h.mode === 'days' && h.days === d, () => { setCustom(d); choose({ mode: 'days', days: d }) }))}
+        {item('This financial year', h.mode === 'fy', () => choose({ ...h, mode: 'fy' }))}
+        <Menu.Divider />
+        <Menu.Label>Custom number of days</Menu.Label>
+        <Group gap={6} px="xs" pb="xs" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
+          <NumberInput aria-label="Number of days" size="xs" min={1} max={36500} hideControls value={custom} onChange={(v) => setCustom(Number(v) || '')} w={90} />
+          <Button size="xs" color="kumkum" onClick={() => custom && choose({ mode: 'days', days: Number(custom) })}>Apply</Button>
+        </Group>
+      </Menu.Dropdown>
+    </Menu>
+  )
+}
+
 export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyTitle, emptyHint }) {
   return (
     <Card withBorder p="md" className="vt-recent-card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <Group gap={8} mb="xs" style={{ flex: '0 0 auto' }}>
+      <Group gap={8} mb="xs" style={{ flex: '0 0 auto' }} wrap="nowrap">
         <Icon size={18} color="var(--vt-accent)" aria-hidden />
-        <Title order={5}>{title}</Title>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Title order={5}>{title}</Title>
+          <Text size="xs" c="dimmed">{historyLabel()}{!loading ? ` - ${rows.length >= HISTORY_TOP ? `newest ${rows.length}` : rows.length} bill${rows.length === 1 ? '' : 's'}` : ''}</Text>
+        </div>
+        <HistoryMenu />
+        {!loading && rows.length > 0 && (
+          <ExportExcelButton iconOnly filename={String(title)} rows={rows} columns={exportColumns(rows)} label={`Export ${title} to Excel`} />
+        )}
       </Group>
       {loading ? (
         <Stack gap="xs">
@@ -182,14 +241,14 @@ export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyT
           ))}
         </Stack>
       ) : rows.length === 0 ? (
-        <EmptyState icon={Icon} title={emptyTitle} hint={emptyHint} />
+        <EmptyState icon={Icon} title={emptyTitle} hint={`${emptyHint} ${historyLabel()}${getHistory().mode === 'fy' && getFyShort() ? ` (${getFyShort()})` : ''} - use the clock button to look further back.`} />
       ) : (
         <Stack gap={2} className="vt-recent-list" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
           <AnimatePresence initial={false}>
           {rows.map((row) => {
             const r = renderRow(row)
             return (
-              <motion.div key={r.key} layout="position" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
+              <motion.div key={r.key} layout={rows.length <= 60 ? 'position' : false} initial={rows.length <= 60 ? { opacity: 0, y: -10 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
                 <Group justify="space-between" wrap="nowrap" gap="xs" className="vt-recent-row">
                   <div style={{ minWidth: 0 }}>
                     <Text size="sm" fw={600} className="vt-num">

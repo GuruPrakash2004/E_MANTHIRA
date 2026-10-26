@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Drawing.Printing;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
@@ -34,6 +35,8 @@ namespace RptBridge
         private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         private static string _server, _db, _user, _password, _rptRoot, _key;
         private static string _previewPrinter = "Microsoft Print to PDF"; // page layout source for PDF previews (--preview-printer)
+        private static string _fontDirs = ""; // --fonts: folders of .ttf/.otf/.ttc loaded for this process only
+        private static int _fontsLoaded, _fontsInstalled;
         private static bool _useOdbc; // legacy gblnUseODBCinCrystal: the "server" is then the DSN, named like the database
 
         private sealed class HttpError : Exception
@@ -58,10 +61,12 @@ namespace RptBridge
                 else if (args[i] == "--settings") settings = next;
                 else if (args[i] == "--env") envFile = next;
                 else if (args[i] == "--rpts") _rptRoot = next;
+                else if (args[i] == "--fonts") _fontDirs = next;
             }
             if (string.IsNullOrEmpty(_key)) { Console.Error.WriteLine("Refusing to start without a key (--key or RPT_BRIDGE_KEY)."); return 2; }
             if (!LoadDbSettings(settings, envFile)) { Console.Error.WriteLine("No DB settings (--settings <runtime_db_settings.json> and/or --env <.env>)."); return 2; }
             if (_rptRoot == null) _rptRoot = AppDomain.CurrentDomain.BaseDirectory;
+            LoadFonts();
 
             var listener = new HttpListener();
             listener.Prefixes.Add("http://127.0.0.1:" + port + "/"); // loopback only
@@ -77,6 +82,118 @@ namespace RptBridge
                 catch (Exception ex) { Fail(ctx, 500, ex.GetBaseException().Message); }
             }
         }
+
+        // ---- fonts ----------------------------------------------------------------------------------------------
+        // Legacy Indian-language reports (Kannada / Telugu / Tamil / Hindi ...) store their text in non-Unicode "ANSI"
+        // fonts (BRH Kannada, Nudi, Shree-Lipi, ...). On a machine without that font Windows silently draws the bytes in
+        // Times New Roman / Microsoft Sans Serif and the output is Latin gibberish. Every font file found in the folders
+        // below is installed FOR THE CURRENT USER (copied to %LOCALAPPDATA%\Microsoft\Windows\Fonts + HKCU registry,
+        // exactly what "Install for me" does: no admin rights, nothing system-wide) so the Crystal engine finds it. If
+        // that is blocked, the font is loaded privately into this process instead.
+        // Folders: --fonts a;b  +  <exe folder>\fonts  +  <rpts folder>\Fonts.   GET /fonts?rpt=<file> shows which
+        // fonts a report uses and which of them this machine is missing.
+
+        [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+        private static extern int AddFontResource(string file);
+        [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+        private static extern int AddFontResourceEx(string file, uint flags, IntPtr reserved);
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
+        private const uint FR_PRIVATE = 0x10;
+
+        private static void LoadFonts()
+        {
+            var dirs = new List<string>();
+            foreach (string d in (_fontDirs ?? "").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)) dirs.Add(d.Trim());
+            dirs.Add(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fonts"));
+            dirs.Add(Path.Combine(_rptRoot, "Fonts"));
+            string userFonts = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Microsoft\Windows\Fonts");
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            bool changed = false;
+            foreach (string dir in dirs)
+            {
+                if (!Directory.Exists(dir) || !seen.Add(Path.GetFullPath(dir))) continue;
+                foreach (string f in Directory.GetFiles(dir))
+                {
+                    string ext = Path.GetExtension(f).ToLowerInvariant();
+                    if (ext != ".ttf" && ext != ".otf" && ext != ".ttc") continue;
+                    try
+                    {
+                        Directory.CreateDirectory(userFonts);
+                        string dst = Path.Combine(userFonts, Path.GetFileName(f));
+                        string regName = Path.GetFileNameWithoutExtension(f) + (ext == ".otf" ? " (OpenType)" : " (TrueType)");
+                        using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"))
+                        {
+                            bool known = File.Exists(dst) && string.Equals(k.GetValue(regName) as string, dst, StringComparison.OrdinalIgnoreCase);
+                            if (!known)
+                            {
+                                File.Copy(f, dst, true);
+                                k.SetValue(regName, dst, Microsoft.Win32.RegistryValueKind.String);
+                                AddFontResource(dst);
+                                changed = true;
+                                _fontsInstalled++;
+                            }
+                        }
+                        _fontsLoaded++;
+                    }
+                    catch (Exception)
+                    {
+                        if (AddFontResourceEx(f, FR_PRIVATE, IntPtr.Zero) > 0) _fontsLoaded++; // no per-user install possible: this process only
+                    }
+                }
+            }
+            if (changed) { IntPtr r; SendMessageTimeout((IntPtr)0xffff, 0x1D, IntPtr.Zero, IntPtr.Zero, 2, 1000, out r); } // WM_FONTCHANGE
+            Console.WriteLine("Fonts available: " + _fontsLoaded + " (newly installed for this user: " + _fontsInstalled + ")");
+        }
+
+        // GET /fonts?rpt=<file>: every font the report's text / field objects use, and whether this machine has it.
+        // (System.Drawing silently swaps a missing family for Microsoft Sans Serif, so the RAS object model is read.)
+        private static void FontsOf(HttpListenerContext ctx, string rpt)
+        {
+            lock (RenderLock)
+            {
+                string fullRpt = ResolveRpt(rpt);
+                try
+                {
+                    bool reusedDoc;
+                    ReportDocument d = Acquire(rpt, "", new Dictionary<string, string>(), false, out reusedDoc);
+                    var used = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    object rcd = Dyn(d, "ReportClientDocument");
+                    object areas = Dyn(Dyn(Dyn(rcd, "ReportDefController"), "ReportDefinition"), "Areas");
+                    int na = Convert.ToInt32(Dyn(areas, "Count"));
+                    for (int a = 0; a < na; a++)
+                    {
+                        object secs = Dyn(Item(areas, a), "Sections");
+                        for (int s = 0; s < Convert.ToInt32(Dyn(secs, "Count")); s++)
+                        {
+                            object objs = Dyn(Item(secs, s), "ReportObjects");
+                            for (int i = 0; i < Convert.ToInt32(Dyn(objs, "Count")); i++)
+                            {
+                                try
+                                {
+                                    string name = Convert.ToString(Dyn(Dyn(Dyn(Item(objs, i), "FontColor"), "Font"), "Name"));
+                                    if (string.IsNullOrEmpty(name)) continue;
+                                    int n; used.TryGetValue(name, out n); used[name] = n + 1;
+                                }
+                                catch (Exception) { /* lines, boxes, pictures have no font */ }
+                            }
+                        }
+                    }
+                    var list = new List<object>();
+                    foreach (var kv in used)
+                    {
+                        bool have;
+                        using (var f = new System.Drawing.Font(kv.Key, 10)) have = string.Equals(f.Name, kv.Key, StringComparison.OrdinalIgnoreCase);
+                        list.Add(new Dictionary<string, object> { { "font", kv.Key }, { "objects", kv.Value }, { "installed", have } });
+                    }
+                    Send(ctx, 200, "application/json", Json.Serialize(new Dictionary<string, object> { { "fonts", list }, { "font_folders_loaded", _fontsLoaded } }));
+                }
+                catch { Evict(fullRpt); throw; }
+            }
+        }
+
+        private static object Dyn(object o, string prop) { return o.GetType().InvokeMember(prop, System.Reflection.BindingFlags.GetProperty, null, o, null); }
+        private static object Item(object coll, int i) { return coll.GetType().InvokeMember("Item", System.Reflection.BindingFlags.GetProperty, null, coll, new object[] { i }); }
 
         // ---- settings (secrets stay in the backend's .env / runtime_db_settings.json, never on the command line) ------
 
@@ -125,7 +242,12 @@ namespace RptBridge
 
             if (path == "/health" && ctx.Request.HttpMethod == "GET")
             {
-                Send(ctx, 200, "application/json", Json.Serialize(new Dictionary<string, object> { { "ok", true }, { "renderer", "crystal" }, { "db", _server + "/" + _db } }));
+                Send(ctx, 200, "application/json", Json.Serialize(new Dictionary<string, object> { { "ok", true }, { "renderer", "crystal" }, { "db", _server + "/" + _db }, { "fonts_loaded", _fontsLoaded } }));
+                return;
+            }
+            if (path == "/fonts" && ctx.Request.HttpMethod == "GET")
+            {
+                FontsOf(ctx, ctx.Request.QueryString["rpt"] ?? "");
                 return;
             }
             if (path == "/inspect" && ctx.Request.HttpMethod == "GET")
@@ -155,20 +277,35 @@ namespace RptBridge
 
             lock (RenderLock)
             {
-                using (ReportDocument doc = Open(rpt, formula, values))
+                if (path == "/render")
                 {
-                    if (path == "/render")
+                    string full = ResolveRpt(rpt);
+                    for (int attempt = 0; ; attempt++)
                     {
-                        UsePreviewPrinter(doc);
-                        using (Stream s = doc.ExportToStream(ExportFormatType.PortableDocFormat))
+                        bool reused = false;
+                        try
                         {
-                            var ms = new MemoryStream();
-                            s.CopyTo(ms);
-                            foreach (var kv in PaperFacts(doc)) ctx.Response.AddHeader(kv.Key, kv.Value);
-                            Send(ctx, 200, "application/pdf", ms.ToArray());
+                            ReportDocument doc = Acquire(rpt, formula, values, true, out reused);
+                            UsePreviewPrinter(doc);
+                            using (Stream s = doc.ExportToStream(ExportFormatType.PortableDocFormat))
+                            {
+                                var ms = new MemoryStream();
+                                s.CopyTo(ms);
+                                foreach (var kv in PaperFacts(doc)) ctx.Response.AddHeader(kv.Key, kv.Value);
+                                Send(ctx, 200, "application/pdf", ms.ToArray());
+                            }
+                            break;
+                        }
+                        catch
+                        {
+                            Evict(full);
+                            if (!reused || attempt >= 1) throw; // a stale cached report (e.g. the DB link dropped while idle): reload once, silently
                         }
                     }
-                    else
+                }
+                else
+                {
+                    using (ReportDocument doc = Open(rpt, formula, values))
                     {
                         doc.PrintOptions.PrinterName = printer;
                         doc.PrintToPrinter(copies, false, 0, 0);
@@ -223,6 +360,54 @@ namespace RptBridge
             if (!File.Exists(full)) full = Path.Combine(_rptRoot, Path.GetFileName(full));
             if (!File.Exists(full)) throw new HttpError(404, "Report file not found: " + Path.GetFileName(full));
             return full;
+        }
+
+        // A report stays loaded between prints: Load + DB logon + PinPaper is most of a render's time. Every use re-sets the
+        // parameters and the selection formula and Refresh()es the data, so a record never sees another record's rows. Only used
+        // under RenderLock (the engine is single-threaded); any error evicts the entry so the next print starts from a clean load.
+        private sealed class CachedDoc { public ReportDocument Doc; public DateTime Stamp; public DateTime Used; }
+        private static readonly Dictionary<string, CachedDoc> DocCache = new Dictionary<string, CachedDoc>(StringComparer.OrdinalIgnoreCase);
+        private const int MaxCachedDocs = 8;
+
+        private static void Evict(string full)
+        {
+            CachedDoc c;
+            if (!DocCache.TryGetValue(full, out c)) return;
+            DocCache.Remove(full);
+            try { c.Doc.Dispose(); } catch { }
+        }
+
+        // Returns a ready-to-export document. refresh=false is for read-only callers (warm-up, /fonts) that never export.
+        private static ReportDocument Acquire(string rptPath, string selectionFormula, Dictionary<string, string> values, bool refresh, out bool reused)
+        {
+            string full = ResolveRpt(rptPath);
+            DateTime stamp = File.GetLastWriteTimeUtc(full);
+            reused = false;
+            CachedDoc c;
+            if (DocCache.TryGetValue(full, out c) && c.Stamp == stamp)
+            {
+                try
+                {
+                    if (refresh) c.Doc.Refresh(); // Refresh clears parameter values, so it comes before they are set
+                    SetParameters(c.Doc, values);
+                    c.Doc.RecordSelectionFormula = selectionFormula ?? "";
+                    c.Used = DateTime.UtcNow;
+                    reused = true;
+                    return c.Doc;
+                }
+                catch { Evict(full); }
+            }
+            else if (c != null) Evict(full); // the .rpt file was replaced
+
+            ReportDocument doc = Open(rptPath, selectionFormula, values);
+            if (DocCache.Count >= MaxCachedDocs)
+            {
+                string oldest = null; DateTime oldestAt = DateTime.MaxValue;
+                foreach (var kv in DocCache) if (kv.Value.Used < oldestAt) { oldest = kv.Key; oldestAt = kv.Value.Used; }
+                if (oldest != null) Evict(oldest);
+            }
+            DocCache[full] = new CachedDoc { Doc = doc, Stamp = stamp, Used = DateTime.UtcNow };
+            return doc;
         }
 
         private static ReportDocument Open(string rptPath, string selectionFormula, Dictionary<string, string> values)

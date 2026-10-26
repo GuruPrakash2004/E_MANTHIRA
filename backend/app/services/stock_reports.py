@@ -31,9 +31,9 @@ def _gsetting(conn: Connection, group: str, name: str, default: str = "") -> str
 
 def _check_range(fy: FinancialYear, d1: date, d2: date) -> None:
     if d1 < fy.start_date:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"From date cannot be less than {fy.start_date:%d/%m/%Y}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"From date cannot be less than {fy.start_date:%d-%b-%Y}")
     if d2 > fy.end_date:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"To date cannot be greater than {fy.end_date:%d/%m/%Y}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"To date cannot be greater than {fy.end_date:%d-%b-%Y}")
     if d2 < d1:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid Date Range!")
 

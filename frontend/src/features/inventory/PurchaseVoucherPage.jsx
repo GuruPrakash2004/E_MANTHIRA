@@ -1,14 +1,15 @@
+import { historyParams } from '../../lib/history'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
 import { ActionIcon, Grid, NumberInput, Select, Stack, Table, Text, Button } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { Plus, Receipt, Save, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as inventoryApi from '../../api/endpoints/inventory'
 import LookupSelect from '../../components/LookupSelect'
 import useDocFields from '../../hooks/useDocFields'
-import { isFieldHidden, isFieldMandatory, fieldCaption } from '../../utils/docFieldConditions'
+import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import dayjs from 'dayjs'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard, PageHeader } from '../../components/ui/EntryParts'
@@ -17,6 +18,8 @@ import DocNavBar from '../../components/ui/DocNavBar'
 import { getVoucher } from '../../api/endpoints/voucher'
 
 const DOC_ID = 1272
+// Set by the server (link to a bill), not entered
+const COMPUTED_CODES = ['TRNTYPE', 'TRNID']
 const EMPTY_LINES = [
   { ac_led_id: '', dr_amt: 0, cr_amt: 0 },
   { ac_led_id: '', dr_amt: 0, cr_amt: 0 },
@@ -32,7 +35,9 @@ export default function PurchaseVoucherPage() {
   const confirm = useConfirm()
   const queryClient = useQueryClient()
   const [voucherDate, setVoucherDate] = useState(new Date())
-  const [crPeriod, setCrPeriod] = useState(0)
+  const [values, setValues] = useState({}) // Designer fields keyed by FldCode (rendered by DocFieldsForm)
+  const [resetKey, setResetKey] = useState(0)
+  const [attempted, setAttempted] = useState(false)
   const [pbId, setPbId] = useState('')
   const [lines, setLines] = useState(EMPTY_LINES)
   const [saving, setSaving] = useState(false)
@@ -40,14 +45,13 @@ export default function PurchaseVoucherPage() {
   const [viewId, setViewId] = useState(null) // a saved voucher being looked at (read-only)
   const [viewInfo, setViewInfo] = useState(null)
 
-  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['purchase-vouchers', 'recent'], queryFn: () => inventoryApi.listPurchaseVouchers({ top: 15 }) })
+  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['purchase-vouchers', 'recent'], queryFn: () => inventoryApi.listPurchaseVouchers(historyParams()) })
   const { data: bills } = useQuery({ queryKey: ['purchase-bills', 'unvouchered'], queryFn: () => inventoryApi.listPurchaseBills({ top: 100 }) })
   const unvoucheredBills = (bills || []).filter((b) => !b.VCHID)
-  const { byCode: fieldMeta } = useDocFields(DOC_ID)
-  const codeValues = { CRPERIOD: crPeriod }
-  const hidden = (code) => isFieldHidden(fieldMeta[code], codeValues)
-  const mandatory = (code) => isFieldMandatory(fieldMeta[code], codeValues)
-  const caption = (code, fallback) => fieldCaption(fieldMeta[code], fallback)
+  const { fields } = useDocFields(DOC_ID)
+  const setValue = (code, v) => setValues((cur) => ({ ...cur, [code]: v }))
+  const dateCodes = new Set(fields.filter((f) => f.FldDataType === 'Date').map((f) => f.FldCode))
+  const headErrors = docFieldErrors(fields, values, COMPUTED_CODES)
 
   function updateLine(i, patch) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
@@ -68,7 +72,13 @@ export default function PurchaseVoucherPage() {
       const r = await getVoucher('purchase', id)
       const h = r.header
       setVoucherDate(h.PURVCHDate ? new Date(h.PURVCHDate) : new Date())
-      setCrPeriod(h.CRPERIOD || 0)
+      const next = {}
+      for (const f of fields) {
+        if (COMPUTED_CODES.includes(f.FldCode)) continue
+        const v = h[f.FldCode]
+        next[f.FldCode] = v === null || v === undefined ? '' : f.FldDataType === 'Date' ? new Date(v) : f.FldBlnComboData === 'Y' ? Number(v) || '' : String(v).trim()
+      }
+      setValues(next)
       setPbId('')
       setLines(r.lines.map((l) => ({ ac_led_id: String(l.ac_led_id), dr_amt: l.dr_amt, cr_amt: l.cr_amt })))
       setViewId(id)
@@ -81,7 +91,9 @@ export default function PurchaseVoucherPage() {
     setViewId(null)
     setViewInfo(null)
     setVoucherDate(new Date())
-    setCrPeriod(0)
+    setValues({})
+    setResetKey((k) => k + 1)
+    setAttempted(false)
     setPbId('')
     setLines(EMPTY_LINES)
   }
@@ -93,6 +105,12 @@ export default function PurchaseVoucherPage() {
 
   async function onSave() {
     if (viewId) return
+    setAttempted(true)
+    const firstErr = Object.values(headErrors)[0]
+    if (firstErr) {
+      notifications.show({ message: firstErr, color: 'red' })
+      return
+    }
     if (!balanced) {
       notifications.show({ message: 'Debit and Credit totals are NOT matching!', color: 'red' })
       return
@@ -105,7 +123,11 @@ export default function PurchaseVoucherPage() {
     try {
       const body = {
         voucher_date: isoDate(voucherDate),
-        cr_period: Number(crPeriod) || 0,
+        fields: Object.fromEntries(
+          Object.entries(values)
+            .filter(([k, v]) => v !== '' && v !== null && v !== undefined && !COMPUTED_CODES.includes(k))
+            .map(([k, v]) => [k, dateCodes.has(k) ? isoDate(v) : v])
+        ),
         pb_id: pbId ? Number(pbId) : null,
         lines: lines
           .filter((l) => Number(l.dr_amt) || Number(l.cr_amt))
@@ -116,6 +138,9 @@ export default function PurchaseVoucherPage() {
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setLines(EMPTY_LINES)
       setPbId('')
+      setValues({})
+      setResetKey((k) => k + 1)
+      setAttempted(false)
       queryClient.invalidateQueries({ queryKey: ['purchase-vouchers'] })
       queryClient.invalidateQueries({ queryKey: ['purchase-bills'] })
       refetch()
@@ -148,13 +173,8 @@ export default function PurchaseVoucherPage() {
             <SectionCard title="Voucher details" hint="Date, credit period and the purchase bill this voucher settles.">
               <Grid>
                 <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <DateInput label="Voucher Date" valueFormat="DD/MM/YYYY" value={voucherDate} onChange={setVoucherDate} />
+                  <DateInput label="Voucher Date" valueFormat="DD-MMM-YYYY" value={voucherDate} onChange={setVoucherDate} />
                 </Grid.Col>
-                {!hidden('CRPERIOD') && (
-                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                    <NumberInput label={caption('CRPERIOD', 'Credit Period (days)')} required={mandatory('CRPERIOD')} value={crPeriod} onChange={setCrPeriod} />
-                  </Grid.Col>
-                )}
                 <Grid.Col span={{ base: 12, sm: 12, xl: 4 }}>
                   <Select
                     label="Link Purchase Bill (optional)"
@@ -166,6 +186,17 @@ export default function PurchaseVoucherPage() {
                   />
                 </Grid.Col>
               </Grid>
+              <DocFieldsForm
+                docId={DOC_ID}
+                section="Header"
+                values={values}
+                setValue={setValue}
+                setValues={setValues}
+                resetKey={resetKey}
+                errors={attempted ? headErrors : {}}
+                skip={COMPUTED_CODES}
+                readOnly={Boolean(viewId)}
+              />
             </SectionCard>
 
             <SectionCard

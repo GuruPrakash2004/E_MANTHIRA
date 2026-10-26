@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ActionIcon, Badge, Button, Group, Modal, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core'
-import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
+import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Pencil, Plus, Save, Search } from 'lucide-react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useQuery } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
@@ -18,7 +18,7 @@ import DocOptionsMenu from './DocOptionsMenu'
  *   onNew()    - go back to a blank entry
  *   search     - async (text) => [{ id, label, sub }] used by Find
  */
-export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, search, prefix = '' }) {
+export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, onEdit, onCancelEdit, onSave, saving = false, editing = false, showNew = true, search, prefix = '' }) {
   const [findOpen, setFindOpen] = useState(false)
   const [q, setQ] = useState('')
 
@@ -52,13 +52,30 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
       <div style={{ position: 'sticky', bottom: 12, zIndex: 5, marginTop: 'var(--mantine-spacing-md)' }}>
         <Group justify="space-between" gap="xs" p="sm" style={{ borderRadius: 16, border: '1px solid var(--vt-line)', background: 'var(--vt-surface)', boxShadow: '0 6px 20px rgba(43,9,9,0.12)' }}>
           <Group gap="xs">
-            <Button color="kumkum" leftSection={<Plus size={16} />} onClick={onNew}>
-              New
-            </Button>
+            {showNew && (
+              <Button color="kumkum" leftSection={<Plus size={16} />} onClick={onNew}>
+                New
+              </Button>
+            )}
+            {editing && onSave && (
+              <Button color="kumkum" leftSection={<Save size={16} />} loading={saving} onClick={onSave}>
+                Save changes
+              </Button>
+            )}
+            {editing && onCancelEdit && (
+              <Button variant="default" onClick={onCancelEdit}>
+                Cancel edit
+              </Button>
+            )}
+            {currentId && onEdit && !editing && (
+              <Button variant="light" color="kumkum" leftSection={<Pencil size={16} />} onClick={onEdit}>
+                Edit
+              </Button>
+            )}
             <DocOptionsMenu docId={docId} recordId={currentId} />
             {currentId ? (
               <Badge size="lg" variant="light" color="gray" tt="none">
-                View: {viewLabel || currentId}
+                {editing ? 'Editing' : 'View'}: {viewLabel || currentId}
               </Badge>
             ) : (
               <Text size="xs" c="dimmed" visibleFrom="sm">

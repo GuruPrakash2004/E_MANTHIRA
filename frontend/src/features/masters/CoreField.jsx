@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react'
 import { Autocomplete, Checkbox, NumberInput, Select, Textarea, TextInput } from '@mantine/core'
-import { useDebouncedValue } from '@mantine/hooks'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import * as mastersApi from '../../api/endpoints/masters'
+import useSelectCommit from '../../hooks/useSelectCommit'
 
 /**
  * One built-in master field described by GET /masters/{doc}/layout (see backend app/meta/master_layouts.py):
@@ -15,18 +14,26 @@ export default function CoreField({ docId, field, value, onChange, locked }) {
   const label = field.caption || undefined
   const aria = field.caption || undefined
 
-  const [typed, setTyped] = useState('')
-  const [search] = useDebouncedValue(typed, 250)
   const isLookup = field.type === 'lookup' || field.type === 'combo'
-  const { data: found = [], isLoading } = useQuery({
-    queryKey: ['master-core-lookup', docId, field.code, search],
-    queryFn: () => mastersApi.coreLookup(docId, field.code, search),
-    enabled: isLookup,
-    placeholderData: keepPreviousData,
-    staleTime: 60_000,
+  const pick = (v) => {
+    const opt = found.find((o) => String(o.value) === v)
+    const isNumericKey = found.length > 0 && typeof found[0].value === 'number'
+    onChange(v === null ? (isNumericKey ? 0 : '') : opt ? opt.value : v, opt)
+  }
+  const { options, loading: isLoading, data: found = [], notFound, selectProps, onBlurCheck } = useSelectCommit({
+    selectedValue: value,
+    commit: (v) => pick(v),
+    useOptions: (search) => {
+      const { data = [], isLoading: loading } = useQuery({
+        queryKey: ['master-core-lookup', docId, field.code, search],
+        queryFn: () => mastersApi.coreLookup(docId, field.code, search),
+        enabled: isLookup,
+        placeholderData: keepPreviousData,
+        staleTime: 15_000,
+      })
+      return { data, loading, options: data.map((o) => ({ value: String(o.value), label: o.label })) }
+    },
   })
-  // keep the saved value selectable even when the typed search filtered it out of the list
-  const options = useMemo(() => found.map((o) => ({ value: String(o.value), label: o.label })), [found])
 
   if (field.type === 'flag') {
     return <Checkbox className={cls} color="kumkum" label={label} disabled={readOnly} checked={(value || 'N').toUpperCase() === 'Y'} onChange={(e) => onChange(e.currentTarget.checked ? 'Y' : 'N')} />
@@ -56,14 +63,11 @@ export default function CoreField({ docId, field, value, onChange, locked }) {
         clearable
         data={options}
         value={value !== '' && value != null ? String(value) : null}
-        onChange={(v) => {
-          const opt = found.find((o) => String(o.value) === v)
-          const isNumericKey = found.length > 0 && typeof found[0].value === 'number'
-          onChange(v === null ? (isNumericKey ? 0 : '') : opt ? opt.value : v, opt)
-        }}
-        onSearchChange={setTyped}
-        nothingFoundMessage={isLoading ? 'Loading...' : 'No matches'}
+        onChange={pick}
+        error={notFound ? 'Not found' : undefined}
+        onBlur={onBlurCheck}
         placeholder="Search..."
+        {...selectProps}
         comboboxProps={{ withinPortal: true }}
       />
     )

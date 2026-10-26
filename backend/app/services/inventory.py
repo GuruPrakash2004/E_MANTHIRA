@@ -34,6 +34,7 @@ from sqlalchemy.engine import Connection
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row
+from app.meta import doc_rules
 from app.meta.numbering import next_doc_no
 from app.services import ledger
 
@@ -93,9 +94,7 @@ class StockAdjustmentLine:
 
 @dataclass
 class StockAdjustmentInput:
-    loc_id: int
-    adj_by: str
-    remarks: str
+    fields: dict  # Header / Footer Designer fields of DocID 1268 keyed by FldCode (LOCID, ADJBY, RMKS ...)
     doc_date: date
     lines: list[StockAdjustmentLine]
 
@@ -110,6 +109,11 @@ def create_stock_adjustment(conn: Connection, *, data: StockAdjustmentInput, fy:
         if l.adj_type not in ("Add", "Reduce"):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Adjust type must be Add or Reduce")
 
+    header, values = doc_rules.header_columns(conn, DOC_ID_SA, "TrnHdrSA", data.fields, computed=("TOTQTY",))
+    loc_id = int(values.get("LOCID") or 0)
+    if not loc_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Location is mandatory")
+
     doc_no = next_doc_no(
         conn, table_name="TrnHdrSA", no_column="SANO", prefix=PREFIX_SA,
         fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
@@ -121,7 +125,7 @@ def create_stock_adjustment(conn: Connection, *, data: StockAdjustmentInput, fy:
         {
             "SANO": doc_no, "Prefix": PREFIX_SA, "PrintSANO": doc_no, "SADate": data.doc_date,
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
-            "LOCID": data.loc_id, "RMKS": data.remarks, "TOTQTY": total_qty, "ADJBY": data.adj_by,
+            **header, "TOTQTY": total_qty,
         },
         returning="SAID",
     )
@@ -137,7 +141,7 @@ def create_stock_adjustment(conn: Connection, *, data: StockAdjustmentInput, fy:
 
     _post_stock(
         conn, doc_id=DOC_ID_SA, doc_name="Stock Adjustment Entry", doc_type="SA", doc_no=doc_no, doc_date=data.doc_date,
-        loc_id=data.loc_id,
+        loc_id=loc_id,
         lines=[{"item_id": l.item_id, "qty": l.qty, "rate": l.rate, "multiplier": 1 if l.adj_type == "Add" else -1} for l in data.lines],
     )
     audit.record(conn, entity="Stock Adjustment Entry", entity_id=sa_id, action="A", user_code=user_code, details=doc_no)
@@ -147,7 +151,7 @@ def create_stock_adjustment(conn: Connection, *, data: StockAdjustmentInput, fy:
 def list_stock_adjustments(conn: Connection, *, fy: FinancialYear, top: int = 50) -> list[dict]:
     from app.core.db import limit_clause
 
-    sql = f"SELECT SAID, SANO, PrintSANO, SADate, RMKS, ADJBY, TOTQTY, Cancelled FROM TrnHdrSA WHERE SADate BETWEEN :fs AND :fe ORDER BY SAID DESC {limit_clause(top)}"
+    sql = f"SELECT * FROM TrnHdrSA WHERE SADate BETWEEN :fs AND :fe ORDER BY SAID DESC {limit_clause(top)}"
     rows = conn.execute(text(sql), {"fs": fy.start_date, "fe": fy.end_date}).mappings().all()
     return [dict(r) for r in rows]
 
@@ -178,9 +182,7 @@ class StoreIssueLine:
 
 @dataclass
 class StoreIssueInput:
-    loc_id: int
-    issue_by: str
-    remarks: str
+    fields: dict  # Header / Footer Designer fields of DocID 1270 keyed by FldCode (LOCID, ISSUEBY, RMKS ...)
     doc_date: date
     lines: list[StoreIssueLine]
 
@@ -193,6 +195,11 @@ def create_store_issue(conn: Connection, *, data: StoreIssueInput, fy: Financial
         if l.qty <= 0:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
 
+    header, values = doc_rules.header_columns(conn, DOC_ID_ISS, "TrnHdrISS", data.fields, computed=("TOTQTY",))
+    loc_id = int(values.get("LOCID") or 0)
+    if not loc_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Location is mandatory")
+
     doc_no = next_doc_no(
         conn, table_name="TrnHdrISS", no_column="ISSNO", prefix=PREFIX_ISS,
         fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
@@ -204,7 +211,7 @@ def create_store_issue(conn: Connection, *, data: StoreIssueInput, fy: Financial
         {
             "ISSNO": doc_no, "Prefix": PREFIX_ISS, "PrintISSNO": doc_no, "ISSDate": data.doc_date,
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
-            "LOCID": data.loc_id, "RMKS": data.remarks, "TOTQTY": total_qty, "ISSUEBY": data.issue_by,
+            **header, "TOTQTY": total_qty,
         },
         returning="ISSID",
     )
@@ -219,7 +226,7 @@ def create_store_issue(conn: Connection, *, data: StoreIssueInput, fy: Financial
 
     _post_stock(
         conn, doc_id=DOC_ID_ISS, doc_name="Store Issue Note", doc_type="ISS", doc_no=doc_no, doc_date=data.doc_date,
-        loc_id=data.loc_id, lines=[{"item_id": l.item_id, "qty": l.qty, "multiplier": -1} for l in data.lines],
+        loc_id=loc_id, lines=[{"item_id": l.item_id, "qty": l.qty, "multiplier": -1} for l in data.lines],
     )
     audit.record(conn, entity="Store Issue Note", entity_id=iss_id, action="A", user_code=user_code, details=doc_no)
     return {"iss_id": iss_id, "iss_no": doc_no, "total_qty": total_qty}
@@ -228,7 +235,7 @@ def create_store_issue(conn: Connection, *, data: StoreIssueInput, fy: Financial
 def list_store_issues(conn: Connection, *, fy: FinancialYear, top: int = 50) -> list[dict]:
     from app.core.db import limit_clause
 
-    sql = f"SELECT ISSID, ISSNO, PrintISSNO, ISSDate, RMKS, ISSUEBY, TOTQTY, Cancelled FROM TrnHdrISS WHERE ISSDate BETWEEN :fs AND :fe ORDER BY ISSID DESC {limit_clause(top)}"
+    sql = f"SELECT * FROM TrnHdrISS WHERE ISSDate BETWEEN :fs AND :fe ORDER BY ISSID DESC {limit_clause(top)}"
     rows = conn.execute(text(sql), {"fs": fy.start_date, "fe": fy.end_date}).mappings().all()
     return [dict(r) for r in rows]
 
@@ -259,12 +266,8 @@ class PurchaseBillLine:
 
 @dataclass
 class PurchaseBillInput:
-    loc_id: int
-    supp_id: int
-    ledid_pur: int
-    ref_no: str
-    ref_date: date | None
-    remarks: str
+    supp_id: int  # the supplier (party) of the bill is fixed document structure, not a Designer field
+    fields: dict  # Header / Footer Designer fields of DocID 1271 keyed by FldCode (LOCID, REFNO, REFDT, LEDIDPUR, RMKS ...)
     doc_date: date
     lines: list[PurchaseBillLine]
 
@@ -282,6 +285,13 @@ def create_purchase_bill(conn: Connection, *, data: PurchaseBillInput, fy: Finan
         {"id": data.supp_id},
     ).mappings().first()
 
+    header, values = doc_rules.header_columns(
+        conn, DOC_ID_PB, "TrnHdrPB", data.fields, computed=("TOTQTY", "PBVALUE", "VCHID", "ISSUEDBY", "TOTAMTIWRDS", "AMTINWORDS")
+    )
+    loc_id = int(values.get("LOCID") or 0)
+    if not loc_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Location is mandatory")
+
     doc_no = next_doc_no(
         conn, table_name="TrnHdrPB", no_column="PBNO", prefix=PREFIX_PB,
         fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
@@ -294,6 +304,7 @@ def create_purchase_bill(conn: Connection, *, data: PurchaseBillInput, fy: Finan
         {
             "PBNO": doc_no, "Prefix": PREFIX_PB, "PrintPBNO": doc_no, "PBDate": data.doc_date,
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
+            **header,
             "SUPPID": data.supp_id,
             "PartyName": supp["SUPPNAME"] if supp else "",
             "PartyAdd1": supp["BAdd1"] if supp else "",
@@ -302,8 +313,7 @@ def create_purchase_bill(conn: Connection, *, data: PurchaseBillInput, fy: Finan
             "PartyState": supp["State"] if supp else "",
             "PartyPinCode": supp["PinCode"] if supp else "",
             "PartyCountry": supp["Country"] if supp else "",
-            "LOCID": data.loc_id, "LEDIDPUR": data.ledid_pur, "TOTQTY": total_qty, "PBVALUE": pb_value,
-            "RMKS": data.remarks, "REFNO": data.ref_no, "REFDT": data.ref_date, "ISSUEDBY": user_code,
+            "TOTQTY": total_qty, "PBVALUE": pb_value, "ISSUEDBY": user_code,
         },
         returning="PBID",
     )
@@ -319,7 +329,7 @@ def create_purchase_bill(conn: Connection, *, data: PurchaseBillInput, fy: Finan
 
     _post_stock(
         conn, doc_id=DOC_ID_PB, doc_name="Purchase Bill", doc_type="PB", doc_no=doc_no, doc_date=data.doc_date,
-        loc_id=data.loc_id,
+        loc_id=loc_id,
         lines=[{"item_id": l.item_id, "qty": l.qty, "rate": l.rate, "multiplier": 1} for l in data.lines],
     )
     audit.record(conn, entity="Purchase Bill", entity_id=pb_id, action="A", user_code=user_code, details=doc_no)
@@ -329,7 +339,7 @@ def create_purchase_bill(conn: Connection, *, data: PurchaseBillInput, fy: Finan
 def list_purchase_bills(conn: Connection, *, fy: FinancialYear, top: int = 50) -> list[dict]:
     from app.core.db import limit_clause
 
-    sql = f"SELECT PBID, PBNO, PrintPBNO, PBDate, PartyName, TOTQTY, PBVALUE, VCHID, Cancelled FROM TrnHdrPB WHERE PBDate BETWEEN :fs AND :fe ORDER BY PBID DESC {limit_clause(top)}"
+    sql = f"SELECT * FROM TrnHdrPB WHERE PBDate BETWEEN :fs AND :fe ORDER BY PBID DESC {limit_clause(top)}"
     rows = conn.execute(text(sql), {"fs": fy.start_date, "fe": fy.end_date}).mappings().all()
     return [dict(r) for r in rows]
 
@@ -360,7 +370,7 @@ class PurchaseVoucherLine:
 @dataclass
 class PurchaseVoucherInput:
     voucher_date: date
-    cr_period: int  # credit period in days
+    fields: dict  # Header Designer fields of DocID 1272 keyed by FldCode (CRPERIOD ...)
     lines: list[PurchaseVoucherLine]
     pb_id: int | None = None  # optional link to the Purchase Bill this accounts for
 
@@ -376,6 +386,8 @@ def create_purchase_voucher(conn: Connection, *, data: PurchaseVoucherInput, fy:
     if abs(total_dr - total_cr) > 0.005:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Debit and Credit totals are NOT matching!")
 
+    header, _values = doc_rules.header_columns(conn, DOC_ID_PURVCH, "TrnHdrPURVCH", data.fields, computed=("TRNTYPE", "TRNID"))
+
     doc_no = next_doc_no(
         conn, table_name="TrnHdrPURVCH", no_column="PURVCHNO", prefix=PREFIX_PURVCH,
         fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
@@ -386,7 +398,7 @@ def create_purchase_voucher(conn: Connection, *, data: PurchaseVoucherInput, fy:
         {
             "PURVCHNO": doc_no, "Prefix": PREFIX_PURVCH, "PrintPURVCHNO": doc_no, "PURVCHDate": data.voucher_date,
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
-            "CRPERIOD": data.cr_period, "TRNTYPE": "PB" if data.pb_id else "PURVCH", "TRNID": data.pb_id or 0,
+            **header, "TRNTYPE": "PB" if data.pb_id else "PURVCH", "TRNID": data.pb_id or 0,
         },
         returning="PURVCHID",
     )
@@ -418,7 +430,7 @@ def create_purchase_voucher(conn: Connection, *, data: PurchaseVoucherInput, fy:
 def list_purchase_vouchers(conn: Connection, *, fy: FinancialYear, top: int = 50) -> list[dict]:
     from app.core.db import limit_clause
 
-    sql = f"SELECT PURVCHID, PURVCHNO, PrintPURVCHNO, PURVCHDate, CRPERIOD, Cancelled FROM TrnHdrPURVCH WHERE PURVCHDate BETWEEN :fs AND :fe ORDER BY PURVCHID DESC {limit_clause(top)}"
+    sql = f"SELECT * FROM TrnHdrPURVCH WHERE PURVCHDate BETWEEN :fs AND :fe ORDER BY PURVCHID DESC {limit_clause(top)}"
     rows = conn.execute(text(sql), {"fs": fy.start_date, "fe": fy.end_date}).mappings().all()
     return [dict(r) for r in rows]
 

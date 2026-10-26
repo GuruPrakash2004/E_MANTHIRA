@@ -1,14 +1,16 @@
+import { historyParams } from '../../lib/history'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
 import { ActionIcon, Grid, NumberInput, Select, Stack, Table, TextInput, Button } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { ClipboardList, Plus, Save, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as inventoryApi from '../../api/endpoints/inventory'
 import MasterOptionsSelect from './MasterOptionsSelect'
 import useDocFields from '../../hooks/useDocFields'
-import { isFieldHidden, isFieldMandatory, fieldCaption } from '../../utils/docFieldConditions'
+import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
+import { fieldCaption } from '../../utils/docFieldConditions'
 import dayjs from 'dayjs'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard, PageHeader } from '../../components/ui/EntryParts'
@@ -24,7 +26,7 @@ const DOC_ID = 1268
 // DocID 1268's fields have a live conditional rule today, but building real
 // codeValues (not {}) means a future Designer-added conditional rule works
 // here with zero further code changes.
-const FIELD_CODE_MAP = { LOCID: 'loc_id', ADJBY: 'adj_by', RMKS: 'remarks' }
+const COMPUTED_CODES = ['TOTQTY']
 
 const EMPTY_LINE = { item_id: '', uom_id: '', qty: 0, rate: 0, adj_type: 'Add', remarks: '' }
 
@@ -36,17 +38,27 @@ const EMPTY_LINE = { item_id: '', uom_id: '', qty: 0, rate: 0, adj_type: 'Add', 
 export default function StockAdjustmentPage() {
   const confirm = useConfirm()
   const queryClient = useQueryClient()
-  const [form, setForm] = useState({ loc_id: '', adj_by: '', remarks: '', doc_date: new Date() })
+  const [form, setForm] = useState({ doc_date: new Date() })
   const [lines, setLines] = useState([{ ...EMPTY_LINE }])
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
 
-  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['stock-adjustments', 'recent'], queryFn: () => inventoryApi.listStockAdjustments({ top: 15 }) })
-  const { byCode: fieldMeta } = useDocFields(DOC_ID)
-  const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, form[key]]))
-  const hidden = (code) => isFieldHidden(fieldMeta[code], codeValues)
-  const mandatory = (code) => isFieldMandatory(fieldMeta[code], codeValues)
+  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['stock-adjustments', 'recent'], queryFn: () => inventoryApi.listStockAdjustments(historyParams()) })
+  const { fields, byCode: fieldMeta } = useDocFields(DOC_ID)
   const caption = (code, fallback) => fieldCaption(fieldMeta[code], fallback)
+  // Header / Footer fields come from this temple's Doc Designer (DocFieldsForm); values are keyed by FldCode.
+  const [values, setValues] = useState({})
+  const [resetKey, setResetKey] = useState(0)
+  const [attempted, setAttempted] = useState(false)
+  const setValue = (code, v) => setValues((cur) => ({ ...cur, [code]: v }))
+  const dateCodes = new Set(fields.filter((f) => f.FldDataType === 'Date').map((f) => f.FldCode))
+  const headErrors = docFieldErrors(fields.filter((f) => f.FldSection !== 'Detail'), values, COMPUTED_CODES)
+  const fieldsPayload = () =>
+    Object.fromEntries(
+      Object.entries(values)
+        .filter(([k, v]) => v !== '' && v !== null && v !== undefined && !COMPUTED_CODES.includes(k))
+        .map(([k, v]) => [k, dateCodes.has(k) ? isoDate(v) : v])
+    )
 
   function set(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -62,16 +74,16 @@ export default function StockAdjustmentPage() {
   }
 
   async function onSave() {
-    if (!form.loc_id) {
-      notifications.show({ message: 'Location is mandatory', color: 'red' })
+    setAttempted(true)
+    const firstErr = Object.values(headErrors)[0]
+    if (firstErr) {
+      notifications.show({ message: firstErr, color: 'red' })
       return
     }
     setSaving(true)
     try {
       const body = {
-        loc_id: Number(form.loc_id),
-        adj_by: form.adj_by,
-        remarks: form.remarks,
+        fields: fieldsPayload(),
         doc_date: isoDate(form.doc_date),
         lines: lines.map((l) => ({ item_id: Number(l.item_id), uom_id: Number(l.uom_id), qty: Number(l.qty), rate: Number(l.rate) || 0, adj_type: l.adj_type, remarks: l.remarks })),
       }
@@ -79,6 +91,9 @@ export default function StockAdjustmentPage() {
       setLastSaved(result)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setLines([{ ...EMPTY_LINE }])
+      setValues({})
+      setResetKey((k) => k + 1)
+      setAttempted(false)
       queryClient.invalidateQueries({ queryKey: ['stock-adjustments'] })
       refetch()
     } catch (err) {
@@ -102,26 +117,27 @@ export default function StockAdjustmentPage() {
         main={
           <Stack gap="lg">
             <SectionCard title="Adjustment details" hint="Where the stock sits and who is adjusting it.">
-              <Grid>
-                {!hidden('LOCID') && (
-                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                    <MasterOptionsSelect docId={LOCATION_DOC_ID} label={caption('LOCID', 'Location')} required={mandatory('LOCID')} value={form.loc_id} onChange={(v) => set('loc_id', v)} />
-                  </Grid.Col>
-                )}
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <DateInput label="Document Date" valueFormat="DD/MM/YYYY" value={form.doc_date} onChange={(v) => set('doc_date', v)} />
-                </Grid.Col>
-                {!hidden('ADJBY') && (
-                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                    <TextInput label={caption('ADJBY', 'Adjust By')} required={mandatory('ADJBY')} value={form.adj_by} onChange={(e) => set('adj_by', e.currentTarget.value)} />
-                  </Grid.Col>
-                )}
-                {!hidden('RMKS') && (
-                  <Grid.Col span={12}>
-                    <TextInput label={caption('RMKS', 'Remarks')} required={mandatory('RMKS')} value={form.remarks} onChange={(e) => set('remarks', e.currentTarget.value)} />
-                  </Grid.Col>
-                )}
-              </Grid>
+              <DateInput label="Document Date" valueFormat="DD-MMM-YYYY" value={form.doc_date} onChange={(v) => set('doc_date', v)} w={200} mb="sm" />
+              <DocFieldsForm
+                docId={DOC_ID}
+                section="Header"
+                values={values}
+                setValue={setValue}
+                setValues={setValues}
+                resetKey={resetKey}
+                errors={attempted ? headErrors : {}}
+                skip={COMPUTED_CODES}
+              />
+              <DocFieldsForm
+                docId={DOC_ID}
+                section="Footer"
+                values={values}
+                setValue={setValue}
+                setValues={setValues}
+                resetKey={resetKey}
+                errors={attempted ? headErrors : {}}
+                skip={COMPUTED_CODES}
+              />
             </SectionCard>
 
             <SectionCard

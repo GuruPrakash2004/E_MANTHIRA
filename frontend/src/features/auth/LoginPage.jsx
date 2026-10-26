@@ -14,6 +14,30 @@ import { cachedWelcome, getWelcome, welcomeVideoUrl } from '../../api/endpoints/
 // hand-built SVG gopuram + kolam pattern, drawn for this project — not stock icons.
 const KOLAM_PATTERN = '/illustrations/kolam.svg'
 
+// "Remember me": the user name and password are kept on THIS browser (encoded, not encrypted, so anyone using this PC's
+// profile can read them) and refill the form after sign-out. Separate from the session keys, so sign-out never clears it.
+const REMEMBER_KEY = 'vtemple_remember'
+
+function readRemembered() {
+  try {
+    const raw = localStorage.getItem(REMEMBER_KEY)
+    if (!raw) return null
+    const v = JSON.parse(decodeURIComponent(escape(atob(raw))))
+    return v && typeof v.u === 'string' ? v : null
+  } catch {
+    return null
+  }
+}
+
+function writeRemembered(value) {
+  try {
+    if (value) localStorage.setItem(REMEMBER_KEY, btoa(unescape(encodeURIComponent(JSON.stringify(value)))))
+    else localStorage.removeItem(REMEMBER_KEY)
+  } catch {
+    /* storage blocked: the form just starts empty next time */
+  }
+}
+
 export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -29,8 +53,9 @@ export default function LoginPage() {
     v.load()
     return () => v.removeAttribute('src')
   }, [])
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
+  const [saved] = useState(readRemembered)
+  const [username, setUsername] = useState(saved?.u || '')
+  const [password, setPassword] = useState(saved?.p || '')
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -46,6 +71,7 @@ export default function LoginPage() {
       // flag first: login() flips the app to the signed-in layout, which reads it on mount
       sessionStorage.setItem('vt-welcome', '1')
       await login(username.trim(), password)
+      writeRemembered(remember ? { u: username.trim(), p: password } : null)
       navigate('/')
     } catch (err) {
       sessionStorage.removeItem('vt-welcome')
@@ -109,6 +135,8 @@ export default function LoginPage() {
                 leftSection={<User size={16} />}
                 value={username}
                 onChange={(e) => setUsername(e.currentTarget.value)}
+                name="username"
+                id="vt-login-username"
                 autoComplete="username"
                 size="md"
                 autoFocus
@@ -119,6 +147,8 @@ export default function LoginPage() {
                 leftSection={<Lock size={16} />}
                 value={password}
                 onChange={(e) => setPassword(e.currentTarget.value)}
+                name="password"
+                id="vt-login-password"
                 autoComplete="current-password"
                 size="md"
               />

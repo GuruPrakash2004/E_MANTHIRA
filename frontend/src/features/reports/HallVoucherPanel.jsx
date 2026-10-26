@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button, Card, Checkbox, Group, MultiSelect, Stack, Table, Text } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Eye, FileSpreadsheet, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -11,7 +11,7 @@ import EmptyState from '../../components/ui/EmptyState'
 import { formatINR, isoDate } from '../../utils/format'
 import { downloadXls } from '../../utils/xls'
 
-const d = (v) => (v ? dayjs(v).format('DD/MM/YYYY') : '')
+const d = (v) => (v ? dayjs(v).format('DD-MMM-YYYY') : '')
 const m = (v) => (v == null ? '' : formatINR(v))
 
 const COLUMNS = [
@@ -56,8 +56,8 @@ export default function HallVoucherPanel() {
     <Stack gap="md">
       <Card withBorder p="md">
         <Group align="flex-end" gap="md" wrap="wrap">
-          <DatePickerInput className="vt-field-required" label="For the Period from" valueFormat="DD/MM/YYYY" value={from} onChange={setFrom} w={170} />
-          <DatePickerInput className="vt-field-required" label="To" valueFormat="DD/MM/YYYY" value={to} onChange={setTo} w={170} />
+          <DatePickerInput className="vt-field-required" label="For the Period from" valueFormat="DD-MMM-YYYY" value={from} onChange={setFrom} w={170} />
+          <DatePickerInput className="vt-field-required" label="To" valueFormat="DD-MMM-YYYY" value={to} onChange={setTo} w={170} />
           <Checkbox color="kumkum" label="Select Invoice" checked={pickOn} onChange={(e) => { setPickOn(e.currentTarget.checked); setPicked([]) }} mb={8} />
           {pickOn && (
             <MultiSelect

@@ -179,7 +179,7 @@ export default function HallPaymentPanel({ hbId, onClose }) {
                 {(booking.receipts || []).map((r) => (
                   <Table.Tr key={r.RCPTVCHID} style={{ opacity: r.Cancelled === 'Y' ? 0.5 : 1 }}>
                     <Table.Td>{r.PrintRCPTVCHNO}</Table.Td>
-                    <Table.Td className="vt-num">{r.RCPTVCHDate ? dayjs(r.RCPTVCHDate).format('DD/MM/YYYY') : ''}</Table.Td>
+                    <Table.Td className="vt-num">{r.RCPTVCHDate ? dayjs(r.RCPTVCHDate).format('DD-MMM-YYYY') : ''}</Table.Td>
                     <Table.Td>
                       <Badge size="xs" variant="light" color={r.RCPTTYPE === 'Final' ? 'teal' : 'saffron'}>
                         {r.RCPTTYPE || '-'}

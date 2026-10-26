@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Alert, Button, Card, Checkbox, Group, MultiSelect, NumberInput, Radio, SegmentedControl, Stack } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import { Eye, FileSpreadsheet, Printer, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -15,7 +15,7 @@ import { isoDate } from '../../utils/format'
 import usePrintKey from '../../hooks/usePrintKey'
 
 const n2 = (v) => (v == null ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
-const d8 = (v) => (v ? dayjs(v).format('DD/MM/YYYY') : '')
+const d8 = (v) => (v ? dayjs(v).format('DD-MMM-YYYY') : '')
 
 /**
  * Customer / Supplier Outstanding (legacy FrmRptAccOSBillWise). Summary: opening balance, period debit and credit, and
@@ -106,8 +106,8 @@ export default function PartyOutstandingPage() {
             <SegmentedControl value={party} onChange={(v) => { setParty(v); setPicked([]); setResult(null) }} data={[{ label: 'Receivable (customers)', value: 'C' }, { label: 'Payable (suppliers)', value: 'S' }]} />
           </Group>
           <Group gap="md" align="flex-end" wrap="wrap">
-            {mode === 'summary' && <DatePickerInput className="vt-field-required" label="For the Period from" valueFormat="DD/MM/YYYY" value={from} onChange={setFrom} w={160} />}
-            <DatePickerInput className="vt-field-required" label={mode === 'summary' ? 'To' : 'As on'} valueFormat="DD/MM/YYYY" value={to} onChange={setTo} w={160} />
+            {mode === 'summary' && <DatePickerInput className="vt-field-required" label="For the Period from" valueFormat="DD-MMM-YYYY" value={from} onChange={setFrom} w={160} />}
+            <DatePickerInput className="vt-field-required" label={mode === 'summary' ? 'To' : 'As on'} valueFormat="DD-MMM-YYYY" value={to} onChange={setTo} w={160} />
             <Button color="kumkum" leftSection={<Eye size={16} />} loading={loading} onClick={view}>View</Button>
           </Group>
           <Group gap="lg" wrap="wrap" align="flex-end">

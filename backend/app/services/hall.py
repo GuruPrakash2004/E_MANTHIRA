@@ -18,7 +18,7 @@ which catches every overlap case. See doc 09 finding + CLAUDE.md rule 9.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -27,8 +27,8 @@ from sqlalchemy.engine import Connection
 
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
-from app.legacy.tables import insert_row, update_row
-from app.meta import numbering
+from app.legacy.tables import insert_row, table, update_row
+from app.meta import doc_rules, numbering
 from app.services import receipt as receipt_service
 from app.utils.amount_in_words import amount_in_words
 
@@ -41,31 +41,25 @@ HALL_RECEIPT_PREFIX = "ANP"  # legacy hard-codes this for hall receipts
 
 @dataclass
 class HallBookingInput:
-    booking_type: str  # 'HALL BOOKING' | 'CARPUS FUND'
-    hall_id: int | None
-    function_name: str | None
-    start_at: datetime | None
-    end_at: datetime | None
-    start_time_text: str | None
-    end_time_text: str | None
-    contact_person: str | None
-    contact_no: str
-    mobile: str | None
-    address: str | None
-    email: str | None
-    pan: str | None
-    remarks: str | None
-    amount: float
-    cgst_pct: float = 0.0
-    sgst_pct: float = 0.0
-    deposit: float = 0.0
-    ledger_id: int = 0
-    cash_bank_ledger_id: int = 0
+    """The Designer fields of the Hall Booking document keyed by FldCode (TYPE, HALLID, HBSTARTDT, HBENDDT, AMOUNT,
+    CGSTPER ... — whichever this temple's UtlDocDsgrFlds defines) plus the document date."""
+
+    fields: dict
     doc_date: date | None = None
-    # Fields the Designer tool adds to UtlDocDsgrFlds later that this
-    # dataclass doesn't know about yet — keyed by FldCode. insert_row()
-    # silently drops anything that isn't a real TrnHdrHB column.
-    extra_fields: dict = field(default_factory=dict)
+
+
+# Calculated here (or owned by the payment flow): whatever the browser sends for them is ignored.
+COMPUTED = (
+    "TOTAMT", "CGSTAMT", "SGSTAMT", "TOTGSTAMT", "AMTAFTTAX", "NETPAY", "BALAMT", "NOD",
+    "ADV", "PMT2", "FULLPAIDAMT", "AMTINWORDS", "TOTAMTIWRDS", "ISSUEDBY",
+)
+
+
+def _num(v) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Amounts and percentages must be numbers")
 
 
 def _prefix_for(conn: Connection, booking_type: str) -> str:
@@ -112,111 +106,64 @@ def availability_calendar(conn: Connection, *, hall_id: int, from_date: date, mo
 
 
 def create(conn: Connection, *, data: HallBookingInput, fy: FinancialYear, user_code: str) -> dict:
-    is_hall_booking = data.booking_type.upper() == "HALL BOOKING"
+    rows = doc_rules.load_fields(conn, DOC_ID)
+    if not rows:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Hall Booking has no fields configured in the Doc Designer")
+    values = doc_rules.effective_values(rows, {k: v for k, v in data.fields.items() if k not in COMPUTED})
+    doc_rules.validate(rows, values, skip=COMPUTED, fy=fy)
 
-    # UtlDocDsgrFlds (DocID 1281, HALLID): FLdBlnHide='N', FldBlnMandatory='Y',
-    # no compare value — unconditionally mandatory for BOTH booking types, not
-    # just HALL BOOKING. (Verified against the 72 real HALL BOOKING rows: 0
-    # blank HALLID. No real CARPUS FUND rows exist to cross-check, but the
-    # metadata itself has no FldMndtryCompareVal, so there's no conditional to
-    # honour.)
-    if not data.hall_id:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Name of the Hall / Room is mandatory")
+    booking_type = str(values.get("TYPE") or "HALL BOOKING")
+    is_hall_booking = booking_type.upper() == "HALL BOOKING"
+    hall_id = int(values.get("HALLID") or 0)
+    start = doc_rules._to_date(values["HBSTARTDT"]) if values.get("HBSTARTDT") else None
+    end = doc_rules._to_date(values["HBENDDT"]) if values.get("HBENDDT") else None
+    amount = _num(values.get("AMOUNT"))
+
     if is_hall_booking:
-        if not data.start_at or not data.end_at:
+        if not hall_id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Name of the Hall / Room is mandatory")
+        if not start or not end:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Start Date and End Date are mandatory")
-        if data.end_at.date() < data.start_at.date():
+        if end < start:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "From Date Should be less than To Date...")
-        if not check_availability(conn, hall_id=data.hall_id, start_date=data.start_at.date(), end_date=data.end_at.date()):
+        if not check_availability(conn, hall_id=hall_id, start_date=start, end_date=end):
             raise HTTPException(status.HTTP_409_CONFLICT, "Booking Period Not Available.. Please check the List..")
-    # UtlDocDsgrFlds (DocID 1281, CONTACTNO): FldBlnMandatory='Y',
-    # FldMndtryCompareVal='#PAYMNETMODE#' <> 'CASH' — but '#PAYMNETMODE#' is a
-    # typo in the metadata itself (the real FldCode/column is PAYMNTMODE, no
-    # 'E'; confirmed via INFORMATION_SCHEMA — no PAYMNETMODE column exists on
-    # TrnHdrHB). An unresolvable #FIELD# reference evaluates its value as
-    # blank, so '' <> 'CASH' is always true — i.e. this rule is, in practice,
-    # UNCONDITIONALLY mandatory. Confirmed against real data: 0 of 72 real
-    # Hall Booking rows have a blank CONTACTNO, across every PAYMNTMODE
-    # (Cash/Cheque/UPI) — including Cash, where a real conditional rule would
-    # allow blanks. (Contrast with genuinely-optional fields on this same
-    # table, e.g. EMAILID: 72/72 blank, PAN: 51/72 blank — so this isn't just
-    # "staff fill in everything".) Do not make this conditional on payment
-    # mode — that would NOT match live legacy behaviour.
-    if not (data.contact_no or "").strip():
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Contact Number is mandatory")
-    if data.amount <= 0:
+    if amount <= 0:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
 
     doc_date = data.doc_date or date.today()
     assert_date_in_fy(doc_date, fy)
 
-    prefix = _prefix_for(conn, data.booking_type)
+    prefix = _prefix_for(conn, booking_type)
     doc_no = numbering.next_doc_no(
         conn, table_name=TABLE, no_column=NO_COLUMN, prefix=prefix,
         fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
     )
     print_no = numbering.print_doc_no(conn, doc_id=DOC_ID, doc_no=doc_no, prefix=prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year)
 
-    cgst_amt = round(data.amount * data.cgst_pct / 100, 2)
-    sgst_amt = round(data.amount * data.sgst_pct / 100, 2)
+    cgst_amt = round(amount * _num(values.get("CGSTPER")) / 100, 2)
+    sgst_amt = round(amount * _num(values.get("SGSTPER")) / 100, 2)
     total_gst = round(cgst_amt + sgst_amt, 2)
-    net_pay = round(data.amount + total_gst, 2)
-    nod = (data.end_at.date() - data.start_at.date()).days + 1 if (is_hall_booking and data.start_at and data.end_at) else 0
+    net_pay = round(amount + total_gst, 2)
+    nod = (end - start).days + 1 if (is_hall_booking and start and end) else 0
 
-    hb_id = insert_row(
-        conn,
-        TABLE,
+    cols = doc_rules.column_values(rows, values, table(TABLE))
+    cols.update(
         {
-            NO_COLUMN: doc_no,
-            "Prefix": prefix,
-            "PrintHBNO": print_no,
-            "HBDate": doc_date,
-            "Authorised": "Y",
-            "Cancelled": "N",
-            "AddedBy": user_code,
-            "AddedOn": datetime.now(),
-            "TYPE": data.booking_type,
-            "HALLID": data.hall_id,
-            "NMEOFFUNC": data.function_name,
-            "HBSTARTDT": data.start_at.date() if data.start_at else None,
-            "STTIME": data.start_time_text,
-            "HBENDDT": data.end_at.date() if data.end_at else None,
-            "ENDTIME": data.end_time_text,
-            "CONPRS": data.contact_person,
-            "CONTACTNO": data.contact_no,
-            "MOBNO": data.mobile,
-            "ADDRESS": data.address,
-            "EMAILID": data.email,
-            "PAN": data.pan,
-            "RMKS": data.remarks,
-            "AMOUNT": data.amount,
-            "TOTAMT": data.amount,
-            "CGSTPER": data.cgst_pct,
-            "CGSTAMT": cgst_amt,
-            "SGSTPER": data.sgst_pct,
-            "SGSTAMT": sgst_amt,
-            "TOTGSTAMT": total_gst,
-            "AMTAFTTAX": net_pay,
-            "NETPAY": net_pay,
-            "SDEPAMT": data.deposit,
-            "ADV": 0,
-            "PMT2": 0,
-            "FULLPAIDAMT": 0,
-            "BALAMT": net_pay,
+            NO_COLUMN: doc_no, "Prefix": prefix, "PrintHBNO": print_no, "HBDate": doc_date,
+            "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
+            "AMOUNT": amount, "TOTAMT": amount, "CGSTAMT": cgst_amt, "SGSTAMT": sgst_amt, "TOTGSTAMT": total_gst,
+            "AMTAFTTAX": net_pay, "NETPAY": net_pay, "ADV": 0, "PMT2": 0, "FULLPAIDAMT": 0, "BALAMT": net_pay,
             "AMTINWORDS": amount_in_words(net_pay, "Rupees", "Paise"),
-            "TOTAMTIWRDS": amount_in_words(data.amount, "Rupees", "Paise"),
-            "ISSUEDBY": user_code,
-            "NOD": nod,
-            "LEDGER": data.ledger_id,
-            "LEDID": data.cash_bank_ledger_id,
-            **data.extra_fields,
-        },
-        returning="HBID",
+            "TOTAMTIWRDS": amount_in_words(amount, "Rupees", "Paise"),
+            "ISSUEDBY": user_code, "NOD": nod,
+        }
     )
+    hb_id = insert_row(conn, TABLE, cols, returning="HBID")
 
     if is_hall_booking:
         for i in range(nod):
-            insert_row(conn, "TrnST", {"HALLID": data.hall_id, "HBID": hb_id, "STAYDATE": data.start_at.date() + timedelta(days=i)})
+            insert_row(conn, "TrnST", {"HALLID": hall_id, "HBID": hb_id, "STAYDATE": start + timedelta(days=i)})
 
     audit.record(conn, entity="Hall Booking", entity_id=hb_id, action="A", user_code=user_code, details=doc_no)
     return {"hb_id": hb_id, "hb_no": doc_no, "print_no": print_no, "net_pay": net_pay, "balance": net_pay}

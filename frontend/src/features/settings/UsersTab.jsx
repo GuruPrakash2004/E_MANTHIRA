@@ -20,7 +20,7 @@ import {
   Textarea,
 } from '@mantine/core'
 import { Camera, SquarePen, Key, Plus, Trash2, Search, Users, UserCheck, UserX } from 'lucide-react'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import StatCard from '../../components/ui/StatCard'
 import EmptyState from '../../components/ui/EmptyState'
 import { notifications } from '@mantine/notifications'
@@ -308,7 +308,7 @@ export default function UsersTab() {
               <TextInput label="Department" value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.currentTarget.value }))} />
               <Group align="flex-end" gap="sm">
                 <Checkbox color="kumkum" label="DOB" checked={form.chkDob} onChange={(e) => setForm((f) => ({ ...f, chkDob: e.currentTarget.checked }))} mb={8} />
-                <DateInput aria-label="Date of birth" valueFormat="DD/MM/YYYY" disabled={!form.chkDob} value={form.dob} onChange={(v) => setForm((f) => ({ ...f, dob: v }))} maxDate={new Date()} w={160} />
+                <DateInput aria-label="Date of birth" valueFormat="DD-MMM-YYYY" disabled={!form.chkDob} value={form.dob} onChange={(v) => setForm((f) => ({ ...f, dob: v }))} maxDate={new Date()} w={160} />
               </Group>
               <TextInput label="Email ID" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.currentTarget.value }))} />
               <TextInput label="Mobile No" value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.currentTarget.value }))} />
@@ -323,7 +323,7 @@ export default function UsersTab() {
                       Password rules: min length {fs.rules.min_len}, alphabets {fs.rules.min_alpha}, numeric {fs.rules.min_numeric}, special characters {fs.rules.min_spl}, lower case {fs.rules.min_lower}, upper case {fs.rules.min_upper}.
                     </Text>
                   )}
-                  <DateInput label="Password Reset" valueFormat="DD/MM/YYYY" value={form.pwdResetDt} onChange={(v) => setForm((f) => ({ ...f, pwdResetDt: v }))} w={180} />
+                  <DateInput label="Password Reset" valueFormat="DD-MMM-YYYY" value={form.pwdResetDt} onChange={(v) => setForm((f) => ({ ...f, pwdResetDt: v }))} w={180} />
                 </>
               )}
               <Switch label="Inactive" checked={form.inactive} onChange={(e) => setForm((f) => ({ ...f, inactive: e.currentTarget.checked }))} />

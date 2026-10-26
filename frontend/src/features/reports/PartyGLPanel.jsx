@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Card, Checkbox, Group, MultiSelect, Radio, Stack } from '@mantine/core'
-import { DatePickerInput } from '@mantine/dates'
+import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import { Eye, FileSpreadsheet, Printer, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -69,7 +69,7 @@ export default function PartyGLPanel() {
         : [
             { key: 'code', label: `${label} Code`, width: 200 },
             { key: 'name', label: `${label} Name`, width: 220 },
-            { key: 'trn_date', label: 'Date', width: 100, render: (r) => (r.trn_date ? dayjs(r.trn_date).format('DD/MM/YYYY') : '') },
+            { key: 'trn_date', label: 'Date', width: 100, render: (r) => (r.trn_date ? dayjs(r.trn_date).format('DD-MMM-YYYY') : '') },
             { key: 'doc_type', label: 'Doc Type', width: 100 },
             { key: 'trn_no', label: 'Trn No', width: 120 },
             { key: 'narration', label: 'Narration', width: 280 },
@@ -91,8 +91,8 @@ export default function PartyGLPanel() {
       <Card withBorder p="md">
         <Stack gap="sm">
           <Group gap="md" align="flex-end" wrap="wrap">
-            <DatePickerInput className="vt-field-required" label="For the Period from" valueFormat="DD/MM/YYYY" value={from} onChange={setFrom} w={160} />
-            <DatePickerInput className="vt-field-required" label="To" valueFormat="DD/MM/YYYY" value={to} onChange={setTo} w={160} />
+            <DatePickerInput className="vt-field-required" label="For the Period from" valueFormat="DD-MMM-YYYY" value={from} onChange={setFrom} w={160} />
+            <DatePickerInput className="vt-field-required" label="To" valueFormat="DD-MMM-YYYY" value={to} onChange={setTo} w={160} />
           </Group>
           <Group gap="xl" wrap="wrap" align="center">
             <Radio.Group value={mode} onChange={setMode} aria-label="Report type">

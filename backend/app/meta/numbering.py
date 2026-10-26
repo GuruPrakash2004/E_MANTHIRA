@@ -85,6 +85,45 @@ def next_doc_no(
     return f"{yy}{prefix}{int(next_no):05d}"
 
 
+def peek_doc_no(
+    conn: Connection,
+    *,
+    table_name: str,
+    no_column: str,
+    prefix: str,
+    fy_start_year: int,
+    reset_per_prefix: bool = True,
+) -> str:
+    """
+    The number `next_doc_no` would hand out right now, WITHOUT locking or reserving anything - for showing the bill no while
+    the form is being filled. Another counter may save first, so the number a save really gets is the one it returns.
+    """
+    yy = _fy_year_suffix(fy_start_year)
+
+    if get_settings().is_mysql:
+        last = conn.execute(
+            text("SELECT LastNumber FROM DocSequence WHERE DocTable = :t AND FYYear = :y AND Prefix = :p"),
+            {"t": table_name, "y": fy_start_year, "p": prefix},
+        ).scalar()
+        return f"{yy}{prefix}{int(last or 0) + 1:05d}"
+
+    if reset_per_prefix:
+        sql = f"""
+            SELECT ISNULL(MAX(CONVERT(int, RIGHT({no_column}, 5))), 0) + 1
+            FROM {table_name}
+            WHERE Prefix = :pfx AND LEFT({no_column}, LEN(:yy) + LEN(:pfx)) = :yy + :pfx
+        """
+        next_no = conn.execute(text(sql), {"pfx": prefix, "yy": yy}).scalar_one()
+    else:
+        sql = f"""
+            SELECT ISNULL(MAX(CONVERT(int, RIGHT({no_column}, 5))), 0) + 1
+            FROM {table_name}
+            WHERE LEFT({no_column}, LEN(:yy)) = :yy
+        """
+        next_no = conn.execute(text(sql), {"yy": yy}).scalar_one()
+    return f"{yy}{prefix}{int(next_no):05d}"
+
+
 def next_receipt_no(
     conn: Connection,
     *,

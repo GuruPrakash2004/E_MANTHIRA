@@ -1,17 +1,16 @@
-import { useConfirm } from '../../components/ui/ConfirmProvider'
+import { historyParams } from '../../lib/history'
 import { useEffect, useState } from 'react'
-import { ActionIcon, Button, Grid, Group, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
-import { Gift, HandCoins, Plus, Trash2 } from 'lucide-react'
+import { Button, Group, NumberInput, Select, Stack, Text, Title } from '@mantine/core'
+import { DateInput } from '../../components/ui/AppDates'
+import { Gift } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as donationApi from '../../api/endpoints/donation'
-import * as metaApi from '../../api/endpoints/meta'
-import LookupSelect from '../../components/LookupSelect'
 import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
-import DynamicField from '../../components/DynamicField'
+import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
+import DocDetailGrid, { blankLine, detailErrors } from '../../components/DocDetailGrid'
 import usePrefixes from '../../hooks/usePrefixes'
 import { useHotkeys } from 'react-hotkeys-hook'
 import DonorHistoryModal from './DonorHistoryModal'
@@ -20,45 +19,26 @@ import { useLocation } from 'react-router-dom'
 import useDocFields from '../../hooks/useDocFields'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
-import EmptyState from '../../components/ui/EmptyState'
 import { formatINR, isoDate } from '../../utils/format'
-import { isFieldHidden, isFieldMandatory, fieldCaption, fieldListOptions } from '../../utils/docFieldConditions'
+import { useAuth } from '../../hooks/useAuth'
+import { columnsFromLines, computeFormulas } from '../../utils/docCompute'
 
-const PAYMENT_MODES = ['Cash', 'Card', 'Cheque', 'UPI']
 const DOC_ID = 1261
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
-
-// Maps this screen's own form-state keys to the legacy FldCode UtlDocDsgrFlds
-// uses — same pattern as SevaEntryPage (CLAUDE.md rule 5).
-const FIELD_CODE_MAP = {
-  AMOUNT: 'amount', RMKS: 'remarks', PAYMNTMODE: 'payment_mode', LEDGER: 'ledger_id',
-  LEDID: 'cash_bank_ledger_id', HBID: 'hb_id', DONOR: 'donor', CONTACTNO: 'contact_no',
-  ADDRESS: 'address', REFNO: 'reference_no', PANNO: 'pan_no',
-  CHEQUENO: 'cheque_no', CHEQUEDATE: 'cheque_date', BANKNAME: 'bank_name',
-}
+// Computed by the server / shown in the summary, so not drawn as inputs.
+const COMPUTED_CODES = ['AMTINWORDS', 'ISSUEDBY', 'TOTAMT']
+// Entered fresh for each donor (the payment mode etc. carry over to the next receipt).
+const PER_DONOR_CODES = ['DONOR', 'CONTACTNO', 'ADDRESS', 'PANNO', 'REFNO', 'CHEQUENO', 'CHEQUEDATE', 'BANKNAME', 'RMKS', 'HBID']
 
 export default function DonationReceiptPage() {
-  const confirm = useConfirm()
   const queryClient = useQueryClient()
-  const [form, setForm] = useState({
-    prefix: '',
-    donor: '',
-    contact_no: '',
-    address: '',
-    pan_no: '',
-    payment_mode: 'Cash',
-    reference_no: '',
-    bank_name: '',
-    cheque_no: '',
-    cheque_date: null,
-    remarks: '',
-    ledger_id: '',
-    cash_bank_ledger_id: '',
-    hb_id: '',
-    amount: 0,
-    doc_date: new Date(),
-  })
-  const [extra, setExtra] = useState({})
+  // The receipt is rendered from the Doc Designer (UtlDocDsgrFlds): header/footer fields by FldCode, detail lines.
+  const [values, setValues] = useState({})
+  const [resetKey, setResetKey] = useState(0)
+  const [lines, setLines] = useState([])
+  const [prefix, setPrefix] = useState(null) // null = not loaded yet; '' is a valid (blank) prefix
+  const [docDate, setDocDate] = useState(new Date())
+  const [attempted, setAttempted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
   const [printFor, setPrintFor] = useState(null)
@@ -67,38 +47,38 @@ export default function DonationReceiptPage() {
   const [viewNo, setViewNo] = useState('')
   const [donorLimit, setDonorLimit] = useState('')
 
-  const { byCode: fieldMeta } = useDocFields(DOC_ID)
-  const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, form[key]]))
-  const hidden = (code) => isFieldHidden(fieldMeta[code], codeValues)
-  const mandatory = (code) => isFieldMandatory(fieldMeta[code], codeValues)
-  const caption = (code, fallback) => fieldCaption(fieldMeta[code], fallback)
-  const knownCodes = new Set(Object.keys(FIELD_CODE_MAP))
-  const extraDesignerFields = Object.values(fieldMeta).filter(
-    (f) => !knownCodes.has(f.FldCode) && !hidden(f.FldCode) && f.FldSection === 'Header'
-  )
-  // Optional Seva-tagged split (legacy: one donation receipt can fund several
-  // sevas at once). Empty by default — the backend writes a single plain
-  // "DONATION" detail line when no split is given, matching legacy behaviour.
-  const [lines, setLines] = useState([])
+  const { fields } = useDocFields(DOC_ID)
+  const { user } = useAuth()
+  const setValue = (code, v) => setValues((cur) => ({ ...cur, [code]: v }))
+  const dateCodes = new Set(fields.filter((f) => f.FldDataType === 'Date').map((f) => f.FldCode))
 
-  const linesTotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
+  const total = lines.reduce((sum, l) => sum + (Number(l.AMOUNT) || 0), 0)
+  // the Designer's formulas (TOTAMT, AMTINWORDS, ISSUEDBY ...) for a new receipt; a saved one shows what was stored
+  const computed = viewId ? undefined : computeFormulas(fields, values, columnsFromLines(lines), { userCode: user?.user_code || '' })
 
-  function addLine() {
-    setLines((ls) => [...ls, { seva_id: '', amount: 0 }])
-  }
-  function updateLine(idx, patch) {
-    setLines((ls) => ls.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
-  }
-  function removeLine(idx) {
-    setLines((ls) => ls.filter((_, i) => i !== idx))
-  }
+  // Always at least one line, like the legacy grid.
+  useEffect(() => {
+    if (fields.length && lines.length === 0 && !viewId) setLines([blankLine(fields)])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields, lines.length, viewId])
 
-  async function onContactBlur() {
-    if (!form.contact_no || form.contact_no.length < 10) return
+  const headErrors = docFieldErrors(fields.filter((f) => f.FldSection !== 'Detail'), values, COMPUTED_CODES)
+  const lineErrors = detailErrors(fields, lines, values)
+  const firstError =
+    Object.values(headErrors)[0] ||
+    Object.values(Object.values(lineErrors)[0] || {})[0] ||
+    (prefix === null ? 'No document-number prefix configured' : null) ||
+    (!(total > 0) ? 'Enter an amount greater than 0' : null)
+  const canSave = !firstError
+
+  async function onBlurField(code) {
+    if (code !== 'CONTACTNO') return
+    const contact = String(values.CONTACTNO || '')
+    if (contact.length < 10) return
     try {
-      const donor = await donationApi.lookupDonor(form.contact_no)
+      const donor = await donationApi.lookupDonor(contact)
       if (donor) {
-        setForm((f) => ({ ...f, donor: donor.DONOR || f.donor, address: donor.ADDRESS || f.address, pan_no: donor.PANNO || f.pan_no }))
+        setValues((cur) => ({ ...cur, DONOR: donor.DONOR || cur.DONOR, ADDRESS: donor.ADDRESS || cur.ADDRESS, PANNO: donor.PANNO || cur.PANNO }))
         notifications.show({ message: `Found: ${donor.DONOR}`, color: 'teal' })
       }
     } catch {
@@ -111,44 +91,45 @@ export default function DonationReceiptPage() {
   const location = useLocation()
   useEffect(() => {
     const p = location.state?.prefill
-    if (p) setForm((f) => ({ ...f, ...p }))
+    if (!p) return
+    if (p.prefix) setPrefix(p.prefix)
+    setValues((cur) => ({ ...cur, HBID: p.hb_id, DONOR: p.donor, CONTACTNO: p.contact_no, ADDRESS: p.address, PANNO: p.pan_no, REFNO: p.reference_no }))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state])
+  useEffect(() => {
+    if (prefixes?.length && prefix === null && !location.state?.prefill) setPrefix(prefixes[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefixes])
   const { data: recent, refetch, isLoading: recentLoading } = useQuery({
     queryKey: ['donations', 'recent'],
-    queryFn: () => donationApi.listDonations({ top: 15 }),
+    queryFn: () => donationApi.listDonations(historyParams()),
   })
-
-  useEffect(() => {
-    if (prefixes?.length && !form.prefix && !location.state?.prefill) {
-      setForm((f) => ({ ...f, prefix: prefixes[0] }))
-    }
-  }, [prefixes])
 
   // Show Donor: copy the chosen earlier donor's details and first seva line (legacy btnShowDonars_Click)
   function applyDonor(r) {
-    setForm((f) => ({ ...f, donor: r.DONOR || '', address: r.ADDRESS || '', contact_no: r.CONTACTNO || '', reference_no: r.REFNO || f.reference_no, pan_no: r.PANNO || f.pan_no }))
-    if (r.SEVAID) setLines((ls) => (ls.length ? ls.map((l, i) => (i === 0 ? { ...l, seva_id: r.SEVAID } : l)) : [{ seva_id: r.SEVAID, amount: 0 }]))
+    setValues((cur) => ({ ...cur, DONOR: r.DONOR || '', ADDRESS: r.ADDRESS || '', CONTACTNO: r.CONTACTNO || '', REFNO: r.REFNO || cur.REFNO, PANNO: r.PANNO || cur.PANNO }))
+    if (r.SEVAID) {
+      setLines((ls) =>
+        ls.length ? ls.map((l, i) => (i === 0 ? { ...l, SEVAID: r.SEVAID, SEVANME: r.SEVANME || l.SEVANME } : l)) : [{ ...blankLine(fields), SEVAID: r.SEVAID, SEVANME: r.SEVANME }]
+      )
+    }
     setDonorOpen(false)
   }
 
-  // Map a saved TrnHdrDONREC row (+ lines) into the entry form
+  // Map a saved TrnHdrDONREC row (+ lines) into the entry: its columns are the Designer FldCodes
   function fillFromDonation(l, withMeta = false) {
-    setForm((f) => ({
-      ...f,
-      donor: l.DONOR || '',
-      contact_no: l.CONTACTNO || '',
-      address: l.ADDRESS || '',
-      pan_no: l.PANNO || '',
-      reference_no: l.REFNO || '',
-      payment_mode: l.PAYMNTMODE || f.payment_mode,
-      ledger_id: l.LEDGER ?? f.ledger_id,
-      cash_bank_ledger_id: l.LEDID ?? f.cash_bank_ledger_id,
-      amount: Number(l.TOTAMT) || 0,
-      remarks: l.RMKS || '',
-      ...(withMeta ? { hb_id: l.HBID || '', doc_date: l.DONRECDate ? new Date(l.DONRECDate) : f.doc_date, bank_name: l.BANKNAME || '', cheque_no: l.CHEQUENO || '' } : {}),
-    }))
-    setLines((l.lines || []).map((x) => ({ seva_id: x.SEVAID || '', amount: Number(x.AMOUNT) || 0 })))
+    const next = {}
+    for (const f of fields) {
+      if (f.FldSection === 'Detail') continue
+      const v = l[f.FldCode]
+      if (v === null || v === undefined) next[f.FldCode] = ''
+      else if (f.FldDataType === 'Date') next[f.FldCode] = new Date(v)
+      else if (f.FldBlnComboData === 'Y') next[f.FldCode] = Number(v) || ''
+      else next[f.FldCode] = String(v).trim()
+    }
+    setValues(next)
+    setLines((l.lines || []).map((x) => ({ SEVAID: x.SEVAID || '', SEVANME: (x.SEVANME || '').trim(), AMOUNT: Number(x.AMOUNT) || 0 })))
+    if (withMeta && l.DONRECDate) setDocDate(new Date(l.DONRECDate))
   }
 
   // F6 loads the last receipt so it can be re-entered (legacy: Add mode)
@@ -178,70 +159,47 @@ export default function DonationReceiptPage() {
     setViewId(null)
     setViewNo('')
     setLines([])
-    setForm((f) => ({ ...f, donor: '', contact_no: '', address: '', pan_no: '', reference_no: '', remarks: '', amount: 0, hb_id: '', doc_date: new Date() }))
+    setValues({})
+    setAttempted(false)
+    setResetKey((k) => k + 1) // re-applies the Designer defaults
+    setDocDate(new Date())
   }
   async function findDonations(q) {
-    const rows = await donationApi.listDonations({ search: q, top: 30 })
+    const rows = await donationApi.listDonations({ search: q, top: 30, days: 0 })
     return rows.map((r) => ({ id: r.DONRECID, label: r.PrintDONRECNO || r.DONRECNO, sub: `${r.DONOR || ''} ${r.CONTACTNO || ''}`.trim() }))
   }
   useHotkeys('f6', (e) => { e.preventDefault(); if (!viewId) loadLastEntry() }, { enableOnFormTags: true }, [viewId])
 
-  function set(field, value) {
-    setForm((f) => ({ ...f, [field]: value }))
+  function payload() {
+    return Object.fromEntries(
+      Object.entries(values)
+        .filter(([k, v]) => v !== '' && v !== null && v !== undefined && !COMPUTED_CODES.includes(k))
+        .map(([k, v]) => [k, dateCodes.has(k) ? isoDate(v) : v])
+    )
   }
 
   async function onSave(mode) {
-    if (!form.prefix) {
-      notifications.show({ message: 'No document-number prefix configured', color: 'red' })
-      return
-    }
-    if (mandatory('REFNO') && !form.reference_no) {
-      notifications.show({ message: `${caption('REFNO', 'Reference Number')} is mandatory for ${form.payment_mode} payment`, color: 'red' })
-      return
-    }
-    if (mandatory('CONTACTNO') && !form.contact_no) {
-      notifications.show({ message: `${caption('CONTACTNO', 'Contact Number')} is mandatory`, color: 'red' })
-      return
-    }
-    if (lines.length > 0 && Math.round(linesTotal * 100) !== Math.round((Number(form.amount) || 0) * 100)) {
-      notifications.show({ message: 'Seva split amounts must add up to the total Amount', color: 'red' })
+    setAttempted(true)
+    if (!canSave) {
+      if (firstError) notifications.show({ message: firstError, color: 'red' })
       return
     }
     setSaving(true)
     try {
-      const body = {
-        ...form,
-        ledger_id: Number(form.ledger_id),
-        cash_bank_ledger_id: Number(form.cash_bank_ledger_id),
-        hb_id: form.hb_id ? Number(form.hb_id) : null,
-        amount: Number(form.amount),
-        doc_date: isoDate(form.doc_date),
-        cheque_date: form.cheque_date ? isoDate(form.cheque_date) : null,
-        lines: lines.length > 0 ? lines.map((l) => ({ seva_id: l.seva_id ? Number(l.seva_id) : null, amount: Number(l.amount) })) : null,
-        extra_fields: extra,
-      }
-      const result = await donationApi.createDonation(body)
+      const cleanLines = lines.map((l) => Object.fromEntries(Object.entries(l).filter(([, v]) => v !== '' && v !== null && v !== undefined)))
+      const result = await donationApi.createDonation({ prefix, doc_date: isoDate(docDate), fields: payload(), lines: cleanLines })
       setLastSaved(result)
       // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
       if (mode === 'print') directPrint(result.donrec_id)
       else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.donrec_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setForm((f) => ({
-        ...f,
-        donor: '',
-        contact_no: '',
-        address: '',
-        pan_no: '',
-        reference_no: '',
-        bank_name: '',
-        cheque_no: '',
-        cheque_date: null,
-        remarks: '',
-        hb_id: '',
-        amount: 0,
-      }))
-      setExtra({})
+      setValues((cur) => {
+        const keep = { ...cur }
+        PER_DONOR_CODES.forEach((c) => delete keep[c])
+        return keep
+      })
       setLines([])
+      setAttempted(false)
       queryClient.invalidateQueries({ queryKey: ['donations'] })
       refetch()
     } catch (err) {
@@ -258,7 +216,7 @@ export default function DonationReceiptPage() {
     onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
   })
 
-  const splitMismatch = lines.length > 0 && Math.round(linesTotal * 100) !== Math.round((Number(form.amount) || 0) * 100)
+  const paymentLabel = values.PAYMNTMODE ? String(values.PAYMNTMODE) : null
 
   return (
     <Stack gap="lg" className="vt-rise">
@@ -272,219 +230,103 @@ export default function DonationReceiptPage() {
             </Text>
           </div>
         </Group>
+        <Group gap="xs" align="flex-end">
+          {(prefixes || []).filter(Boolean).length > 1 && (
+            <Select aria-label="Prefix" w={110} data={prefixes.filter(Boolean)} value={prefix || null} onChange={(v) => setPrefix(v || '')} allowDeselect={false} disabled={Boolean(viewId)} />
+          )}
+          <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={Boolean(viewId)} w={150} />
+        </Group>
       </Group>
 
       <EntryLayout
         viewing={Boolean(viewId)}
         main={
-          <>
-        <Stack gap="lg">
-          <SectionCard title="Receipt and donor" hint="Document details and who is donating. A known contact number fills the donor's details.">
-            <Grid>
-          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-            <Select label="Prefix" required data={prefixes || []} value={form.prefix} onChange={(v) => set('prefix', v)} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-            <DateInput label="Document Date" valueFormat="DD/MM/YYYY" value={form.doc_date} onChange={(v) => set('doc_date', v)} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-            <Select
-              label={caption('PAYMNTMODE', 'Payment Mode')}
-              required={mandatory('PAYMNTMODE')}
-              data={fieldListOptions(fieldMeta.PAYMNTMODE, PAYMENT_MODES)}
-              value={form.payment_mode}
-              onChange={(v) => set('payment_mode', v)}
-            />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6 }}>
-            <Group gap="xs" align="flex-end" wrap="nowrap">
-              <TextInput style={{ flex: 1 }} label={caption('DONOR', 'Donor Name')} required={mandatory('DONOR')} value={form.donor} onChange={(e) => set('donor', e.currentTarget.value)} />
-              <NumberInput aria-label="Show No. of records" placeholder="Nos" w={70} min={0} hideControls value={donorLimit} onChange={setDonorLimit} />
-              <Button variant="light" color="kumkum" onClick={() => setDonorOpen(true)}>
-                Show Donor
-              </Button>
-            </Group>
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6 }}>
-            <TextInput
-              label={caption('CONTACTNO', 'Contact Number')}
-              required={mandatory('CONTACTNO')}
-              value={form.contact_no}
-              onChange={(e) => set('contact_no', e.currentTarget.value)}
-              onBlur={onContactBlur}
-            />
-          </Grid.Col>
-          {!hidden('ADDRESS') && (
-            <Grid.Col span={{ base: 12, xl: 8 }}>
-              <TextInput label={caption('ADDRESS', 'Address')} required={mandatory('ADDRESS')} value={form.address} onChange={(e) => set('address', e.currentTarget.value)} />
-            </Grid.Col>
-          )}
-          {!hidden('PANNO') && (
-            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-              <TextInput label={caption('PANNO', 'PAN Number')} required={mandatory('PANNO')} value={form.pan_no} onChange={(e) => set('pan_no', e.currentTarget.value)} />
-            </Grid.Col>
-          )}
-          {!hidden('HBID') && (
-            <Grid.Col span={{ base: 12, sm: 6 }}>
-              <LookupSelect docId={DOC_ID} field="HBID" label={caption('HBID', 'Hall Booking No (optional)')} required={mandatory('HBID')} value={form.hb_id} onChange={(v) => set('hb_id', v)} />
-            </Grid.Col>
-          )}
-          {!hidden('REFNO') && (
-            <Grid.Col span={{ base: 12, sm: 6 }}>
-              <TextInput label={caption('REFNO', 'Reference No')} required={mandatory('REFNO')} value={form.reference_no} onChange={(e) => set('reference_no', e.currentTarget.value)} />
-            </Grid.Col>
-          )}
-            </Grid>
-          </SectionCard>
-
-          <SectionCard title="Payment and amount" hint="How it was paid, the accounts it posts to, and the amount.">
-            <Grid>
-          {(!hidden('BANKNAME') || !hidden('CHEQUENO') || !hidden('CHEQUEDATE')) && (
-            <>
-              {!hidden('BANKNAME') && (
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <TextInput label={caption('BANKNAME', 'Bank Name')} required={mandatory('BANKNAME')} value={form.bank_name} onChange={(e) => set('bank_name', e.currentTarget.value)} />
-                </Grid.Col>
-              )}
-              {!hidden('CHEQUENO') && (
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <TextInput label={caption('CHEQUENO', 'Cheque No')} required={mandatory('CHEQUENO')} value={form.cheque_no} onChange={(e) => set('cheque_no', e.currentTarget.value)} />
-                </Grid.Col>
-              )}
-              {!hidden('CHEQUEDATE') && (
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <DateInput label={caption('CHEQUEDATE', 'Cheque Date')} required={mandatory('CHEQUEDATE')} valueFormat="DD/MM/YYYY" value={form.cheque_date} onChange={(v) => set('cheque_date', v)} />
-                </Grid.Col>
-              )}
-            </>
-          )}
-          <Grid.Col span={{ base: 12, sm: 6 }}>
-            <LookupSelect docId={DOC_ID} field="LEDGER" label={caption('LEDGER', 'Income Ledger')} required={mandatory('LEDGER')} value={form.ledger_id} onChange={(v) => set('ledger_id', v)} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6 }}>
-            <LookupSelect docId={DOC_ID} field="LEDID" label={caption('LEDID', 'Cash / Bank Account')} required={mandatory('LEDID')} value={form.cash_bank_ledger_id} onChange={(v) => set('cash_bank_ledger_id', v)} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 6 }}>
-            <NumberInput label={caption('AMOUNT', 'Amount')} required={mandatory('AMOUNT')} value={form.amount} onChange={(v) => set('amount', v)} decimalScale={2} />
-          </Grid.Col>
-          {!hidden('RMKS') && (
-            <Grid.Col span={{ base: 12, sm: 6 }}>
-              <TextInput label={caption('RMKS', 'Remarks')} required={mandatory('RMKS')} value={form.remarks || ''} onChange={(e) => set('remarks', e.currentTarget.value)} />
-            </Grid.Col>
-          )}
-          {extraDesignerFields.map((f) => (
-            <Grid.Col span={{ base: 12, sm: 6, xl: 4 }} key={f.FldCode}>
-              <DynamicField
+          <Stack gap="lg">
+            <SectionCard title="Receipt and donor" hint="Drawn from this temple's Doc Designer. A known contact number fills the donor's details.">
+              <DocFieldsForm
                 docId={DOC_ID}
-                field={f}
-                value={extra[f.FldCode]}
-                onChange={(v) => setExtra((e) => ({ ...e, [f.FldCode]: v }))}
-                required={mandatory(f.FldCode)}
+                section="Header"
+                values={values}
+                setValue={setValue}
+                setValues={setValues}
+                resetKey={resetKey}
+                errors={attempted ? headErrors : {}}
+                computed={computed}
+                readOnly={Boolean(viewId)}
+                onBlurField={onBlurField}
               />
-            </Grid.Col>
-          ))}
-            </Grid>
-          </SectionCard>
+              {!viewId && (
+                <Group gap="xs" align="flex-end" mt="md">
+                  <NumberInput aria-label="Show No. of records" placeholder="Nos" w={70} min={0} hideControls value={donorLimit} onChange={setDonorLimit} />
+                  <Button variant="light" color="kumkum" onClick={() => setDonorOpen(true)}>
+                    Show Donor
+                  </Button>
+                </Group>
+              )}
+            </SectionCard>
 
-          <SectionCard
-            title="Split across sevas"
-            hint="Optional. Tag parts of this donation to specific sevas; the parts must add up to the amount."
-            action={
-              <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
-                Add seva
-              </Button>
-            }
-          >
-            {lines.length === 0 ? (
-              <EmptyState icon={HandCoins} title="No split" hint="Leave empty to record a plain donation, or add a seva to split the amount." />
-            ) : (
-              <Table.ScrollContainer minWidth={420}>
-                <Table>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Seva</Table.Th>
-                      <Table.Th w={170}>Amount</Table.Th>
-                      <Table.Th w={48} aria-label="Remove" />
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {lines.map((l, i) => (
-                      <Table.Tr key={i}>
-                        <Table.Td>
-                          <LookupSelect docId={1263} field="SVAID" label="" aria-label="Seva" value={l.seva_id} onChange={(v) => updateLine(i, { seva_id: v })} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label="Amount" value={l.amount} onChange={(v) => updateLine(i, { amount: v })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <ActionIcon
-                            color="red"
-                            variant="subtle"
-                            size={36}
-                            aria-label="Remove this line"
-                            onClick={async () => { if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeLine(i) }}
-                          >
-                            <Trash2 size={16} />
-                          </ActionIcon>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-              </Table.ScrollContainer>
-            )}
-            {splitMismatch && (
-              <Text size="xs" c="red" mt="xs" role="alert">
-                Line amounts ({formatINR(linesTotal)}) must add up to the total amount ({formatINR(form.amount)}).
-              </Text>
-            )}
-          </SectionCard>
-        </Stack>
-          </>
+            <SectionCard title="Amount" hint="Each line is a donation (optionally for a seva); the lines add up to the receipt total.">
+              <DocDetailGrid docId={DOC_ID} rows={lines} setRows={setLines} values={values} errors={attempted ? lineErrors : {}} readOnly={Boolean(viewId)} />
+            </SectionCard>
+
+            <SectionCard title="Payment details">
+              <DocFieldsForm
+                docId={DOC_ID}
+                section="Footer"
+                values={values}
+                setValue={setValue}
+                setValues={setValues}
+                resetKey={resetKey}
+                errors={attempted ? headErrors : {}}
+                computed={computed}
+                readOnly={Boolean(viewId)}
+              />
+            </SectionCard>
+          </Stack>
         }
         side={
           <>
-        <SummaryCard
-          rows={[
-            { label: 'Payment', value: form.payment_mode || '-' },
-            { label: 'Seva split', value: lines.length ? `${lines.length} line(s)` : 'None' },
-          ]}
-          totalLabel="Donation amount"
-          total={formatINR(form.amount)}
-          words={form.amount}
-          warning={splitMismatch ? 'Seva split does not add up to the amount.' : null}
-          saving={saving}
-          saveDisabled={Boolean(viewId)}
-          onSave={() => onSave('save')}
-          onSavePrint={() => onSave('print')}
-        />
-        {lastSaved && (
-          <SavedPanel
-            lines={[`Donation ${lastSaved.donrec_no}`, `Receipt ${lastSaved.receipt_no}`]}
-            onPrint={() => setPrintFor(lastSaved.donrec_id)}
-          />
-        )}
-        <RecentCard
-          title="Recent donations"
-          icon={Gift}
-          loading={recentLoading}
-          rows={recent || []}
-          emptyTitle="No donations yet"
-          emptyHint="Saved receipts will be listed here."
-          renderRow={(d) => ({
-            key: d.DONRECID,
-            title: d.PrintDONRECNO,
-            subtitle: `${d.DONOR} \u00b7 ${formatINR(d.TOTAMT)}`,
-            printLabel: `Print ${d.PrintDONRECNO}`,
-            onPrint: () => setPrintFor(d.DONRECID),
-          })}
-        />
+            <SummaryCard
+              rows={[
+                ...(paymentLabel ? [{ label: 'Payment', value: paymentLabel }] : []),
+                { label: 'Lines', value: lines.length },
+              ]}
+              totalLabel="Donation amount"
+              total={formatINR(total)}
+              words={total}
+              warning={firstError || null}
+              saving={saving}
+              saveDisabled={!canSave || Boolean(viewId)}
+              onSave={() => onSave('save')}
+              onSavePrint={() => onSave('print')}
+            />
+            {lastSaved && (
+              <SavedPanel
+                lines={[`Donation ${lastSaved.donrec_no}`, ...(lastSaved.receipt_no ? [`Receipt ${lastSaved.receipt_no}`] : [])]}
+                onPrint={() => setPrintFor(lastSaved.donrec_id)}
+              />
+            )}
+            <RecentCard
+              title="Recent donations"
+              icon={Gift}
+              loading={recentLoading}
+              rows={recent || []}
+              emptyTitle="No donations yet"
+              emptyHint="Saved receipts will be listed here."
+              renderRow={(d) => ({
+                key: d.DONRECID,
+                title: d.PrintDONRECNO,
+                subtitle: `${d.DONOR} · ${formatINR(d.TOTAMT)}`,
+                printLabel: `Print ${d.PrintDONRECNO}`,
+                onPrint: () => setPrintFor(d.DONRECID),
+              })}
+            />
           </>
         }
       />
 
       <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} search={findDonations} />
-      <DonorHistoryModal opened={donorOpen} onClose={() => setDonorOpen(false)} onPick={applyDonor} initialName={form.donor} limit={Number(donorLimit) || 0} />
+      <DonorHistoryModal opened={donorOpen} onClose={() => setDonorOpen(false)} onPick={applyDonor} initialName={values.DONOR || ''} limit={Number(donorLimit) || 0} />
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Donation Receipt" />
     </Stack>
   )

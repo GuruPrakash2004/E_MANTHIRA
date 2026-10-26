@@ -4,6 +4,7 @@ import LoginPage from './features/auth/LoginPage'
 import AppShellLayout from './components/AppShellLayout'
 import ProtectedRoute from './components/ProtectedRoute'
 import NotFoundPage from './components/NotFoundPage'
+import RequireDesignerDoc from './components/RequireDesignerDoc'
 
 const DashboardPage = lazy(() => import('./features/dashboard/DashboardPage'))
 const SevaEntryPage = lazy(() => import('./features/seva/SevaEntryPage'))
@@ -15,6 +16,9 @@ const DonationReceiptPage = lazy(() => import('./features/donation/DonationRecei
 const PaymentVoucherPage = lazy(() => import('./features/vouchers/PaymentVoucherPage'))
 const JournalVoucherPage = lazy(() => import('./features/vouchers/JournalVoucherPage'))
 const ReceiptVoucherPage = lazy(() => import('./features/vouchers/ReceiptVoucherPage'))
+const CreditNotePage = lazy(() => import('./features/vouchers/CreditNotePage'))
+const DebitNotePage = lazy(() => import('./features/vouchers/DebitNotePage'))
+const ContraVoucherPage = lazy(() => import('./features/vouchers/ContraVoucherPage'))
 const AdminMasterPage = lazy(() => import('./features/settings/AdminMasterPage'))
 const ReportsPage = lazy(() => import('./features/reports/ReportsPage'))
 const PanchangaPage = lazy(() => import('./features/panchanga/PanchangaPage'))
@@ -45,6 +49,8 @@ const ScreenDocsPage = lazy(() => import('./features/utilities/ScreenDocsPage'))
 const NotInWebPage = lazy(() => import('./features/tradeReports/NotInWebPage'))
 
 const ExpenseEntryPage = lazy(() => import('./features/expense/ExpenseEntryPage'))
+const AssetEntryPage = lazy(() => import('./features/assets/AssetEntryPage'))
+const GroupSevaDocPage = lazy(() => import('./features/seva/GroupSevaDocPage'))
 
 export default function App() {
   return (
@@ -54,24 +60,29 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShellLayout />}>
           <Route path="/" element={<DashboardPage />} />
-          <Route path="/sevas" element={<SevaEntryPage />} />
-          <Route path="/halls" element={<HallBookingPage />} />
-          <Route path="/halls/entry" element={<HallBookingEntryPage />} />
+          <Route path="/sevas" element={<RequireDesignerDoc docId={1263} name="Seva Entry"><SevaEntryPage /></RequireDesignerDoc>} />
+          <Route path="/halls" element={<RequireDesignerDoc docId={1281} name="Hall Booking"><HallBookingPage /></RequireDesignerDoc>} />
+          <Route path="/halls/entry" element={<RequireDesignerDoc docId={1280} name="Hall Booking Entry"><HallBookingEntryPage /></RequireDesignerDoc>} />
           <Route path="/masters/17" element={<CompanyMasterPage />} />
           <Route path="/masters/:docId" element={<MasterPage />} />
-          <Route path="/donations" element={<DonationReceiptPage />} />
-          <Route path="/expenses" element={<ExpenseEntryPage />} />
-          <Route path="/vouchers/payment" element={<PaymentVoucherPage />} />
-          <Route path="/vouchers/journal" element={<JournalVoucherPage />} />
-          <Route path="/vouchers/receipt" element={<ReceiptVoucherPage />} />
+          <Route path="/donations" element={<RequireDesignerDoc docId={1261} name="Donation Receipt"><DonationReceiptPage /></RequireDesignerDoc>} />
+          <Route path="/group-seva" element={<RequireDesignerDoc docId={1264} name="Group Seva"><GroupSevaDocPage /></RequireDesignerDoc>} />
+          <Route path="/assets" element={<RequireDesignerDoc docId={1262} name="Asset Entry"><AssetEntryPage /></RequireDesignerDoc>} />
+          <Route path="/expenses" element={<RequireDesignerDoc docId={1260} name="Expense Entry"><ExpenseEntryPage /></RequireDesignerDoc>} />
+          <Route path="/vouchers/payment" element={<RequireDesignerDoc docId={1224} name="Payment Voucher"><PaymentVoucherPage /></RequireDesignerDoc>} />
+          <Route path="/vouchers/journal" element={<RequireDesignerDoc docId={1254} name="Journal Voucher"><JournalVoucherPage /></RequireDesignerDoc>} />
+          <Route path="/vouchers/credit-note" element={<RequireDesignerDoc docId={1250} name="Credit Note"><CreditNotePage /></RequireDesignerDoc>} />
+          <Route path="/vouchers/debit-note" element={<RequireDesignerDoc docId={1252} name="Debit Note"><DebitNotePage /></RequireDesignerDoc>} />
+          <Route path="/vouchers/contra" element={<RequireDesignerDoc docId={1253} name="Contra Voucher"><ContraVoucherPage /></RequireDesignerDoc>} />
+          <Route path="/vouchers/receipt" element={<RequireDesignerDoc docId={1248} name="Receipt Voucher"><ReceiptVoucherPage /></RequireDesignerDoc>} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/panchanga" element={<PanchangaPage />} />
           <Route path="/halls/status" element={<HallStatusPage />} />
-          <Route path="/inventory/stock-adjustment" element={<StockAdjustmentPage />} />
-          <Route path="/inventory/store-issue" element={<StoreIssuePage />} />
-          <Route path="/inventory/purchase-bill" element={<PurchaseBillPage />} />
-          <Route path="/inventory/purchase-voucher" element={<PurchaseVoucherPage />} />
-          <Route path="/inventory/bom" element={<BomPage />} />
+          <Route path="/inventory/stock-adjustment" element={<RequireDesignerDoc docId={1268} name="Stock Adjustment"><StockAdjustmentPage /></RequireDesignerDoc>} />
+          <Route path="/inventory/store-issue" element={<RequireDesignerDoc docId={1270} name="Store Issue Note"><StoreIssuePage /></RequireDesignerDoc>} />
+          <Route path="/inventory/purchase-bill" element={<RequireDesignerDoc docId={1271} name="Purchase Bill"><PurchaseBillPage /></RequireDesignerDoc>} />
+          <Route path="/inventory/purchase-voucher" element={<RequireDesignerDoc docId={1272} name="Purchase Voucher"><PurchaseVoucherPage /></RequireDesignerDoc>} />
+          <Route path="/inventory/bom" element={<RequireDesignerDoc docId={1149} name="Bill of Material"><BomPage /></RequireDesignerDoc>} />
           <Route path="/inventory/stock-balance" element={<CurrentStockBalancePage />} />
           <Route path="/inventory/item-referencer" element={<ItemReferencerPage />} />
           <Route path="/inventory/stock-balance-report" element={<StockBalanceReportPage />} />

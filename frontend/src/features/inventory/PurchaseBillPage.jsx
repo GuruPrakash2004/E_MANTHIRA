@@ -1,7 +1,8 @@
+import { historyParams } from '../../lib/history'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
 import { ActionIcon, Grid, NumberInput, Stack, Table, TextInput, Button } from '@mantine/core'
-import { DateInput } from '@mantine/dates'
+import { DateInput } from '../../components/ui/AppDates'
 import { Plus, Receipt, Save, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -9,7 +10,8 @@ import * as inventoryApi from '../../api/endpoints/inventory'
 import LookupSelect from '../../components/LookupSelect'
 import MasterOptionsSelect from './MasterOptionsSelect'
 import useDocFields from '../../hooks/useDocFields'
-import { isFieldHidden, isFieldMandatory, fieldCaption } from '../../utils/docFieldConditions'
+import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
+import { fieldCaption } from '../../utils/docFieldConditions'
 import dayjs from 'dayjs'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard, PageHeader } from '../../components/ui/EntryParts'
@@ -21,7 +23,7 @@ const LOCATION_DOC_ID = 1123
 const SUPPLIER_DOC_ID = 1121
 const DOC_ID = 1271
 
-const FIELD_CODE_MAP = { LOCID: 'loc_id', LEDIDPUR: 'ledid_pur', REFNO: 'ref_no', REFDT: 'ref_date', RMKS: 'remarks' }
+const COMPUTED_CODES = ['TOTQTY', 'PBVALUE', 'VCHID', 'ISSUEDBY', 'TOTAMTIWRDS', 'AMTINWORDS']
 
 const EMPTY_LINE = { item_id: '', uom_id: '', qty: 0, rate: 0 }
 
@@ -29,17 +31,27 @@ const EMPTY_LINE = { item_id: '', uom_id: '', qty: 0, rate: 0 }
 export default function PurchaseBillPage() {
   const confirm = useConfirm()
   const queryClient = useQueryClient()
-  const [form, setForm] = useState({ loc_id: '', supp_id: '', ledid_pur: '', ref_no: '', ref_date: null, remarks: '', doc_date: new Date() })
+  const [form, setForm] = useState({ supp_id: '', doc_date: new Date() })
   const [lines, setLines] = useState([{ ...EMPTY_LINE }])
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
 
-  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['purchase-bills', 'recent'], queryFn: () => inventoryApi.listPurchaseBills({ top: 15 }) })
-  const { byCode: fieldMeta } = useDocFields(DOC_ID)
-  const codeValues = Object.fromEntries(Object.entries(FIELD_CODE_MAP).map(([code, key]) => [code, form[key]]))
-  const hidden = (code) => isFieldHidden(fieldMeta[code], codeValues)
-  const mandatory = (code) => isFieldMandatory(fieldMeta[code], codeValues)
+  const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['purchase-bills', 'recent'], queryFn: () => inventoryApi.listPurchaseBills(historyParams()) })
+  const { fields, byCode: fieldMeta } = useDocFields(DOC_ID)
   const caption = (code, fallback) => fieldCaption(fieldMeta[code], fallback)
+  // Header / Footer fields come from this temple's Doc Designer (DocFieldsForm); values are keyed by FldCode.
+  const [values, setValues] = useState({})
+  const [resetKey, setResetKey] = useState(0)
+  const [attempted, setAttempted] = useState(false)
+  const setValue = (code, v) => setValues((cur) => ({ ...cur, [code]: v }))
+  const dateCodes = new Set(fields.filter((f) => f.FldDataType === 'Date').map((f) => f.FldCode))
+  const headErrors = docFieldErrors(fields.filter((f) => f.FldSection !== 'Detail'), values, COMPUTED_CODES)
+  const fieldsPayload = () =>
+    Object.fromEntries(
+      Object.entries(values)
+        .filter(([k, v]) => v !== '' && v !== null && v !== undefined && !COMPUTED_CODES.includes(k))
+        .map(([k, v]) => [k, dateCodes.has(k) ? isoDate(v) : v])
+    )
 
   function set(field, value) {
     setForm((f) => ({ ...f, [field]: value }))
@@ -57,19 +69,17 @@ export default function PurchaseBillPage() {
   const totalValue = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0)
 
   async function onSave() {
-    if (!form.loc_id || !form.supp_id) {
-      notifications.show({ message: 'Location and Supplier are mandatory', color: 'red' })
+    setAttempted(true)
+    const firstErr = Object.values(headErrors)[0] || (!form.supp_id ? 'Supplier is mandatory' : null)
+    if (firstErr) {
+      notifications.show({ message: firstErr, color: 'red' })
       return
     }
     setSaving(true)
     try {
       const body = {
-        loc_id: Number(form.loc_id),
         supp_id: Number(form.supp_id),
-        ledid_pur: Number(form.ledid_pur),
-        ref_no: form.ref_no,
-        ref_date: form.ref_date ? isoDate(form.ref_date) : null,
-        remarks: form.remarks,
+        fields: fieldsPayload(),
         doc_date: isoDate(form.doc_date),
         lines: lines.map((l) => ({ item_id: Number(l.item_id), uom_id: Number(l.uom_id), qty: Number(l.qty), rate: Number(l.rate) })),
       }
@@ -77,6 +87,9 @@ export default function PurchaseBillPage() {
       setLastSaved(result)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setLines([{ ...EMPTY_LINE }])
+      setValues({})
+      setResetKey((k) => k + 1)
+      setAttempted(false)
       queryClient.invalidateQueries({ queryKey: ['purchase-bills'] })
       refetch()
     } catch (err) {
@@ -96,39 +109,28 @@ export default function PurchaseBillPage() {
         main={
           <Stack gap="lg">
             <SectionCard title="Bill details" hint="Supplier, store and the supplier's own bill reference.">
-              <Grid>
-                {!hidden('LOCID') && (
-                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                    <MasterOptionsSelect docId={LOCATION_DOC_ID} label={caption('LOCID', 'Location')} required={mandatory('LOCID')} value={form.loc_id} onChange={(v) => set('loc_id', v)} />
-                  </Grid.Col>
-                )}
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <MasterOptionsSelect docId={SUPPLIER_DOC_ID} label="Supplier" required value={form.supp_id} onChange={(v) => set('supp_id', v)} />
-                </Grid.Col>
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <DateInput label="Document Date" valueFormat="DD/MM/YYYY" value={form.doc_date} onChange={(v) => set('doc_date', v)} />
-                </Grid.Col>
-                {!hidden('LEDIDPUR') && (
-                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                    <LookupSelect ledgerPicker label={caption('LEDIDPUR', 'Purchase Ledger')} required={mandatory('LEDIDPUR')} value={form.ledid_pur} onChange={(v) => set('ledid_pur', v)} />
-                  </Grid.Col>
-                )}
-                {!hidden('REFNO') && (
-                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                    <TextInput label={caption('REFNO', 'Ref No')} required={mandatory('REFNO')} value={form.ref_no} onChange={(e) => set('ref_no', e.currentTarget.value)} />
-                  </Grid.Col>
-                )}
-                {!hidden('REFDT') && (
-                  <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                    <DateInput label={caption('REFDT', 'Ref Date')} required={mandatory('REFDT')} valueFormat="DD/MM/YYYY" value={form.ref_date} onChange={(v) => set('ref_date', v)} />
-                  </Grid.Col>
-                )}
-                {!hidden('RMKS') && (
-                  <Grid.Col span={12}>
-                    <TextInput label={caption('RMKS', 'Remarks')} required={mandatory('RMKS')} value={form.remarks} onChange={(e) => set('remarks', e.currentTarget.value)} />
-                  </Grid.Col>
-                )}
-              </Grid>
+              <MasterOptionsSelect docId={SUPPLIER_DOC_ID} label="Supplier" required value={form.supp_id} onChange={(v) => set('supp_id', v)} mb="sm" />
+              <DateInput label="Document Date" valueFormat="DD-MMM-YYYY" value={form.doc_date} onChange={(v) => set('doc_date', v)} w={200} mb="sm" />
+              <DocFieldsForm
+                docId={DOC_ID}
+                section="Header"
+                values={values}
+                setValue={setValue}
+                setValues={setValues}
+                resetKey={resetKey}
+                errors={attempted ? headErrors : {}}
+                skip={COMPUTED_CODES}
+              />
+              <DocFieldsForm
+                docId={DOC_ID}
+                section="Footer"
+                values={values}
+                setValue={setValue}
+                setValues={setValues}
+                resetKey={resetKey}
+                errors={attempted ? headErrors : {}}
+                skip={COMPUTED_CODES}
+              />
             </SectionCard>
 
             <SectionCard
