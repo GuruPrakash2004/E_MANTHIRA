@@ -98,6 +98,7 @@ export async function printNow({ docId, recordId, format }) {
  * Never throws: a failed lookup falls back to doing nothing, a failed print shows the reason.
  */
 export async function handleAfterSave({ docId, recordId, openDialog }) {
+  printApi.prefetchPreview({ docId, recordId }) // render in the background while the saved panel / dialog comes up
   let format = null
   try {
     format = pickFormat(await loadFormats(docId))

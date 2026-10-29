@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     # The Crystal engine renders one report at a time: extra requests wait here instead of piling up inside the bridge and timing out.
     rpt_bridge_max_concurrent: int = 1
     # Seconds a finished render is reused (preview -> print, double F10). 0 = off.
-    print_cache_ttl_seconds: int = 30
+    print_cache_ttl_seconds: int = 45
 
     # Messaging
     smtp_host: str = ""

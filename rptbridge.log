@@ -1,0 +1,30 @@
+Fonts available: 1 (newly installed for this user: 0)
+RptBridge on http://127.0.0.1:51616  DB=192.168.1.3/vTmplSLV  RPTS=D:\ClientData\Web\Web App e-Manthira_Pranali\backend\Rpts
+Fonts available: 1 (newly installed for this user: 0)
+RptBridge on http://127.0.0.1:51616  DB=192.168.1.4/BFLMfgSys  RPTS=D:\ClientData\Web\Web App e-Manthira_Pranali\backend\Rpts
+Fonts available: 1 (newly installed for this user: 0)
+RptBridge on http://127.0.0.1:51616  DB=192.168.1.4/vTmplSLV  RPTS=D:\ClientData\Web\Web App e-Manthira_Pranali\backend\Rpts
+[render] fmtSeva_3Inc.rpt reused=False acquire=51771ms printer=2ms export=334ms
+Fonts available: 1 (newly installed for this user: 0)
+RptBridge on http://127.0.0.1:60146  DB=192.168.1.4/vTmplSLV  RPTS=D:\ClientData\Web\Web App e-Manthira_Pranali\backend\Rpts
+[open] fmtDon.rpt load=48369ms paper=4ms logon=169ms subreports(0)=1ms params=13ms
+[open] fmtSeva_3Inc.rpt load=2838ms paper=0ms logon=185ms subreports(1)=27ms params=46ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=14ms printer=2ms export=323ms
+[open] fmtHall_3Inc.rpt load=52ms paper=0ms logon=23ms subreports(0)=0ms params=1ms
+[open] fmtHB.rpt load=90ms paper=0ms logon=11ms subreports(0)=0ms params=2ms
+[open] fmtHB_3Inc.rpt load=45ms paper=0ms logon=11ms subreports(0)=0ms params=2ms
+[open] fmtSeva_A4.rpt load=80ms paper=0ms logon=171ms subreports(0)=0ms params=1ms
+[open] fmtVCH.rpt load=96ms paper=0ms logon=6ms subreports(2)=13ms params=15ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=4ms printer=1ms export=48210ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=3ms printer=1ms export=159ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=4ms printer=0ms export=131ms
+[render] fmtSeva_A4.rpt reused=True acquire=3ms printer=142ms export=166ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=4ms printer=0ms export=48197ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=4ms printer=0ms export=143ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=4ms printer=0ms export=132ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=4ms printer=0ms export=104ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=3ms printer=0ms export=150ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=4ms printer=0ms export=154ms
+[render] fmtSeva_3Inc.rpt reused=True acquire=3ms printer=0ms export=155ms
+[422] Invalid printer specified: '\\Saturn2\POS-80' is not installed on this PC
+[render] fmtSeva_3Inc.rpt reused=True acquire=3ms printer=0ms export=48205ms

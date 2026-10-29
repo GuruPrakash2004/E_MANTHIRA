@@ -33,6 +33,7 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 EXE = _BACKEND_DIR / "tools" / "rptbridge" / "bin" / "RptBridge.exe"
 _ENV_FILE = _BACKEND_DIR / ".env"
 _RUNTIME_DB = _BACKEND_DIR / "runtime_db_settings.json"
+_LOG_FILE = _BACKEND_DIR / "logs" / "rptbridge.log"
 
 _stop = threading.Event()
 _thread: threading.Thread | None = None
@@ -67,13 +68,21 @@ def should_autostart() -> tuple[bool, str]:
 def _launch(port: int, key: str) -> subprocess.Popen:
     cmd = [str(EXE), "--port", str(port), "--env", str(_ENV_FILE), "--settings", str(_RUNTIME_DB), "--rpts", str(_rpt_dir().resolve())]
     env = {**os.environ, "RPT_BRIDGE_KEY": key}
+    # the bridge's own lines ([render] timings, errors) go to logs/rptbridge.log; rolled over past 5 MB
+    try:
+        _LOG_FILE.parent.mkdir(exist_ok=True)
+        if _LOG_FILE.exists() and _LOG_FILE.stat().st_size > 5 * 1024 * 1024:
+            _LOG_FILE.replace(_LOG_FILE.with_suffix(".old.log"))
+        sink = open(_LOG_FILE, "ab")
+    except OSError:
+        sink = subprocess.DEVNULL
     return subprocess.Popen(
         cmd,
         env=env,
         cwd=str(EXE.parent),
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=sink,
+        stderr=sink,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 
@@ -150,9 +159,9 @@ def _warm_once() -> None:
         try:
             t0 = time.monotonic()
             rpt_bridge.fonts_of(rpt)  # opens the report + logs on to the DB, no PDF export
-            log.info("print bridge warmed with %s in %.1fs", Path(rpt).name, time.monotonic() - t0)
+            print(f"[print] warmed {Path(rpt).name} in {time.monotonic() - t0:.1f}s", flush=True)
         except Exception as exc:  # noqa: BLE001
-            log.info("print bridge warm-up skipped for %s: %s", Path(rpt).name, exc)
+            print(f"[print] warm-up skipped for {Path(rpt).name}: {exc}", flush=True)
 
 
 def _warm_up() -> None:

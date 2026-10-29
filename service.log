@@ -1,0 +1,440 @@
+[print] real Crystal bridge starting on 127.0.0.1:60146
+INFO:     127.0.0.1:60148 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60148 - "GET / HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63106 - "GET / HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55821 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63106 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:51899 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:65377 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52937 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52365 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.53:51899 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:65377 - "GET /favicon.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:51899 - "GET /brand/lockup-horizontal-light.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52937 - "GET /favicon.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:65377 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:65377 - "GET /illustrations/kolam.svg HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52937 - "GET /brand/lockup-horizontal-light.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52937 - "GET /api/v1/welcome HTTP/1.1" 401 Unauthorized
+INFO:     192.168.1.53:65377 - "GET /softvent-logo-dark.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:65377 - "GET /welcome/temple-awakening.mp4 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:57231 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     192.168.1.53:57231 - "GET /brand/lockup-horizontal-light.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:57231 - "GET /assets/WelcomeSplash-BN72B1z0.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:57231 - "GET /assets/DashboardPage-Cfia6QF_.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:50486 - "GET /assets/format-DSxk7BTw.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52372 - "GET /assets/donation-BGgsvN8a.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:60249 - "GET /assets/StatCard-DSL0XS_O.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53563 - "GET /assets/seva-CiT2V2j5.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53283 - "GET /assets/hall--M4PW1yz.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:57231 - "GET /assets/plus-D0Xt2t6c.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:60249 - "GET /api/v1/db-settings HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52372 - "GET /assets/calendar-check-BYOC7AFV.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53283 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:57231 - "GET /api/v1/meta/menu HTTP/1.1" 200 OK
+INFO:     192.168.1.53:50486 - "GET /api/v1/auth/financial-years HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53563 - "GET /api/v1/welcome HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53563 - "GET /welcome/temple-sunrise.jpg HTTP/1.1" 200 OK
+INFO:     192.168.1.53:50486 - "GET /api/v1/donations?top=50 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:57231 - "GET /api/v1/sevas?top=50 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:60249 - "GET /api/v1/halls/bookings?top=50 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:60249 - "GET /welcome/temple-awakening.mp4 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53563 - "GET /welcome/temple-aarati.mp4 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:60249 - "GET /favicon.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54113 - "GET /api/v1/meta/docs/1263/fields HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54113 - "GET /assets/SevaEntryPage-DpWzefk8.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55393 - "GET /assets/EntryParts-DiU7q7vT.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55643 - "GET /assets/file-spreadsheet-Bs4fOLCi.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52108 - "GET /assets/xls-CwwuDPn3.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55888 - "GET /assets/printer-BQK_hajM.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63408 - "GET /assets/useEnterAsTab-BScxXVvh.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54113 - "GET /assets/users-BhcI7uXF.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55393 - "GET /assets/DocNavBar-CbSedImh.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55393 - "GET /assets/chevron-up-BiEE_BVU.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55643 - "GET /assets/mail-D6gVwV4z.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52108 - "GET /assets/send-DR5mdmvy.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54113 - "GET /assets/AppDates-W2rzgEOG.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55393 - "GET /assets/chevron-last-I4WsWykZ.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63408 - "GET /assets/pencil-C5HznYaP.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55888 - "GET /assets/chevron-left-DFJYJ1He.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55643 - "GET /assets/masters-DjnOTW38.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52108 - "GET /assets/print-BNTM0Qej.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55393 - "GET /assets/upload-sarXnwfc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63408 - "GET /assets/PrintDialog-CzzrPdD_.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54113 - "GET /assets/ReportFonts-CMqXpiW-.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55888 - "GET /assets/download-DE82O3Fp.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52108 - "GET /assets/DocFieldsForm-DXEvUJv3.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63408 - "GET /assets/DynamicField-BUIta6LT.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54113 - "GET /assets/LookupSelect-B_cDxK1l.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52108 - "GET /assets/docFieldConditions-BnF4p9VE.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55643 - "GET /assets/useDocShortcuts-D-ubymLB.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63408 - "GET /assets/trash-BCKbtama.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54113 - "GET /assets/calendar-plus-DvRQKt8G.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55888 - "GET /assets/panchanga-DcNcsFO-.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55393 - "GET /assets/calendar-range-PrBUBako.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63408 - "GET /illustrations/gopuram-mark.svg HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63408 - "GET /api/v1/meta/lookup/1263/SANNIDHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55643 - "GET /api/v1/meta/lookup/1263/RASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52108 - "GET /api/v1/meta/lookup/1263/SECNAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54113 - "GET /api/v1/meta/lookup/1263/NAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55393 - "GET /api/v1/meta/lookup/1263/SVAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55888 - "GET /api/v1/meta/lookup/1263/GOTHRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55643 - "GET /api/v1/panchanga?from_date=2026-10-01&to_date=2026-10-31 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55393 - "GET /api/v1/doc-actions/1263/options HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54113 - "GET /api/v1/meta/lookup/1263/SECRASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63408 - "GET /api/v1/meta/lookup/1263/LEDID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52108 - "GET /api/v1/meta/lookup/1263/LEDGER HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55888 - "GET /api/v1/sevas?top=1000&days=0 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:60286 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+[print] warmed fmtDon.rpt in 49.0s
+INFO:     192.168.1.53:64576 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /favicon.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /brand/lockup-horizontal-light.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /softvent-logo-dark.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /api/v1/db-settings HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /api/v1/meta/docs/1263/fields HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/auth/financial-years HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /api/v1/meta/menu HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /illustrations/gopuram-mark.svg HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /api/v1/meta/lookup/1263/RASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /api/v1/meta/lookup/1263/NAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /api/v1/meta/lookup/1263/SANNIDHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/meta/lookup/1263/GOTHRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /api/v1/meta/lookup/1263/SECNAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /api/v1/meta/lookup/1263/SVAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /api/v1/panchanga?from_date=2026-10-01&to_date=2026-10-31 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /api/v1/doc-actions/1263/options HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /api/v1/meta/lookup/1263/SECRASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /api/v1/meta/lookup/1263/LEDGER HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/meta/lookup/1263/LEDID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /api/v1/sevas?top=1000&days=0 HTTP/1.1" 200 OK
+[print] timing: bridge render 11.87s, page fit 0.02s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.02s
+[print] preview doc 1263 total 11.91s
+INFO:     192.168.1.53:56716 - "GET /sevas HTTP/1.1" 200 OK
+[print] warmed fmtHall_3Inc.rpt in 3.5s
+INFO:     192.168.1.53:56716 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+[print] warmed fmtHB.rpt in 0.1s
+INFO:     192.168.1.53:63783 - "GET /favicon.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+[print] warmed fmtHB_3Inc.rpt in 0.0s
+[print] warmed fmtSeva_3Inc.rpt in 0.0s
+INFO:     192.168.1.53:52633 - "GET /brand/lockup-horizontal-light.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /softvent-logo-dark.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /api/v1/db-settings HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/meta/docs/1263/fields HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /api/v1/auth/financial-years HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /api/v1/meta/menu HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /illustrations/gopuram-mark.svg HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /api/v1/meta/lookup/1263/SANNIDHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /api/v1/meta/lookup/1263/RASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /api/v1/meta/lookup/1263/NAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /api/v1/meta/lookup/1263/SVAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /api/v1/meta/lookup/1263/GOTHRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/meta/lookup/1263/SECNAKSHATRAID HTTP/1.1" 200 OK
+[print] warmed fmtSeva_A4.rpt in 0.2s
+INFO:     192.168.1.53:54174 - "GET /api/v1/panchanga?from_date=2026-10-01&to_date=2026-10-31 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /api/v1/doc-actions/1263/options HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/meta/lookup/1263/SECRASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /api/v1/meta/lookup/1263/LEDID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /api/v1/meta/lookup/1263/LEDGER HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /api/v1/sevas?top=1000&days=0 HTTP/1.1" 200 OK
+[print] warmed fmtVCH.rpt in 0.1s
+[print] bridge warmed up
+INFO:     192.168.1.53:64576 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /favicon.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /brand/lockup-horizontal-light.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /softvent-logo-dark.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /api/v1/db-settings HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /api/v1/meta/docs/1263/fields HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /api/v1/auth/financial-years HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /api/v1/meta/menu HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /illustrations/gopuram-mark.svg HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/meta/lookup/1263/RASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /api/v1/meta/lookup/1263/SECNAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /api/v1/meta/lookup/1263/NAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /api/v1/meta/lookup/1263/SANNIDHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /api/v1/meta/lookup/1263/GOTHRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /api/v1/meta/lookup/1263/SVAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63783 - "GET /api/v1/meta/lookup/1263/SECRASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56716 - "GET /api/v1/panchanga?from_date=2026-10-01&to_date=2026-10-31 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:55272 - "GET /api/v1/meta/lookup/1263/LEDID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52633 - "GET /api/v1/meta/lookup/1263/LEDGER HTTP/1.1" 200 OK
+INFO:     192.168.1.53:54174 - "GET /api/v1/doc-actions/1263/options HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64576 - "GET /api/v1/sevas?top=1000&days=0 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:60808 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:59976 - "GET /api/v1/print-options/fonts?doc_id=1263&option_name=Seva+3Inc+Print HTTP/1.1" 200 OK
+[print] timing: bridge render 48.22s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 48.25s
+INFO:     192.168.1.53:60808 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+INFO:     192.168.1.53:51934 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63204 - "GET /api/v1/print-options/fonts?doc_id=1263&option_name=Seva+3Inc+Print HTTP/1.1" 200 OK
+[print] timing: bridge render 0.17s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 0.19s
+INFO:     192.168.1.53:56286 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+[print] timing: bridge render 0.14s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 0.16s
+INFO:     192.168.1.53:60517 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53132 - "GET /api/v1/print-options/fonts?doc_id=1263&option_name=Seva+A4+Print HTTP/1.1" 200 OK
+INFO:     192.168.1.53:60517 - "PUT /api/v1/print/preference HTTP/1.1" 200 OK
+[print] timing: bridge render 0.31s, page fit 0.00s (fmtSeva_A4.rpt)
+[print] timing: rasterise 1 page(s) 0.05s
+[print] preview doc 1263 total 0.48s
+INFO:     192.168.1.53:59967 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+[print] preview doc 1263 total 0.00s
+INFO:     192.168.1.53:60517 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+INFO:     192.168.1.53:59967 - "PUT /api/v1/print/preference HTTP/1.1" 200 OK
+[print] preview doc 1263 total 0.00s
+INFO:     192.168.1.53:50194 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:57325 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:50976 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61129 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49500 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58494 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:50976 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61129 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49500 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58494 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61129 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:50976 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:57325 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:50976 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58494 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:64809 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:60679 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:50330 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61601 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53831 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61601 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61601 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:60679 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:50330 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53831 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:60679 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49243 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:52131 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49243 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49983 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54390 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:57913 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54390 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54390 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     192.168.1.81:57913 - "GET /favicon.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54390 - "GET /brand/lockup-horizontal-light.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54390 - "GET /softvent-logo-dark.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /api/v1/db-settings HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54390 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:57913 - "GET /api/v1/meta/docs/1263/fields HTTP/1.1" 200 OK
+INFO:     192.168.1.81:52131 - "GET /api/v1/auth/financial-years HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49243 - "GET /api/v1/meta/menu HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49983 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:52131 - "GET /illustrations/gopuram-mark.svg HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54390 - "GET /api/v1/meta/lookup/1263/RASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /api/v1/meta/lookup/1263/NAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:52131 - "GET /api/v1/meta/lookup/1263/SANNIDHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:57913 - "GET /api/v1/meta/lookup/1263/SECNAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49983 - "GET /api/v1/meta/lookup/1263/GOTHRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49243 - "GET /api/v1/meta/lookup/1263/SVAID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:52131 - "GET /api/v1/panchanga?from_date=2026-10-01&to_date=2026-10-31 HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54390 - "GET /api/v1/sevas?top=1000&days=30 HTTP/1.1" 200 OK
+INFO:     192.168.1.81:57913 - "GET /api/v1/doc-actions/1263/options HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49243 - "GET /api/v1/meta/lookup/1263/SECRASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59981 - "GET /api/v1/meta/lookup/1263/LEDGER HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49983 - "GET /api/v1/meta/lookup/1263/LEDID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:49279 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+INFO:     192.168.1.81:57639 - "GET /api/v1/print-options/fonts?doc_id=1263&option_name=Seva+3Inc+Print HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /favicon.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /brand/lockup-horizontal-light.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /softvent-logo-dark.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /api/v1/db-settings HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /api/v1/auth/financial-years HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /api/v1/meta/docs/1263/fields HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /api/v1/meta/menu HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /illustrations/gopuram-mark.svg HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /sevas HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /assets/index-DcFWDom2.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /assets/vendor-mantine-eqh3k4AB.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /assets/vendor-query-DmJHtjmq.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /assets/vendor-mantine-CsuA3mIc.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /assets/vendor-react-CMjjuKNR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /assets/vendor-motion-DyXDHFFC.js HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /assets/index-C2V3liww.css HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /favicon.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /brand/lockup-horizontal-light.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /api/v1/db-settings HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /api/v1/auth/financial-years HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /softvent-logo-dark.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /api/v1/meta/docs/1263/fields HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /api/v1/meta/menu HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /brand/lockup-horizontal.png HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /illustrations/gopuram-mark.svg HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /api/v1/meta/lookup/1263/SECNAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /api/v1/meta/lookup/1263/SANNIDHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /api/v1/meta/lookup/1263/RASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /api/v1/meta/lookup/1263/NAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /api/v1/meta/lookup/1263/GOTHRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /api/v1/meta/lookup/1263/SVAID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:58879 - "GET /api/v1/meta/lookup/1263/SECRASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61112 - "GET /api/v1/meta/lookup/1263/LEDGER HTTP/1.1" 200 OK
+INFO:     192.168.1.81:53610 - "GET /api/v1/panchanga?from_date=2026-10-01&to_date=2026-10-31 HTTP/1.1" 200 OK
+INFO:     192.168.1.81:61727 - "GET /api/v1/doc-actions/1263/options HTTP/1.1" 200 OK
+INFO:     192.168.1.81:55075 - "GET /api/v1/meta/lookup/1263/LEDID HTTP/1.1" 200 OK
+INFO:     192.168.1.81:54190 - "GET /api/v1/sevas?top=1000&days=30 HTTP/1.1" 200 OK
+INFO:     192.168.1.81:59836 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:63100 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+[print] timing: bridge render 48.22s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] warmed fmtDon.rpt in 23.9s
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 48.24s
+INFO:     192.168.1.81:50609 - "GET /api/v1/print-options/fonts?doc_id=1263&option_name=Seva+3Inc+Print HTTP/1.1" 200 OK
+[print] timing: bridge render 28.72s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 28.75s
+[print] warmed fmtHall_3Inc.rpt in 0.2s
+INFO:     192.168.1.81:59836 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+[print] timing: bridge render 22.30s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] warmed fmtHB.rpt in 0.2s
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 22.32s
+INFO:     192.168.1.53:57760 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+[print] warmed fmtHB_3Inc.rpt in 0.0s
+[print] warmed fmtSeva_3Inc.rpt in 0.0s
+[print] warmed fmtSeva_A4.rpt in 0.0s
+[print] warmed fmtVCH.rpt in 0.0s
+[print] bridge warmed up
+INFO:     192.168.1.81:56710 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+[print] preview doc 1263 total 0.00s
+INFO:     192.168.1.81:56710 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+[print] timing: bridge render 0.12s, page fit 0.00s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 0.13s
+INFO:     192.168.1.81:61895 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+[print] preview doc 1263 total 0.00s
+INFO:     192.168.1.81:57401 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+[print] timing: bridge render 0.15s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 0.18s
+INFO:     192.168.1.81:57401 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+INFO:     192.168.1.81:64614 - "GET /api/v1/sevas/next-no?sannidhi_id=1 HTTP/1.1" 200 OK
+INFO:     192.168.1.81:64614 - "GET /api/v1/meta/lookup/1263/SANNIDHIID?search=NMM HTTP/1.1" 200 OK
+INFO:     192.168.1.81:64614 - "GET /api/v1/masters/1265/3 HTTP/1.1" 200 OK
+INFO:     192.168.1.81:64614 - "GET /api/v1/meta/lookup/1263/SVAID?search=NMM-DEEPALANKARA+Seva HTTP/1.1" 200 OK
+INFO:     192.168.1.81:64614 - "GET /api/v1/meta/lookup/1263/GOTHRAID?search=ADITHYA+MAHARSHI HTTP/1.1" 200 OK
+INFO:     192.168.1.53:65197 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:65100 - "GET /api/v1/print-options/fonts?doc_id=1263&option_name=Seva+3Inc+Print HTTP/1.1" 200 OK
+[print] timing: bridge render 0.16s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 0.18s
+INFO:     192.168.1.53:64747 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+[print] timing: bridge render 0.16s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 0.18s
+INFO:     192.168.1.53:52994 - "POST /api/v1/print/preview HTTP/1.1" 200 OK
+INFO:     192.168.1.81:50663 - "GET /api/v1/meta/lookup/1263/LEDGER?search=ANP-CASH+ON+HAND+Income%2FExpense HTTP/1.1" 200 OK
+INFO:     192.168.1.81:50663 - "GET /api/v1/meta/lookup/1263/LEDID?search=ANP-CASH+ON+HAND+Income%2FExpense HTTP/1.1" 200 OK
+INFO:     192.168.1.53:61707 - "GET /api/v1/sevas/next-no?sannidhi_id=1 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:61707 - "GET /api/v1/meta/lookup/1263/SANNIDHIID?search=NMM HTTP/1.1" 200 OK
+INFO:     192.168.1.81:57713 - "POST /api/v1/sevas HTTP/1.1" 422 Unprocessable Entity
+INFO:     192.168.1.53:61707 - "GET /api/v1/masters/1265/1 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:61707 - "GET /api/v1/meta/lookup/1263/SVAID?search=NMM-BENNAY+ALANKARA+Seva+(Anjaneya) HTTP/1.1" 200 OK
+INFO:     192.168.1.53:61707 - "GET /api/v1/sevas/devotee?mobile=7695956720 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:59903 - "GET /api/v1/meta/lookup/1263/SECNAKSHATRAID?search=ARIDRA HTTP/1.1" 200 OK
+INFO:     192.168.1.53:61707 - "GET /api/v1/meta/lookup/1263/GOTHRAID?search=ADITHYA+MAHARSHI HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64212 - "GET /api/v1/meta/lookup/1263/SECRASHIID?search=DHANUS HTTP/1.1" 200 OK
+INFO:     192.168.1.53:50154 - "GET /api/v1/meta/lookup/1263/RASHIID?search=KARKATAKA HTTP/1.1" 200 OK
+INFO:     192.168.1.53:49850 - "GET /api/v1/meta/lookup/1263/NAKSHATRAID?search=ASHWINI HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64765 - "GET /api/v1/meta/lookup/1263/LEDGER?search=ANP-ACCOUNTING+Expense HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64765 - "GET /api/v1/meta/lookup/1263/LEDID?search=ANP-BWSSB+WATER+%26+SEWERAGE+Expense HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64765 - "POST /api/v1/sevas HTTP/1.1" 201 Created
+INFO:     192.168.1.53:64765 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:56279 - "GET /api/v1/sevas/next-no?sannidhi_id=1 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:58625 - "GET /api/v1/sevas?top=1000&days=0 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53266 - "GET /api/v1/sevas?top=1000&days=0 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53266 - "POST /api/v1/print/print HTTP/1.1" 502 Bad Gateway
+INFO:     192.168.1.53:53266 - "GET /api/v1/print/options?doc_id=1263 HTTP/1.1" 200 OK
+INFO:     192.168.1.53:58625 - "GET /api/v1/meta/lookup/1263/RASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:52133 - "GET /api/v1/meta/lookup/1263/SECNAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:64765 - "GET /api/v1/meta/lookup/1263/NAKSHATRAID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:58860 - "GET /api/v1/meta/lookup/1263/SECRASHIID HTTP/1.1" 200 OK
+INFO:     192.168.1.53:53266 - "GET /api/v1/meta/lookup/1263/GOTHRAID HTTP/1.1" 200 OK
+[print] timing: bridge render 48.21s, page fit 0.01s (fmtSeva_3Inc.rpt)
+[print] timing: rasterise 1 page(s) 0.01s
+[print] preview doc 1263 total 48.23s
+INFO:     192.168.1.53:56279 - "POST /api/v1/print/preview HTTP/1.1" 200 OK

@@ -463,9 +463,15 @@ function Ensure-Nssm([string]$wanted) {
     if ($cmd) { $candidates += $cmd.Source }
     foreach ($c in $candidates) {
         if ($c -and (Test-Path -LiteralPath $c)) {
-            $r = Invoke-Native $c @('version')
-            if ($r.ExitCode -eq 0 -or $r.Output -match 'NSSM') {
-                Write-Ok "found: $c  ($($r.Output.Split("`n")[0].Trim()))"
+            # `nssm version` may print nothing readable when redirected (UTF-16 / exit code 1), so a real-sized .exe is accepted too.
+            $r = $null
+            try { $r = Invoke-Native $c @('version') } catch { Write-Info "could not run ${c}: $($_.Exception.Message)" }
+            $looksReal = $false
+            try { $looksReal = ((Get-Item -LiteralPath $c).Length -gt 100KB) -and ([IO.File]::ReadAllBytes($c)[0..1] -join ',') -eq '77,90' } catch { }
+            if (($r -and ($r.ExitCode -eq 0 -or ($r.Output + $r.Error) -match 'NSSM')) -or $looksReal) {
+                $first = ''
+                if ($r) { $first = $r.Output.Split("`n")[0].Trim() }
+                Write-Ok "found: $c  ($first)"
                 return $c
             }
         }

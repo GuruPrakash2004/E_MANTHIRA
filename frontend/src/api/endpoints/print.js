@@ -64,6 +64,10 @@ export const renderPdf = ({ docId, recordId, optionName }) => renderPdfWithPage(
 export const renderPreview = ({ docId, recordId, optionName }) =>
   api.post('/print/preview', { doc_id: docId, doc_id_value: recordId, option_name: optionName || null }).then((r) => r.data)
 
+/** Starts the preview render in the background (right after a save) so the dialog opens on a finished render. */
+export const prefetchPreview = ({ docId, recordId }) =>
+  api.post('/print/prefetch', { doc_id: docId, doc_id_value: recordId }).catch(() => {})
+
 /** Same, plus the page size in points the server fitted it to (a roll receipt is cut at the end of the receipt): { blob, page: { w, h } | null }. */
 export const renderPdfWithPage = ({ docId, recordId, optionName }) =>
   api.post('/print/render', { doc_id: docId, doc_id_value: recordId, option_name: optionName || null }, { responseType: 'blob' }).then((r) => {

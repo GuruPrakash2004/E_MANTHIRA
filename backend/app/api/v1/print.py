@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
+import threading
+import time
 import zipfile
 from dataclasses import dataclass
 from datetime import date
@@ -17,12 +20,13 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.engine import Connection
 
-from app.core.db import get_conn
+from app.core.db import get_conn, get_engine
 from app.core.security import CurrentUser, get_current_user
 from app.print import page_fit, pdf_generator, print_agent, print_prefs, render_cache, rpt_bridge, rpt_print, voucher_print
 from app.print.rpt_registry import get_option, list_options
 
 router = APIRouter(prefix="/print", tags=["print"])
+log = logging.getLogger(__name__)
 
 
 def _job(conn: Connection, doc_id: int, doc_id_value: int | None, *, doc_no: str | None = None, option_name: str | None = None, ctrl_click: bool = False, copies: int | None = None) -> rpt_print.PrintJob:
@@ -31,8 +35,12 @@ def _job(conn: Connection, doc_id: int, doc_id_value: int | None, *, doc_no: str
 
 def _render_fitted(job: rpt_print.PrintJob) -> tuple[bytes, page_fit.Page]:
     """The .rpt's PDF at the report's own page size (roll formats cut at the end of the receipt, see page_fit.py)."""
+    t0 = time.perf_counter()
     r = rpt_bridge.render(job)
-    return page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt)
+    t1 = time.perf_counter()
+    fitted = page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt)
+    print(f"[print] timing: bridge render {t1 - t0:.2f}s, page fit {time.perf_counter() - t1:.2f}s ({job.rpt_file})", flush=True)
+    return fitted
 
 
 @dataclass(frozen=True)
@@ -126,17 +134,60 @@ def render_pdf(body: PrintRequest, conn: Connection = Depends(get_conn), _: Curr
     )
 
 
+def _timed_pages(pdf: bytes) -> list[dict]:
+    t0 = time.perf_counter()
+    pages = print_agent.pdf_to_pages(pdf, print_agent.PREVIEW_DPI)
+    print(f"[print] timing: rasterise {len(pages)} page(s) {time.perf_counter() - t0:.2f}s", flush=True)
+    return pages
+
+
+def _preview_pages(doc_id: int, done: "_Done") -> list[dict]:
+    return render_cache.cache.get_or_compute(
+        ("pages", doc_id, done.doc_id_value, done.option_name, print_agent.PREVIEW_DPI),
+        lambda: _timed_pages(done.pdf),
+    )
+
+
+class PrefetchRequest(BaseModel):
+    doc_id: int
+    doc_id_value: int
+
+
+@router.post("/prefetch", status_code=status.HTTP_202_ACCEPTED)
+def prefetch_preview(body: PrefetchRequest, conn: Connection = Depends(get_conn), user: CurrentUser = Depends(get_current_user)):
+    """
+    Starts rendering the record's preview in the background and returns at once (right after a save), so the print dialog
+    finds the finished render in the cache instead of waiting for Crystal. Same format the dialog will pre-select, same cache
+    keys as /preview; failures are ignored (the dialog just renders as usual).
+    """
+    preferred = print_prefs.get_preferred_option(conn, user.user_code, body.doc_id)
+    options = list_options(conn, body.doc_id)
+    chosen = next((o for o in options if o.option_name == preferred), None) or next((o for o in options if o.default_print), None) or (options[0] if options else None)
+    if chosen is None or not chosen.rpt_available:
+        return {"started": False}
+
+    def work() -> None:
+        try:
+            with get_engine().connect() as c:
+                done = _rendered(c, body.doc_id, body.doc_id_value, option_name=chosen.option_name)
+            _preview_pages(body.doc_id, done)
+        except Exception as exc:  # noqa: BLE001 - best effort only
+            print(f"[print] prefetch skipped: {exc}", flush=True)
+
+    threading.Thread(target=work, name="print-prefetch", daemon=True).start()
+    return {"started": True, "option_name": chosen.option_name}
+
+
 @router.post("/preview")
 def render_preview(body: PrintRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     """
     What the print dialog shows: the report's pages as PNG images at their real shape (no PDF-viewer chrome, so nothing is
     stretched or framed), plus the same PDF (base64) for the browser's Print. One render of the original .rpt.
     """
+    t_all = time.perf_counter()
     done = _rendered(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
-    pages = render_cache.cache.get_or_compute(
-        ("pages", body.doc_id, done.doc_id_value, done.option_name, print_agent.PREVIEW_DPI),
-        lambda: print_agent.pdf_to_pages(done.pdf, print_agent.PREVIEW_DPI),
-    )
+    pages = _preview_pages(body.doc_id, done)
+    print(f"[print] preview doc {body.doc_id} total {time.perf_counter() - t_all:.2f}s", flush=True)
     return {"format": done.option_name, "pdf": base64.b64encode(done.pdf).decode("ascii"), "pages": pages}
 
 

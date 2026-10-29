@@ -67,6 +67,13 @@ namespace RptBridge
             if (!LoadDbSettings(settings, envFile)) { Console.Error.WriteLine("No DB settings (--settings <runtime_db_settings.json> and/or --env <.env>)."); return 2; }
             if (_rptRoot == null) _rptRoot = AppDomain.CurrentDomain.BaseDirectory;
             LoadFonts();
+            // Only the service account's own default is changed: a person's real default printer is never touched.
+            // (A different account can opt in with RPT_SET_DEFAULT_PRINTER=1.)
+            if (string.Equals(Environment.UserName, Environment.MachineName + "$", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(Environment.UserName, "SYSTEM", StringComparison.OrdinalIgnoreCase)
+                || Environment.GetEnvironmentVariable("RPT_SET_DEFAULT_PRINTER") == "1")
+                _mayChangeDefault = true;
+            new System.Threading.Thread(PrepareDefaultPrinter) { IsBackground = true }.Start();
 
             var listener = new HttpListener();
             listener.Prefixes.Add("http://127.0.0.1:" + port + "/"); // loopback only
@@ -81,6 +88,37 @@ namespace RptBridge
                 catch (HttpError he) { Fail(ctx, he.Code, he.Message); }
                 catch (Exception ex) { Fail(ctx, 500, ex.GetBaseException().Message); }
             }
+        }
+
+        // ---- default printer ------------------------------------------------------------------------------------
+        // Crystal lays every page out against the DEFAULT PRINTER of the account the bridge runs as. Roll receipts (custom paper)
+        // cannot use the preview printer, so they use that default - and if it is an offline / network printer, each lookup waits
+        // for a network timeout (seen: exactly ~48 s, at random, only on those reports). The bridge's own default is therefore
+        // switched to a local virtual printer at start-up. This is per account (the service's), not the PC's other users.
+        [DllImport("winspool.drv", EntryPoint = "SetDefaultPrinterW", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool SetDefaultPrinter(string name);
+
+        private static bool _mayChangeDefault;
+
+        private static void PrepareDefaultPrinter()
+        {
+            try
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                string current = new PrinterSettings().PrinterName;
+                var names = new List<string>();
+                foreach (string p in PrinterSettings.InstalledPrinters) names.Add(p);
+                Console.Out.WriteLine("[printers] default='" + current + "' installed=[" + string.Join(" | ", names.ToArray()) + "] read in " + sw.ElapsedMilliseconds + "ms");
+                string target = null;
+                foreach (string pref in new[] { _previewPrinter, "Microsoft XPS Document Writer" })
+                    if (!string.IsNullOrEmpty(pref) && names.Contains(pref)) { target = pref; break; }
+                if (!_mayChangeDefault) { Console.Out.WriteLine("[printers] default left as is (not running as the service account)"); return; }
+                if (target == null || string.Equals(current, target, StringComparison.OrdinalIgnoreCase)) return;
+                sw.Restart();
+                bool ok = SetDefaultPrinter(target);
+                Console.Out.WriteLine("[printers] default set to '" + target + "' for this service: " + (ok ? "ok" : "failed " + Marshal.GetLastWin32Error()) + " (" + sw.ElapsedMilliseconds + "ms)");
+            }
+            catch (Exception ex) { Console.Out.WriteLine("[printers] could not prepare the default printer: " + ex.Message); }
         }
 
         // ---- fonts ----------------------------------------------------------------------------------------------
@@ -280,19 +318,23 @@ namespace RptBridge
                 if (path == "/render")
                 {
                     string full = ResolveRpt(rpt);
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
                     for (int attempt = 0; ; attempt++)
                     {
                         bool reused = false;
                         try
                         {
                             ReportDocument doc = Acquire(rpt, formula, values, true, out reused);
+                            long tAcquire = sw.ElapsedMilliseconds;
                             UsePreviewPrinter(doc);
+                            long tPrinter = sw.ElapsedMilliseconds;
                             using (Stream s = doc.ExportToStream(ExportFormatType.PortableDocFormat))
                             {
                                 var ms = new MemoryStream();
                                 s.CopyTo(ms);
                                 foreach (var kv in PaperFacts(doc)) ctx.Response.AddHeader(kv.Key, kv.Value);
                                 Send(ctx, 200, "application/pdf", ms.ToArray());
+                                Console.Out.WriteLine("[render] " + Path.GetFileName(full) + " reused=" + reused + " acquire=" + tAcquire + "ms printer=" + (tPrinter - tAcquire) + "ms export=" + (sw.ElapsedMilliseconds - tPrinter) + "ms");
                             }
                             break;
                         }
@@ -326,11 +368,27 @@ namespace RptBridge
 
         private static string Str(Dictionary<string, object> d, string k) { return d.ContainsKey(k) && d[k] != null ? Convert.ToString(d[k]) : ""; }
 
+        // Enumerating printers can take seconds on a service account / server PC (spooler, network printers), and it ran on every
+        // render - and on a server without "Microsoft Print to PDF" the miss repeated every time. The list is kept for 60 s,
+        // and a name that is not in a list younger than 10 s is simply reported missing.
+        private static HashSet<string> _printers;
+        private static DateTime _printersAt = DateTime.MinValue;
+
         private static bool PrinterExists(string name)
         {
-            foreach (string p in PrinterSettings.InstalledPrinters)
-                if (string.Equals(p, name, StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
+            bool fresh = false;   // true once the list was read during THIS call
+            if (_printers == null || DateTime.UtcNow - _printersAt > TimeSpan.FromSeconds(60)) { ReadPrinters(); fresh = true; }
+            if (_printers.Contains(name)) return true;
+            if (fresh || DateTime.UtcNow - _printersAt <= TimeSpan.FromSeconds(10)) return false;
+            ReadPrinters();       // an older list: one fresh read before saying no
+            return _printers.Contains(name);
+        }
+
+        private static void ReadPrinters()
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string p in PrinterSettings.InstalledPrinters) set.Add(p);
+            _printers = set; _printersAt = DateTime.UtcNow;
         }
 
         private static void Send(HttpListenerContext ctx, int code, string type, string text) { Send(ctx, code, type, Encoding.UTF8.GetBytes(text)); }
@@ -415,12 +473,19 @@ namespace RptBridge
             var doc = new ReportDocument();
             try
             {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 doc.Load(ResolveRpt(rptPath));
+                long tLoad = sw.ElapsedMilliseconds;
                 PinPaper(doc);
+                long tPin = sw.ElapsedMilliseconds;
                 Logon(doc);
-                foreach (ReportDocument sub in doc.Subreports) Logon(sub);
+                long tLogon = sw.ElapsedMilliseconds;
+                int subs = 0;
+                foreach (ReportDocument sub in doc.Subreports) { Logon(sub); subs++; }
+                long tSubs = sw.ElapsedMilliseconds;
                 SetParameters(doc, values);
                 if (!string.IsNullOrEmpty(selectionFormula)) doc.RecordSelectionFormula = selectionFormula;
+                Console.Out.WriteLine("[open] " + Path.GetFileName(rptPath) + " load=" + tLoad + "ms paper=" + (tPin - tLoad) + "ms logon=" + (tLogon - tPin) + "ms subreports(" + subs + ")=" + (tSubs - tLogon) + "ms params=" + (sw.ElapsedMilliseconds - tSubs) + "ms");
                 return doc;
             }
             catch { doc.Dispose(); throw; }
@@ -442,12 +507,17 @@ namespace RptBridge
 
         // The default printer of the PC (often an 80mm thermal) would otherwise size every page. A previews-only printer with normal
         // paper (Microsoft Print to PDF) gives the report its own paper; missing printer -> left as is.
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ReportDocument, object> PreviewPrinterSet =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<ReportDocument, object>();
+
         private static void UsePreviewPrinter(ReportDocument doc)
         {
+            object done;
+            if (PreviewPrinterSet.TryGetValue(doc, out done)) return; // a cached report keeps its printer; re-assigning it makes Crystal reload the driver
             if (string.IsNullOrEmpty(_previewPrinter) || !PrinterExists(_previewPrinter)) return;
             // only for named paper sizes (A4, Letter...); a custom roll size (e.g. the 3-inch receipts) is not a size the PDF printer knows
             if (!Enum.IsDefined(typeof(CrystalDecisions.Shared.PaperSize), doc.PrintOptions.PaperSize)) return;
-            try { doc.PrintOptions.PrinterName = _previewPrinter; } catch { }
+            try { doc.PrintOptions.PrinterName = _previewPrinter; PreviewPrinterSet.Add(doc, new object()); } catch { }
         }
 
         // What the report itself says about its page. "Custom" = a paper size Windows has no name for (the 3-inch roll receipts);
@@ -484,7 +554,9 @@ namespace RptBridge
                 info.ConnectionInfo.UserID = _user;
                 info.ConnectionInfo.Password = _password;
                 info.ConnectionInfo.IntegratedSecurity = false;
+                var tw = System.Diagnostics.Stopwatch.StartNew();
                 t.ApplyLogOnInfo(info);
+                if (tw.ElapsedMilliseconds > 500) Console.Out.WriteLine("[logon] table " + t.Name + " took " + tw.ElapsedMilliseconds + "ms");
             }
         }
 
