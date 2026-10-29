@@ -26,7 +26,7 @@ from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, table, update_row
 from app.utils.text_norm import normalise_name
-from app.meta import doc_rules, numbering
+from app.meta import doc_rules, edit_rules, numbering
 from app.services import receipt as receipt_service
 from app.utils.amount_in_words import amount_in_words
 
@@ -50,6 +50,8 @@ class SevaInput:
     dates: list[SevaDate]
     doc_date: date
     group_id: int = 0  # TrnHdrGRPSEVA id when this seva is generated from a Group Seva
+    regular: bool = False  # "Regular Devotee" tick (TrnHdrSEVA.RegularD): the devotee shows up in Select Sevakartharu
+    days_text: str = ""  # the Date Text of the Dates Selection dialog (printed on the receipt, TrnHdrSEVA.DaysPrintText)
 
 
 # Codes this service owns: whatever the browser sends for them is ignored.
@@ -141,7 +143,8 @@ def _prepare(conn: Connection, data: SevaInput, fy: FinancialYear) -> _Prepared:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
 
     total_amt = round(rate * len(data.dates), 2)
-    days_print_text = data.dates[0].perform_date.strftime("%d/%m/%Y") if len(data.dates) == 1 else "Assorted Dates"
+    # what the Dates Selection dialog left in Date Text; with a single date, or when it was not used, the legacy defaults
+    days_print_text = (data.days_text or "").strip()[:250] or (data.dates[0].perform_date.strftime("%d/%m/%Y") if len(data.dates) == 1 else "Assorted Dates")
 
     cols = doc_rules.column_values(rows, values, table(TABLE))
     cols.update(
@@ -156,6 +159,7 @@ def _prepare(conn: Connection, data: SevaInput, fy: FinancialYear) -> _Prepared:
             "KNAME": normalise_name(str(values.get("KNAME") or "")),
             "SECKNAME": normalise_name(str(values.get("SECKNAME") or "")),
             "MOBNO": str(values.get("MOBNUM") or "").strip(),
+            "RegularD": "Y" if data.regular else "N",
         }
     )
     if "PRASADA" not in cols or not cols["PRASADA"]:
@@ -198,6 +202,8 @@ def preview_no(conn: Connection, *, sannidhi_id: int, fy: FinancialYear) -> dict
 
 
 def create(conn: Connection, *, data: SevaInput, fy: FinancialYear, user_code: str) -> dict:
+    if not edit_rules.doc_date_editable(conn, DOC_ID):
+        data.doc_date = date.today()  # AllowEditDocDate = 'N': the legacy form locks the date to the system date
     p = _prepare(conn, data, fy)
 
     doc_no = numbering.next_doc_no(
@@ -217,11 +223,10 @@ def create(conn: Connection, *, data: SevaInput, fy: FinancialYear, user_code: s
             NO_COLUMN: doc_no,
             "Prefix": p.prefix,
             "PrintSEVANO": print_no,
-            "Authorised": "Y",
+            "Authorised": edit_rules.authorised_on_save(conn, DOC_ID),
             "Cancelled": "N",
             "AddedBy": user_code,
             "AddedOn": datetime.now(),
-            "RegularD": "N",
             "Add1": "",
             "Add2": "",
             "Add3": "",
@@ -248,12 +253,15 @@ def update(conn: Connection, *, seva_id: int, data: SevaInput, fy: FinancialYear
     header, the performance dates and - when auto-receipt is on - the receipt + GL are rewritten for the new values.
     """
     old = conn.execute(
-        text("SELECT SEVANO, PrintSEVANO, Cancelled, SANNIDHIID FROM TrnHdrSEVA WHERE SEVAID = :id"), {"id": seva_id}
+        text("SELECT SEVANO, PrintSEVANO, Cancelled, SANNIDHIID, SEVADate, Authorised FROM TrnHdrSEVA WHERE SEVAID = :id"), {"id": seva_id}
     ).mappings().first()
     if old is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Seva not found")
     if (old["Cancelled"] or "N").upper() == "Y":
-        raise HTTPException(status.HTTP_409_CONFLICT, "A cancelled seva cannot be edited")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=old["SEVADate"], authorised=old["Authorised"])
+    if not edit_rules.doc_date_editable(conn, DOC_ID):
+        data.doc_date = old["SEVADate"].date() if isinstance(old["SEVADate"], datetime) else old["SEVADate"]  # date stays as saved
 
     p = _prepare(conn, data, fy)
     if p.sannidhi_id != int(old["SANNIDHIID"] or 0):
@@ -262,6 +270,8 @@ def update(conn: Connection, *, seva_id: int, data: SevaInput, fy: FinancialYear
 
     cols = dict(p.cols)
     cols.update({"ChangedBy": user_code, "ChangedOn": datetime.now()})
+    if edit_rules.auth_required(conn, DOC_ID):
+        cols["Authorised"] = "N"  # an edited document goes back for authorisation (legacy: Authorised = 'N' on edit)
     update_row(conn, TABLE, "SEVAID", seva_id, cols)  # columns this database does not have are skipped by update_row
 
     conn.execute(text("DELETE FROM TrnDtlSevaDates WHERE SevaID = :id"), {"id": seva_id})
@@ -286,6 +296,7 @@ def get(conn: Connection, seva_id: int) -> dict:
     ).mappings().all()
     result = dict(row)
     result["dates"] = [dict(d) for d in dates]
+    result["auth_req"] = edit_rules.auth_required(conn, DOC_ID)  # the screen shows AUTHORISED / NOT AUTHORISED only when the document needs it
     return result
 
 
@@ -321,9 +332,10 @@ def cancel(conn: Connection, *, seva_id: int, reason: str, user_code: str) -> No
 
 
 def delete(conn: Connection, *, seva_id: int, user_code: str) -> None:
-    row = conn.execute(text("SELECT SEVANO FROM TrnHdrSEVA WHERE SEVAID = :id"), {"id": seva_id}).mappings().first()
+    row = conn.execute(text("SELECT SEVANO, SEVADate, Authorised FROM TrnHdrSEVA WHERE SEVAID = :id"), {"id": seva_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Seva not found")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=row["SEVADate"], authorised=row["Authorised"])
     receipt_service.delete_receipt_by_narr(conn, row["SEVANO"])
     conn.execute(text("DELETE FROM TrnDtlSevaDates WHERE SevaID = :id"), {"id": seva_id})
     conn.execute(text("DELETE FROM TrnHdrSEVA WHERE SEVAID = :id"), {"id": seva_id})

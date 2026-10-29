@@ -89,21 +89,23 @@ def delete_posting(conn: Connection, *, doc_type: str, trn_no: str, trn_id: int 
     transaction's GL lines too, via a recycled receipt number, and crashed
     on a duplicate TrnDtlAcc primary key).
     """
+    # EVERY posting of the document, not just the first: a cancelled document has its original posting plus the
+    # "CANCEL REVERSAL" posting (reverse()), and deleting only one would leave the other in the ledger with no
+    # document behind it (found 2026-10-29: 4 such postings on RCPTVCH)
     if trn_id is not None:
-        acc_id = conn.execute(
+        acc_ids = conn.execute(
             text("SELECT AccID FROM TrnHdrAcc WHERE DocType = :dt AND TrnID = :tid"),
             {"dt": doc_type, "tid": trn_id},
-        ).scalar()
+        ).scalars().all()
     else:
-        acc_id = conn.execute(
+        acc_ids = conn.execute(
             text("SELECT AccID FROM TrnHdrAcc WHERE DocType = :dt AND TrnNo = :no"),
             {"dt": doc_type, "no": trn_no},
-        ).scalar()
-    if acc_id is None:
-        return
-    conn.execute(text("DELETE FROM TrnDtlAcc WHERE AccID = :id"), {"id": acc_id})
-    conn.execute(text("DELETE FROM TrnDtlAccAdj WHERE AccID = :id"), {"id": acc_id})
-    conn.execute(text("DELETE FROM TrnHdrAcc WHERE AccID = :id"), {"id": acc_id})
+        ).scalars().all()
+    for acc_id in acc_ids:
+        conn.execute(text("DELETE FROM TrnDtlAcc WHERE AccID = :id"), {"id": acc_id})
+        conn.execute(text("DELETE FROM TrnDtlAccAdj WHERE AccID = :id"), {"id": acc_id})
+        conn.execute(text("DELETE FROM TrnHdrAcc WHERE AccID = :id"), {"id": acc_id})
 
 
 def reverse(

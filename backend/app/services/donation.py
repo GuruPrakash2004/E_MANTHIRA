@@ -28,7 +28,7 @@ from sqlalchemy.engine import Connection
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, table, update_row
-from app.meta import doc_rules, numbering
+from app.meta import doc_rules, edit_rules, numbering
 from app.services import receipt as receipt_service
 from app.utils.amount_in_words import amount_in_words
 
@@ -83,6 +83,8 @@ def validate(data: DonationInput, fy: FinancialYear, rows: list[dict], values: d
 
 
 def create(conn: Connection, *, data: DonationInput, fy: FinancialYear, user_code: str) -> dict:
+    if not edit_rules.doc_date_editable(conn, DOC_ID):
+        data.doc_date = date.today()  # AllowEditDocDate = 'N': the legacy form locks the date to the system date
     rows = doc_rules.load_fields(conn, DOC_ID)
     if not rows:
         raise HTTPException(status.HTTP_409_CONFLICT, "Donation Receipt has no fields configured in the Doc Designer")
@@ -108,7 +110,7 @@ def create(conn: Connection, *, data: DonationInput, fy: FinancialYear, user_cod
             "Prefix": data.prefix,
             "PrintDONRECNO": print_no,
             "DONRECDate": data.doc_date,
-            "Authorised": "Y",
+            "Authorised": edit_rules.authorised_on_save(conn, DOC_ID),
             "Cancelled": "N",
             "AddedBy": user_code,
             "AddedOn": datetime.now(),
@@ -213,9 +215,10 @@ def cancel(conn: Connection, *, donrec_id: int, reason: str, user_code: str) -> 
 
 
 def delete(conn: Connection, *, donrec_id: int, user_code: str) -> None:
-    row = conn.execute(text("SELECT DONRECNO FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id}).mappings().first()
+    row = conn.execute(text("SELECT DONRECNO, DONRECDate, Authorised FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Donation Receipt not found")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=row["DONRECDate"], authorised=row["Authorised"])
     receipt_service.delete_receipt_by_narr(conn, row["DONRECNO"])
     conn.execute(text("DELETE FROM TrnDtlDONREC WHERE DONRECID = :id"), {"id": donrec_id})
     conn.execute(text("DELETE FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id})

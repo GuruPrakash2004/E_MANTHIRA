@@ -2,7 +2,7 @@ import ExportExcelButton from './ExportExcelButton'
 import { getFyShort } from '../../api/api'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ActionIcon, Button, Card, Divider, Group, Kbd, Menu, NumberInput, Skeleton, Text, Title, Stack, Tooltip } from '@mantine/core'
+import { ActionIcon, Button, Card, Divider, Group, Menu, NumberInput, Skeleton, Text, Title, Stack, Tooltip } from '@mantine/core'
 import { Check, History, Printer, Save } from 'lucide-react'
 import { HISTORY_TOP, getHistory, historyLabel, setHistory } from '../../lib/history'
 import useEnterAsTab from '../../hooks/useEnterAsTab'
@@ -56,7 +56,7 @@ export function EntryLayout({ main, side, viewing = false }) {
         @media (min-width: 1200px) {
           .vt-entry-layout { grid-template-columns: minmax(0, 1fr) 380px; }
           /* header is 80px: pin 10px below it, and use all the remaining height so the recent list shows more rows */
-          .vt-entry-side { position: sticky; top: 90px; height: calc(100dvh - 102px); }
+          .vt-entry-side { position: sticky; top: 90px; height: calc(100dvh - 102px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--vt-accent) transparent; padding-right: 2px; }
           .vt-entry-side > * { flex: 0 0 auto; }
           .vt-entry-side > .vt-recent-card { flex: 1 1 0; min-height: 220px; }
           .vt-entry-side .vt-recent-list { max-height: none; }
@@ -82,29 +82,29 @@ export function EntryLayout({ main, side, viewing = false }) {
   )
 }
 
-export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, saveDisabled = false, onSave, onSavePrint }) {
+export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, saveDisabled = false, onSave, onSavePrint, compact = false }) {
   return (
-    <Card p="md" style={{ background: 'linear-gradient(160deg, var(--vt-g1) 0%, var(--vt-g3) 100%)', border: '1px solid rgba(244,225,166,0.3)', color: '#FBF6EC' }}>
+    <Card p={compact ? 'xs' : 'md'} style={{ background: 'linear-gradient(160deg, var(--vt-g1) 0%, var(--vt-g3) 100%)', border: '1px solid rgba(244,225,166,0.3)', color: '#FBF6EC' }}>
       <Text size="xs" fw={700} tt="uppercase" c="#F4E1A6" style={{ letterSpacing: 1 }}>
         Summary
       </Text>
-      <Stack gap={4} mt={6}>
+      <Stack gap={compact ? 1 : 4} mt={compact ? 2 : 6}>
         {rows.map((r) => (
           <Group key={r.label} justify="space-between" wrap="nowrap">
-            <Text size="sm" c="#E9D2B8">
+            <Text size={compact ? 'xs' : 'sm'} c="#E9D2B8">
               {r.label}
             </Text>
-            <Text size="sm" className="vt-num">
+            <Text size={compact ? 'xs' : 'sm'} className="vt-num">
               {r.value}
             </Text>
           </Group>
         ))}
       </Stack>
-      <Divider my="sm" color="rgba(244,225,166,0.25)" />
+      <Divider my={compact ? 4 : 'sm'} color="rgba(244,225,166,0.25)" />
       <Text size="xs" c="#E9D2B8">
         {totalLabel}
       </Text>
-      <Text className="vt-num" c="#F4E1A6" style={{ fontFamily: 'Marcellus, Georgia, serif', fontSize: 'clamp(26px,2.4vw,34px)', fontWeight: 700, lineHeight: 1.15 }}>
+      <Text className="vt-num" c="#F4E1A6" style={{ fontFamily: 'Marcellus, Georgia, serif', fontSize: compact ? 22 : 'clamp(26px,2.4vw,34px)', fontWeight: 700, lineHeight: 1.15 }}>
         {total}
       </Text>
       {amountInWords(words) && (
@@ -117,33 +117,22 @@ export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, war
           {warning}
         </Text>
       )}
-      {/* Screens that print get two explicit buttons: Alt+S saves only, F10 saves and prints straight away. */}
+      {/* Screens that print get two explicit buttons: Alt+S saves only, F10 saves and prints straight away (shown in the tooltip). */}
       {onSavePrint ? (
-        <Group gap={8} mt="sm" wrap="nowrap" grow>
-          <Button size="sm" px="xs" color="gold" c="#2B0909" leftSection={<Save size={16} />} loading={saving} disabled={saveDisabled} onClick={onSave} aria-keyshortcuts="Alt+S" title="Save only, nothing is printed (Alt+S)">
-            <Group gap={6} wrap="nowrap">
-              <span>Save</span>
-              <Kbd size="xs" style={{ background: 'rgba(43,9,9,0.12)', color: '#2B0909', borderColor: 'rgba(43,9,9,0.25)' }}>Alt+S</Kbd>
-            </Group>
+        <Group gap={8} mt={compact ? 6 : 'sm'} wrap="nowrap" grow>
+          <Button size={compact ? 'compact-sm' : 'sm'} px="xs" color="gold" c="#2B0909" leftSection={<Save size={16} />} loading={saving} disabled={saveDisabled} onClick={onSave} aria-keyshortcuts="Alt+S" title="Save only, nothing is printed (Alt+S)">
+            Save
           </Button>
-          <Button size="sm" px="xs" variant="outline" color="gold" leftSection={<Printer size={16} />} disabled={saving || saveDisabled} onClick={onSavePrint} aria-keyshortcuts="F10" title="Save and print straight away, no dialog (F10)">
-            <Group gap={6} wrap="nowrap">
-              <span>Save &amp; Print</span>
-              <Kbd size="xs" style={{ background: 'rgba(244,225,166,0.15)', color: '#F4E1A6', borderColor: 'rgba(244,225,166,0.4)' }}>F10</Kbd>
-            </Group>
+          <Button size={compact ? 'compact-sm' : 'sm'} px="xs" variant="outline" color="gold" leftSection={<Printer size={16} />} disabled={saving || saveDisabled} onClick={onSavePrint} aria-keyshortcuts="F10" title="Save and print straight away, no dialog (F10)">
+            Save &amp; Print
           </Button>
         </Group>
       ) : (
-      <Button fullWidth size="md" mt="sm" color="gold" c="#2B0909" leftSection={<SaveIcon size={18} />} loading={saving} disabled={saveDisabled} onClick={onSave} aria-keyshortcuts="Alt+S">
-        <Group gap={10} wrap="nowrap">
-          <span>{saveLabel}</span>
-          <Kbd size="xs" style={{ background: 'rgba(43,9,9,0.12)', color: '#2B0909', borderColor: 'rgba(43,9,9,0.25)' }}>
-            Alt+S
-          </Kbd>
-        </Group>
-      </Button>
+        <Button fullWidth size="md" mt="sm" color="gold" c="#2B0909" leftSection={<SaveIcon size={18} />} loading={saving} disabled={saveDisabled} onClick={onSave} aria-keyshortcuts="Alt+S" title="Alt+S">
+          {saveLabel}
+        </Button>
       )}
-          </Card>
+    </Card>
   )
 }
 

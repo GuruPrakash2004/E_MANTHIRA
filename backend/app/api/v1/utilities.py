@@ -8,7 +8,7 @@ from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
 from app.core.security import CurrentUser, get_current_user
-from app.services import authorisation, screen_docs
+from app.services import authorisation, notifications, screen_docs, shared_docs
 
 router = APIRouter(prefix="/utilities", tags=["utilities"])
 
@@ -85,6 +85,91 @@ def sd_download(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUse
     path = screen_docs.file_path(name)
     if not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"This file : {name} does not exist on the server")
+    return FileResponse(path, filename=name)
+
+
+# ---- Reminder Alert (notifications) --------------------------------------------------------------------------------
+@router.get("/notifications")
+def nt_list(box: str = "inbox", conn: Connection = Depends(get_conn), user: CurrentUser = Depends(get_current_user)):
+    return {"rows": notifications.list_notes(conn, user, sent=box == "sent"), "unread": notifications.unread_count(conn, user)}
+
+
+@router.get("/notifications/users")
+def nt_users(q: str = "", conn: Connection = Depends(get_conn), user: CurrentUser = Depends(get_current_user)):
+    return notifications.search_users(conn, user, q)
+
+
+class SendNoteBody(BaseModel):
+    title: str = ""
+    note: str = ""
+    to: list[str] = []
+
+
+@router.post("/notifications", status_code=201)
+def nt_send(body: SendNoteBody, user: CurrentUser = Depends(get_current_user)):
+    with with_transaction() as conn:
+        n = notifications.send(conn, user, title=body.title, note=body.note, to=body.to)
+    return {"message": "Data Sent Successfully.", "sent": n}
+
+
+@router.delete("/notifications/sent")
+def nt_delete_all_sent(user: CurrentUser = Depends(get_current_user)):
+    with with_transaction() as conn:
+        n = notifications.delete_all_sent(conn, user)
+    return {"message": "All Data deleted successfully.", "deleted": n}
+
+
+@router.delete("/notifications/{note_id}")
+def nt_delete(note_id: int, user: CurrentUser = Depends(get_current_user)):
+    with with_transaction() as conn:
+        notifications.delete_one(conn, user, note_id)
+    return {"message": "Data deleted successfully."}
+
+
+# ---- Shared Documents ----------------------------------------------------------------------------------------------
+@router.get("/shared-docs")
+def shd_list(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    return {"rows": shared_docs.list_docs(conn), "groups": shared_docs.groups(conn)}
+
+
+@router.post("/shared-docs", status_code=201)
+async def shd_add(
+    group: str = Form(...),
+    remarks: str = Form(""),
+    file: UploadFile = File(...),
+    _: CurrentUser = Depends(get_current_user),
+):
+    data = await file.read()
+    with with_transaction() as conn:
+        new_id = shared_docs.add_doc(conn, group=group, filename=file.filename or "", remarks=remarks, data=data)
+    return {"message": "Details saved Successfully!!!", "doc_id": new_id}
+
+
+class SharedDocBody(BaseModel):
+    group: str
+    remarks: str = ""
+
+
+@router.put("/shared-docs/{doc_id}")
+def shd_update(doc_id: int, body: SharedDocBody, _: CurrentUser = Depends(get_current_user)):
+    with with_transaction() as conn:
+        shared_docs.update_doc(conn, doc_id=doc_id, group=body.group, remarks=body.remarks)
+    return {"message": "Details Updated Successfully!!!"}
+
+
+@router.delete("/shared-docs/{doc_id}")
+def shd_delete(doc_id: int, _: CurrentUser = Depends(get_current_user)):
+    with with_transaction() as conn:
+        shared_docs.delete_doc(conn, doc_id)
+    return {"message": "Deleted"}
+
+
+@router.get("/shared-docs/{doc_id}/download")
+def shd_download(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    name = shared_docs.get_file_name(conn, doc_id)
+    path = shared_docs.file_path(name)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "File not found!")
     return FileResponse(path, filename=name)
 
 

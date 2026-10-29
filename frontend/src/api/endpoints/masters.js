@@ -6,6 +6,7 @@ export const createMasterRow = (docId, values) => post(`/masters/${docId}`, valu
 export const updateMasterRow = (docId, rowId, values) => put(`/masters/${docId}/${rowId}`, values)
 export const deleteMasterRow = (docId, rowId) => del(`/masters/${docId}/${rowId}`)
 export const getMasterLayout = (docId) => get(`/masters/${docId}/layout`)
+export const similarCodes = (docId, code, excludeId) => get(`/masters/${docId}/similar`, { params: { code, ...(excludeId ? { exclude_id: excludeId } : {}) } })
 export const coreLookup = (docId, field, search) => get(`/masters/${docId}/core-lookup/${field}`, { params: search ? { search } : undefined })
 
 // Options menu

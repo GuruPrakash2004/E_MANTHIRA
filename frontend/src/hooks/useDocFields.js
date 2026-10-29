@@ -13,7 +13,7 @@ export default function useDocFields(docId) {
     queryKey: ['doc-fields', docId],
     queryFn: () => metaApi.getDocFields(docId),
     enabled: Boolean(docId),
-    staleTime: 30 * 60_000, // changes only when the legacy Designer edits it
+    staleTime: 30_000, // the server notices Designer edits within seconds, so re-read soon
   })
   const fields = useMemo(() => data?.fields || [], [data])
   const byCode = useMemo(() => Object.fromEntries(fields.map((f) => [f.FldCode, f])), [fields])

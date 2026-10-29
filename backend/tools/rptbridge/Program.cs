@@ -327,12 +327,18 @@ namespace RptBridge
                             ReportDocument doc = Acquire(rpt, formula, values, true, out reused);
                             long tAcquire = sw.ElapsedMilliseconds;
                             UsePreviewPrinter(doc);
+                            double widenedTo = WidenRollPaper(doc);
                             long tPrinter = sw.ElapsedMilliseconds;
                             using (Stream s = doc.ExportToStream(ExportFormatType.PortableDocFormat))
                             {
                                 var ms = new MemoryStream();
                                 s.CopyTo(ms);
                                 foreach (var kv in PaperFacts(doc)) ctx.Response.AddHeader(kv.Key, kv.Value);
+                                if (widenedTo > 0)
+                                {
+                                    ctx.Response.Headers["X-Paper-Kind"] = "Custom"; // it is still the roll receipt; only the preview's page was widened
+                                    ctx.Response.AddHeader("X-Widened-Right-Pt", widenedTo.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
+                                }
                                 Send(ctx, 200, "application/pdf", ms.ToArray());
                                 Console.Out.WriteLine("[render] " + Path.GetFileName(full) + " reused=" + reused + " acquire=" + tAcquire + "ms printer=" + (tPrinter - tAcquire) + "ms export=" + (sw.ElapsedMilliseconds - tPrinter) + "ms");
                             }
@@ -518,6 +524,37 @@ namespace RptBridge
             // only for named paper sizes (A4, Letter...); a custom roll size (e.g. the 3-inch receipts) is not a size the PDF printer knows
             if (!Enum.IsDefined(typeof(CrystalDecisions.Shared.PaperSize), doc.PrintOptions.PaperSize)) return;
             try { doc.PrintOptions.PrinterName = _previewPrinter; PreviewPrinterSet.Add(doc, new object()); } catch { }
+        }
+
+
+        // A roll receipt whose objects run past the roll's declared page width (fmtHB_3Inc: the date and the amount box end
+        // ~20pt beyond 204pt) is clipped by Crystal at export. For the PREVIEW the page is given a wider named size so nothing is
+        // cut; the backend then trims the page back to the right-most object. The report itself is not changed, direct printing
+        // does not come through here. Remembered per cached report because a widened report reads as a named size afterwards.
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ReportDocument, object> Widened =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<ReportDocument, object>();
+
+        private static double WidenRollPaper(ReportDocument doc)
+        {
+            try
+            {
+                object known;
+                if (Widened.TryGetValue(doc, out known)) return (double)known;
+                if (Enum.IsDefined(typeof(CrystalDecisions.Shared.PaperSize), doc.PrintOptions.PaperSize)) return 0; // a named paper: untouched
+                double right = 0;
+                foreach (ReportObject o in doc.ReportDefinition.ReportObjects) right = Math.Max(right, (o.Left + o.Width) / 20.0);
+                double content = doc.PrintOptions.PageContentWidth / 20.0;
+                if (right <= content + 1) { Widened.Add(doc, (object)0.0); return 0; }
+                var margins = doc.PrintOptions.PageMargins;
+                // the roll's own printer (RP 3220 star) fixes the page at its roll width; the preview printer takes the wider named size
+                if (!string.IsNullOrEmpty(_previewPrinter) && PrinterExists(_previewPrinter)) doc.PrintOptions.PrinterName = _previewPrinter;
+                doc.PrintOptions.PaperSize = CrystalDecisions.Shared.PaperSize.PaperA5;
+                try { doc.PrintOptions.ApplyPageMargins(margins); } catch { }
+                Widened.Add(doc, (object)right);
+                Console.Out.WriteLine("[paper] roll page widened for preview: objects end at " + right.ToString("0.#") + "pt, page content was " + content.ToString("0.#") + "pt");
+                return right;
+            }
+            catch (Exception ex) { Console.Out.WriteLine("[paper] widen skipped: " + ex.Message); return 0; }
         }
 
         // What the report itself says about its page. "Custom" = a paper size Windows has no name for (the 3-inch roll receipts);

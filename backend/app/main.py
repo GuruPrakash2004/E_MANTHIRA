@@ -12,7 +12,7 @@ from app.core.gzip_mw import SelectiveGZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.exc import ProgrammingError
 
-from app.api.v1 import doc_actions, mail_settings, master_extras, audit, auth, bulk_update, company, db_settings, display, donations, expense, hall_booking_entry, gen_vouchers, halls, header_detail_docs, header_docs, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, exports, trading_reports, users, utilities, vouchers, welcome
+from app.api.v1 import doc_actions, mail_settings, master_extras, other_settings, audit, auth, bulk_update, company, db_settings, display, donations, expense, hall_booking_entry, gen_vouchers, halls, header_detail_docs, header_docs, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, exports, trading_reports, users, utilities, vouchers, welcome
 from app.core.config import get_settings
 from app.core.db import DatabaseUnavailable, get_engine, healthcheck, with_transaction
 from app.core.audit import ensure_schema
@@ -116,6 +116,7 @@ app.include_router(roles.router, prefix=settings.api_prefix)
 app.include_router(users.router, prefix=settings.api_prefix)
 app.include_router(reports.router, prefix=settings.api_prefix)
 app.include_router(settings_router.router, prefix=settings.api_prefix)
+app.include_router(other_settings.router, prefix=settings.api_prefix)
 app.include_router(company.router, prefix=settings.api_prefix)
 app.include_router(panchanga.router, prefix=settings.api_prefix)
 app.include_router(display.router, prefix=settings.api_prefix)

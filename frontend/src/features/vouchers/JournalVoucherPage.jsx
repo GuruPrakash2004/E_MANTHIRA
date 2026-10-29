@@ -16,12 +16,15 @@ const CFG = {
   queryKey: 'journal-vouchers',
   list: voucherApi.listJournalVouchers,
   create: voucherApi.createJournalVoucher,
+  update: voucherApi.updateJournalVoucher,
+  cancel: voucherApi.cancelJournalVoucher,
+  remove: voucherApi.deleteJournalVoucher,
   amountSide: 'dr',
   totalLabel: 'Journal amount',
   recentTitle: 'Recent journals',
   emptyTitle: 'No journals yet',
   icon: ArrowUpRight,
-  nav: false,
+  nav: true,
 }
 
 export default function JournalVoucherPage() {

@@ -17,8 +17,9 @@ from sqlalchemy.engine import Connection
 
 from app.core.fy import FinancialYear
 from app.legacy.tables import insert_row, update_row
+from app.meta import edit_rules
 from app.meta.numbering import next_receipt_no
-from app.services import ledger, voucher_fields
+from app.services import ledger, voucher_fields, voucher_rules
 from app.utils.amount_in_words import amount_in_words
 
 
@@ -33,6 +34,22 @@ class VoucherLine:
     ac_led_id: int
     dr_amt: float = 0.0
     cr_amt: float = 0.0
+
+
+def _check_lines(conn: Connection, fy: FinancialYear, voucher_date: date, lines: list) -> None:
+    """The legacy Receipt Voucher checks: date in the financial year, two or more lines, an amount, Dr = Cr, active heads."""
+    from app.core.fy import assert_date_in_fy
+
+    assert_date_in_fy(voucher_date, fy)
+    if len(lines) < 2:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "At least two account-head lines are required")
+    total_dr = round(sum(l.dr_amt for l in lines), 2)
+    total_cr = round(sum(l.cr_amt for l in lines), 2)
+    if total_cr <= 0:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
+    if abs(total_dr - total_cr) > 0.005:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Debit and Credit totals are NOT matching!")
+    voucher_rules.check_heads(conn, lines)
 
 
 def create_receipt_voucher(
@@ -54,14 +71,11 @@ def create_receipt_voucher(
     unchanged (caught 2026-09-29: generalizing the voucher SCREEN must not
     touch the 3 internal callers of create_receipt).
     """
-    if len(lines) < 2:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "At least two account-head lines are required")
+    if not edit_rules.doc_date_editable(conn, 1248):
+        receipt_date = date.today()  # AllowEditDocDate = 'N': the legacy form locks the date to the system date
+    _check_lines(conn, fy, receipt_date, lines)
     total_dr = round(sum(l.dr_amt for l in lines), 2)
     total_cr = round(sum(l.cr_amt for l in lines), 2)
-    if total_cr <= 0:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
-    if abs(total_dr - total_cr) > 0.005:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Debit and Credit totals are NOT matching!")
     header, values = voucher_fields.header_columns(conn, 1248, "TrnHdrRCPTVCH", fields)
     narration = str(values.get("NARR") or "")
 
@@ -81,7 +95,7 @@ def create_receipt_voucher(
             "RCPTVCHDate": receipt_date,
             "AddedBy": user_code,
             "AddedOn": _datetime.now(),
-            "Authorised": "Y",
+            "Authorised": edit_rules.authorised_on_save(conn, 1248),
             "Cancelled": "N",
             "AMTINWORDS": amount_in_words(total_cr, "Rupees", "Paise"),
             "TOTDR": total_dr,
@@ -234,16 +248,19 @@ def cancel_by_id(conn: Connection, *, receipt_id: int, reason: str, user_code: s
         from fastapi import HTTPException, status
 
         raise HTTPException(status.HTTP_409_CONFLICT, "Document is already cancelled")
+    voucher_rules.assert_not_hall_receipt(conn, receipt_id)
     update_row(conn, "TrnHdrRCPTVCH", "RCPTVCHID", receipt_id, {"Cancelled": "Y"})
     ledger.reverse(conn, doc_type="RCPTVCH", trn_no=row["RCPTVCHNO"], trn_id=receipt_id, trn_date=row["RCPTVCHDate"], narration=f"Cancelled: {row['NARR']}")
 
 
 def delete_by_id(conn: Connection, *, receipt_id: int) -> None:
-    row = conn.execute(sql_text("SELECT RCPTVCHNO FROM TrnHdrRCPTVCH WHERE RCPTVCHID = :id"), {"id": receipt_id}).mappings().first()
+    row = conn.execute(sql_text("SELECT RCPTVCHNO, RCPTVCHDate, Cancelled, Authorised FROM TrnHdrRCPTVCH WHERE RCPTVCHID = :id"), {"id": receipt_id}).mappings().first()
     if row is None:
-        from fastapi import HTTPException, status
-
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Receipt Voucher not found")
+    if (row["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Deletion not possible!")
+    edit_rules.assert_editable(conn, 1248, doc_date=row["RCPTVCHDate"], authorised=row["Authorised"])
+    voucher_rules.assert_not_hall_receipt(conn, receipt_id)
     ledger.delete_posting(conn, doc_type="RCPTVCH", trn_no=row["RCPTVCHNO"], trn_id=receipt_id)
     conn.execute(sql_text("DELETE FROM TrnDtlRCPTVCH WHERE RCPTVCHID = :id"), {"id": receipt_id})
     conn.execute(sql_text("DELETE FROM TrnDtlRCPTVCHBillDet WHERE RCPTVCHID = :id"), {"id": receipt_id})
@@ -281,3 +298,50 @@ def void_receipt_by_narr(conn: Connection, narration: str, *, reverse_ledger: bo
             trn_date=row["RCPTVCHDate"],
             narration=f"Cancelled: {narration}",
         )
+
+
+def update_receipt_voucher(
+    conn: Connection, *, receipt_id: int, fy: FinancialYear, receipt_date: date, fields: dict, lines: list[VoucherLine], user_code: str = ""
+) -> ReceiptResult:
+    """Edit a saved Receipt Voucher (legacy Mode "M"): number / prefix / added-by stay, header + lines + ledger posting are rewritten."""
+    from datetime import datetime as _datetime
+
+    old = conn.execute(
+        sql_text("SELECT RCPTVCHNO, RCPTVCHDate, Cancelled, Authorised FROM TrnHdrRCPTVCH WHERE RCPTVCHID = :id"), {"id": receipt_id}
+    ).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Receipt Voucher not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, 1248, doc_date=old["RCPTVCHDate"], authorised=old["Authorised"])
+    voucher_rules.assert_not_hall_receipt(conn, receipt_id)
+    if not edit_rules.doc_date_editable(conn, 1248):
+        receipt_date = old["RCPTVCHDate"].date() if isinstance(old["RCPTVCHDate"], _datetime) else old["RCPTVCHDate"]  # date stays as saved
+    _check_lines(conn, fy, receipt_date, lines)
+    header, values = voucher_fields.header_columns(conn, 1248, "TrnHdrRCPTVCH", fields)
+    narration = str(values.get("NARR") or "")
+    total_dr = round(sum(l.dr_amt for l in lines), 2)
+    total_cr = round(sum(l.cr_amt for l in lines), 2)
+
+    cols = {
+        "RCPTVCHDate": receipt_date, "AMTINWORDS": amount_in_words(total_cr, "Rupees", "Paise"), "TOTDR": total_dr, "TOTCR": total_cr,
+        "ChangedBy": user_code, "ChangedOn": _datetime.now(), **header,
+    }
+    if edit_rules.auth_required(conn, 1248):
+        cols["Authorised"] = "N"
+    update_row(conn, "TrnHdrRCPTVCH", "RCPTVCHID", receipt_id, cols)
+
+    ledger.delete_posting(conn, doc_type="RCPTVCH", trn_no=old["RCPTVCHNO"], trn_id=receipt_id)
+    conn.execute(sql_text("DELETE FROM TrnDtlRCPTVCH WHERE RCPTVCHID = :id"), {"id": receipt_id})
+    for i, line in enumerate(lines, start=1):
+        insert_row(
+            conn,
+            "TrnDtlRCPTVCH",
+            {"RCPTVCHID": receipt_id, "SlNo": i, "AcLedID": line.ac_led_id, "RCPTVCHAmt": line.dr_amt or line.cr_amt, "CrAmt": line.cr_amt, "DrAmt": line.dr_amt,
+             "AmtType": "CR" if line.cr_amt else "DR", "AgRefAmt": 0, "NewRefAmt": 0},
+        )
+    ledger.post(
+        conn, doc_type="RCPTVCH", trn_id=receipt_id, trn_no=old["RCPTVCHNO"], trn_date=receipt_date, due_date=receipt_date, narration=narration,
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in lines],
+    )
+    return ReceiptResult(receipt_id=receipt_id, receipt_no=old["RCPTVCHNO"])

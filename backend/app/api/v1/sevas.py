@@ -25,6 +25,8 @@ class SevaCreateRequest(BaseModel):
     fields: dict  # Designer fields keyed by FldCode (the screen is rendered from UtlDocDsgrFlds)
     dates: list[SevaDateIn]
     doc_date: date
+    regular: bool = False  # the "Regular Devotee" tick
+    days_text: str = ""  # Date Text from the Dates Selection dialog
 
 
 class CancelRequest(BaseModel):
@@ -118,6 +120,8 @@ def create_seva(
         fields=body.fields,
         dates=[seva_service.SevaDate(perform_date=d.perform_date, remarks=d.remarks) for d in body.dates],
         doc_date=body.doc_date,
+        regular=body.regular,
+        days_text=body.days_text,
     )
     with with_transaction() as conn:
         return seva_service.create(conn, data=data, fy=fy, user_code=user.user_code)
@@ -134,6 +138,8 @@ def update_seva(
         fields=body.fields,
         dates=[seva_service.SevaDate(perform_date=d.perform_date, remarks=d.remarks) for d in body.dates],
         doc_date=body.doc_date,
+        regular=body.regular,
+        days_text=body.days_text,
     )
     with with_transaction() as conn:
         return seva_service.update(conn, seva_id=seva_id, data=data, fy=fy, user_code=user.user_code)

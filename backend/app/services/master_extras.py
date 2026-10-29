@@ -375,6 +375,28 @@ def set_item_image(code: str, content: bytes) -> None:
 # ---------------------------------------------------------------- per-master validation (frmMstSCC / frmMstParty)
 
 
+def _validate_user(conn: Connection, merged: dict) -> None:
+    import re
+    from datetime import date, datetime
+
+    from app.meta import menu as meta_menu
+
+    role = int(merged.get("RoleID") or 0)
+    if role > 0:
+        if not conn.execute(text("SELECT 1 FROM MstRole WHERE RoleID = :r AND InActive = 'N'"), {"r": role}).first():
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Selected RoleCode Not Found in the Master")
+    elif not meta_menu.is_user_based_rights(conn):  # rights per user: no role needed
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Role Name should not be blank!!")
+    email = str(merged.get("EmailID") or "").strip()
+    if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "EmailID is not valid!!")
+    dob = merged.get("DOB")
+    if str(merged.get("ChkDOB") or "N").strip().upper() == "Y" and dob:
+        d = dob if isinstance(dob, date) else datetime.strptime(str(dob)[:10], "%Y-%m-%d").date()
+        if d > date.today():
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Not a valid DOB")
+
+
 def validate_master(conn: Connection, meta: MasterMeta, merged: dict, row_id: int | None) -> bool:
     """
     Extra rules the legacy forms apply beyond blank code/name. Returns True when the rule set already covered the
@@ -397,6 +419,8 @@ def validate_master(conn: Connection, meta: MasterMeta, merged: dict, row_id: in
         if dup:
             raise HTTPException(status.HTTP_409_CONFLICT, f"{meta.caption} already exists..")
         return True
+    if meta.doc_id == 18:  # User Master (frmMstUSer): the API enforces what the screen checks, so a direct call cannot skip it
+        _validate_user(conn, merged)
     if meta.doc_id == 1121:  # Supplier (frmMstParty.ValidFields)
         if not _clean(merged.get("BAdd1")):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please enter atleast first line address!")

@@ -76,8 +76,30 @@ def _join_roll_pages(doc: "fitz.Document", bottom_margin_pt: float) -> tuple[byt
     return data, Page(round(width, 2), round(total, 2), True)
 
 
-def fit_pdf(pdf: bytes, *, paper_kind: str, bottom_margin_pt: float = 0.0) -> tuple[bytes, Page]:
+def _trim_width(pdf: bytes, right_pt: float) -> tuple[bytes, Page]:
+    """The bridge gave a roll receipt a wider page so its right-most objects are not clipped; cut that page back to those
+    objects (plus a hair of margin). Only the page box changes."""
+    with fitz.open(stream=pdf, filetype="pdf") as doc:
+        for page in doc:
+            mb = page.mediabox
+            width = min(mb.width, right_pt + 2.0)
+            box = f"[{mb.x0:g} {mb.y0:g} {mb.x0 + width:g} {mb.y1:g}]"
+            doc.xref_set_key(page.xref, "MediaBox", box)
+            doc.xref_set_key(page.xref, "CropBox", box)
+        data = doc.tobytes(garbage=3, deflate=True)
+    with fitz.open(stream=data, filetype="pdf") as out:
+        return data, Page(round(out[-1].rect.width, 2), round(out[-1].rect.height, 2), True)
+
+
+def fit_pdf(pdf: bytes, *, paper_kind: str, bottom_margin_pt: float = 0.0, widened_right_pt: float = 0.0) -> tuple[bytes, Page]:
     """(pdf, page) - `page` is the size of the LAST page after fitting. Named paper sizes come back byte-for-byte."""
+    fitted, page = _fit_height(pdf, paper_kind=paper_kind, bottom_margin_pt=bottom_margin_pt)
+    if widened_right_pt > 0 and paper_kind.strip().lower() == "custom":
+        return _trim_width(fitted, widened_right_pt)
+    return fitted, page
+
+
+def _fit_height(pdf: bytes, *, paper_kind: str, bottom_margin_pt: float = 0.0) -> tuple[bytes, Page]:
     with fitz.open(stream=pdf, filetype="pdf") as doc:
         last = doc[-1]
         if paper_kind.strip().lower() != "custom":

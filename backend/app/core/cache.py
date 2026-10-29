@@ -18,7 +18,49 @@ _lock = threading.Lock()
 _store: dict[tuple, tuple[float, Any]] = {}
 
 
+# Tables the Doc Designer / Admin screens own. A change to any of them (row count or content checksum) drops every
+# cached copy, so an edit made in the Designer shows on the next request / page refresh instead of after the TTL.
+_WATCHED = ("UtlDocDsgrFlds", "UtlTransactions", "MstMenu", "UtlOption", "UtlDocNoPrefix", "UtlDocNoFmt", "MstRoleRights", "MstUserRights", "MstCompFinYear")
+_CHECK_EVERY = 2.0  # seconds between fingerprint checks
+_fp: dict[str, Any] = {"value": None, "at": 0.0}
+
+
+def _fingerprint() -> str | None:
+    try:
+        from sqlalchemy import text
+
+        from app.core.db import get_engine
+
+        parts = []
+        with get_engine().connect() as c:
+            for t in _WATCHED:
+                try:
+                    r = c.execute(text(f"SELECT COUNT_BIG(*), CHECKSUM_AGG(BINARY_CHECKSUM(*)) FROM {t}")).first()
+                    parts.append(f"{t}:{r[0]}:{r[1]}")
+                except Exception:  # a table missing in this database is simply not watched
+                    pass
+        return "|".join(parts)
+    except Exception:
+        return None  # DB unreachable: leave the cache alone, the TTL still applies
+
+
+def _revalidate() -> None:
+    now = time.monotonic()
+    with _lock:
+        if now - _fp["at"] < _CHECK_EVERY:
+            return
+        _fp["at"] = now
+    value = _fingerprint()
+    if value is None:
+        return
+    with _lock:
+        if _fp["value"] is not None and value != _fp["value"]:
+            _store.clear()
+        _fp["value"] = value
+
+
 def get_or_set(key: tuple, ttl: float, loader: Callable[[], Any]) -> Any:
+    _revalidate()
     now = time.monotonic()
     with _lock:
         hit = _store.get(key)

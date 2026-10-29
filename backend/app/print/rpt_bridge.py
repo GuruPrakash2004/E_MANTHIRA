@@ -187,6 +187,7 @@ class Rendered:
     paper_name: str = ""
     orientation: str = ""
     bottom_margin_pt: float = 0.0
+    widened_right_pt: float = 0.0  # >0: a roll receipt whose objects run past its page; the preview page was widened to fit them
 
 
 def render(job: PrintJob) -> Rendered:
@@ -204,12 +205,17 @@ def render(job: PrintJob) -> Rendered:
             margin = float(resp.headers.get("X-Margin-Bottom-Pt", "0") or 0)
         except ValueError:
             margin = 0.0
+        try:
+            widened = float(resp.headers.get("X-Widened-Right-Pt", "0") or 0)
+        except ValueError:
+            widened = 0.0
         return Rendered(
             pdf=resp.content,
             paper_kind=resp.headers.get("X-Paper-Kind", "Named"),
             paper_name=resp.headers.get("X-Paper-Name", ""),
             orientation=resp.headers.get("X-Orientation", ""),
             bottom_margin_pt=margin,
+            widened_right_pt=widened,
         )
     except Exception as exc:  # noqa: BLE001
         raise _raise(exc) from exc

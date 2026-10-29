@@ -54,6 +54,15 @@ def master_core_lookup(
     return master_layouts.lookup_options(conn, doc_id, field_code, search)
 
 
+@router.get("/{doc_id}/similar")
+def similar_codes(
+    doc_id: int, code: str = "", exclude_id: int | None = None, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_VIEW))
+):
+    """Legacy "Similar <code> already exists. Do you want to view them?": codes equal once punctuation / spaces are ignored."""
+    meta = masters_service.get_meta(conn, doc_id)
+    return {"caption": meta.caption, "rows": masters_service.similar_codes(conn, meta, code, exclude_id)}
+
+
 # Fixed-path GETs must come BEFORE /{doc_id}/{row_id}, which would otherwise swallow them (422).
 @router.get("/{doc_id}/import-template")
 def download_import_template(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_from_path(RIGHT_ADD))):

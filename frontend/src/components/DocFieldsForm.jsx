@@ -73,7 +73,7 @@ export default function DocFieldsForm({
             const opts = await queryClient.fetchQuery({
               queryKey: ['lookup', docId, f.FldCode, '', null],
               queryFn: () => metaApi.getLookup(docId, f.FldCode, ''),
-              staleTime: 5 * 60_000,
+              staleTime: 30_000,
             })
             const hit = opts.find((o) => String(o.label).trim().toLowerCase() === def.toLowerCase())
             if (hit) defaults[f.FldCode] = Number(hit.value)

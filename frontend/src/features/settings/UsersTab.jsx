@@ -1,4 +1,5 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
+import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
 import {
   ActionIcon,
@@ -139,6 +140,7 @@ export default function UsersTab() {
     if (form.inactive && !form.inactiveRmks.trim()) return bad('Reason for InActive!')
     if (form.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) return bad('EmailID is not valid!!')
     if (!fs?.user_based && !form.roleId) return bad('Role Name should not be blank!!')
+    if (form.chkDob && form.dob && dayjs(form.dob).isAfter(dayjs(), 'day')) return bad('Not a valid DOB')
     setSaving(true)
     try {
       const values = {
@@ -356,7 +358,15 @@ export default function UsersTab() {
                     />
                   </Button>
                   {photoUrl && (
-                    <Button size="compact-sm" variant="default" onClick={async () => { await usersApi.deleteImage(editingId); setPhotoKey((k) => k + 1) }}>
+                    <Button size="compact-sm" variant="default" onClick={async () => {
+                      if (!(await confirm({ title: 'Remove the photo?', message: "Are you sure you want to remove the user's image?", confirmLabel: 'Remove' }))) return
+                      try {
+                        await usersApi.deleteImage(editingId)
+                        setPhotoKey((k) => k + 1)
+                      } catch (err) {
+                        notifications.show({ message: err?.response?.data?.detail || 'Error while update image!', color: 'red' })
+                      }
+                    }}>
                       Remove
                     </Button>
                   )}

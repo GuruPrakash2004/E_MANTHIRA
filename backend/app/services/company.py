@@ -62,9 +62,13 @@ def list_financial_years(conn: Connection) -> list[dict]:
 
 
 def add_financial_year(conn: Connection, *, from_date: date, to_date: date) -> None:
-    exists = conn.execute(text("SELECT 1 FROM MstCompFinYear WHERE yrFdate = :f"), {"f": from_date}).first()
+    if to_date < from_date:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The financial year must end after it starts")
+    # legacy btnCreate_Click: the new start date may not fall inside a year that exists; the web also refuses any overlap,
+    # because two years covering the same day would make every date filter and document number ambiguous
+    exists = conn.execute(text("SELECT 1 FROM MstCompFinYear WHERE :f <= yrTdate AND :t >= yrFdate"), {"f": from_date, "t": to_date}).first()
     if exists:
-        raise HTTPException(status.HTTP_409_CONFLICT, "A financial year starting on this date already exists")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Financial Year already exists!")
     conn.execute(
         text("INSERT INTO MstCompFinYear (yrFdate, yrTdate, Active) VALUES (:f, :t, 'N')"),
         {"f": from_date, "t": to_date},
@@ -86,17 +90,24 @@ def set_active_financial_year(conn: Connection, *, from_date: date) -> None:
     fy_module.invalidate()
 
 
-def remove_financial_year(conn: Connection, *, from_date: date) -> None:
-    """The active year can never be removed (it filters every list and document number)."""
-    row = conn.execute(text("SELECT Active FROM MstCompFinYear WHERE yrFdate = :f"), {"f": from_date}).mappings().first()
+def remove_financial_year(conn: Connection, *, from_date: date) -> str:
+    """Legacy btnRemoveFinYr_Click: never the only year, only the first or the last year (so the years stay in one run),
+    and never the active one (it filters every list and document number). Returns the legacy success message."""
+    years = conn.execute(text("SELECT yrFdate, Active FROM MstCompFinYear ORDER BY yrFdate")).mappings().all()
+    row = next((y for y in years if y["yrFdate"].date() == from_date or y["yrFdate"] == from_date), None)
     if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Financial year not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Deletion failed. Invalid year...")
+    if len(years) == 1:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Atleast 1 active financial year must exist!")
+    if row is not years[0] and row is not years[-1]:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Only first and last row can be deleted!")
     if (row["Active"] or "N").upper() == "Y":
-        raise HTTPException(status.HTTP_409_CONFLICT, "The active financial year cannot be removed")
-    conn.execute(text("DELETE FROM MstCompFinYear WHERE yrFdate = :f"), {"f": from_date})
+        raise HTTPException(status.HTTP_409_CONFLICT, "Unable to remove as this financial year is currently in use!")
+    conn.execute(text("DELETE FROM MstCompFinYear WHERE yrFdate = :f"), {"f": row["yrFdate"]})
     from app.core import fy as fy_module
 
     fy_module.invalidate()
+    return f"Financial Year -- {from_date:%Y} deleted successfully."
 
 
 def get_company_image(conn: Connection) -> bytes | None:

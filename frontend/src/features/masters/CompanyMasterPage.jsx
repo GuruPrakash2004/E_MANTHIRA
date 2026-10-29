@@ -211,9 +211,9 @@ function FinancialYearsTab() {
     if (!fy) return
     if (!(await confirm({ title: 'Remove this financial year?', message: `${fmt(fy.yrFdate)} to ${fmt(fy.yrTdate)} will be removed. This cannot be undone.`, confirmLabel: 'Remove' }))) return
     try {
-      await companyApi.removeFinancialYear(dayjs(fy.yrFdate).format('YYYY-MM-DD'))
+      const r = await companyApi.removeFinancialYear(dayjs(fy.yrFdate).format('YYYY-MM-DD'))
       setSelected(null)
-      notifications.show({ message: 'Financial year removed', color: 'teal' })
+      notifications.show({ message: r?.message || 'Financial year removed', color: 'teal' })
       refetch()
     } catch (err) { fail(err, 'Could not remove the financial year') }
   }

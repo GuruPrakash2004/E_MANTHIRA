@@ -128,15 +128,21 @@ def create_hbe(conn: Connection, *, data: HbeInput, fy: FinancialYear, user_code
     return {"hbe_id": hbe_id, "hbe_no": doc_no, "total_amt": total_amt, "net_pay": net_pay}
 
 
-def list_hbe(conn: Connection, *, fy: FinancialYear, top: int = 50) -> list[dict]:
+def list_hbe(conn: Connection, *, fy: FinancialYear, top: int = 50, search: str = "") -> list[dict]:
     from app.core.db import limit_clause
 
+    where, params = "HBEDate BETWEEN :fs AND :fe", {"fs": fy.start_date, "fe": fy.end_date}
+    if search.strip():
+        have = {r[0].upper() for r in conn.execute(text("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = :t"), {"t": TABLE})}
+        cols = [c for c in ("HBENO", "PrintHBENO", "NMEOFFUNC", "CONPRS", "CONTACTNO") if c.upper() in have]  # names come from this list, not the browser
+        if cols:
+            where += " AND (" + " OR ".join(f"{c} LIKE :q" for c in cols) + ")"
+            params["q"] = f"%{search.strip()}%"
     sql = (
         f"SELECT * "  # not a fixed column list: TYPE etc. exist only in some temples' databases
-        
-        f"FROM {TABLE} WHERE HBEDate BETWEEN :fs AND :fe ORDER BY HBEID DESC {limit_clause(top)}"
+        f"FROM {TABLE} WHERE {where} ORDER BY HBEID DESC {limit_clause(top)}"
     )
-    rows = conn.execute(text(sql), {"fs": fy.start_date, "fe": fy.end_date}).mappings().all()
+    rows = conn.execute(text(sql), params).mappings().all()
     return [dict(r) for r in rows]
 
 

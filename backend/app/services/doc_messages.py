@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.legacy.tables import insert_row
+from app.meta import edit_rules
 from app.services import mail
 
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -40,11 +41,27 @@ def get_options(conn: Connection, doc_id: int) -> list[dict]:
     row = conn.execute(text("SELECT * FROM UtlTransactions WHERE DocID = :d"), {"d": doc_id}).mappings().first()
     if row is None:
         return []
-    return [
+    out = []
+    if (row.get("FileAttachReq") or "N").strip().upper() == "Y":
+        out.append({"name": "Attachment", "label": "Attachment", "supported": True})
+    if edit_rules.amendment_supported(conn, doc_id):  # needs AmmReq = 'Y' and the header table's Ammendment / AmmNo / AmmDate columns
+        out.append({"name": "Amendment", "label": "Amendment", "supported": True})
+    out += [
         {"name": name, "label": label, "supported": supported}
         for flag, name, label, supported in _FLAG_OPTIONS
         if (row.get(flag) or "N").strip().upper() == "Y"
     ]
+    # entries the designer lists in UtlOption: "SMS" / "SEND SMS" open the Send SMS dialog, "Label Print" the label printing dialog
+    have = {o["name"] for o in out}
+    for (name,) in conn.execute(text("SELECT OptionName FROM UtlOption WHERE DocID = :d AND ISNULL(InActive, 'N') <> 'Y' ORDER BY OptionOrder"), {"d": doc_id}).all():
+        key = (name or "").strip().upper()
+        if key in ("SMS", "SEND SMS") and "Send SMS" not in have:
+            out.append({"name": "Send SMS", "label": (name or "").strip() if key == "SMS" else "Send SMS", "supported": True})
+            have.add("Send SMS")
+        elif key == "LABEL PRINT" and "Label Print" not in have:
+            out.append({"name": "Label Print", "label": "Label Print", "supported": True})
+            have.add("Label Print")
+    return out
 
 
 # ---------------------------------------------------------------- placeholders

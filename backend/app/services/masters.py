@@ -124,6 +124,28 @@ def _code_exists(conn: Connection, meta: MasterMeta, code: str, exclude_id: int 
     return conn.execute(text(sql), params).first() is not None
 
 
+def similar_codes(conn: Connection, meta: MasterMeta, code: str, exclude_id: int | None = None) -> list[dict]:
+    """Rows whose code is the same once punctuation and spaces are ignored (legacy: <Code>Clean = RemoveNonAlphaCharacters(code)).
+    Only masters that have the computed <Code>Clean column take part; nothing is written."""
+    code = (code or "").strip()
+    clean_col = f"{meta.code_col}Clean"
+    have = {r[0].lower() for r in conn.execute(text("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = :t"), {"t": meta.table})}
+    if not code or clean_col.lower() not in have:
+        return []
+    from app.core.db import limit_clause
+
+    sql = (
+        f"SELECT {meta.code_col} AS code, {meta.name_col} AS name FROM {meta.table} "  # names come from UtlTransactions, not the browser
+        f"WHERE {clean_col} = dbo.RemoveNonAlphaCharacters(:c)"
+    )
+    params: dict = {"c": code}
+    if exclude_id:
+        sql += f" AND {meta.id_col} <> :id"
+        params["id"] = exclude_id
+    sql += f" ORDER BY {meta.code_col} {limit_clause(50)}"
+    return [{"code": (r["code"] or "").strip(), "name": (r["name"] or "").strip()} for r in conn.execute(text(sql), params).mappings().all()]
+
+
 def _check_required(meta: MasterMeta, merged: dict) -> None:
     """Mandatory built-in fields of the master (see app/meta/master_layouts.py), like the legacy form's red captions."""
     from app.meta.master_layouts import required_fields
@@ -152,6 +174,9 @@ def create(conn: Connection, meta: MasterMeta, *, values: dict, user_code: str) 
     if not name:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{meta.short_form} Name should not be blank!")
     _check_required(meta, values)
+    from app.meta.master_layouts import check_values
+
+    check_values(conn, meta.doc_id, values)
     _check_designer(conn, meta, values)
     values = _prepare_values(meta, values)
     code, name = values[meta.code_col], values[meta.name_col]
@@ -199,6 +224,9 @@ def _prepare_values(meta: MasterMeta, values: dict) -> dict:
         name = remove_spl_characters(name, meta.restrict_name_chars)
     out[meta.code_col] = code
     out[meta.name_col] = name
+    from app.meta.master_layouts import normalise_values
+
+    out = normalise_values(meta.doc_id, out)
     if meta.inactive_rmks_col != "InActiveRmks" and "InActiveRmks" in out:
         out[meta.inactive_rmks_col] = out.pop("InActiveRmks")
     return out
@@ -228,6 +256,9 @@ def _sync_mstacled(conn: Connection, meta: MasterMeta, ledger_id: int, code: str
 def update(conn: Connection, meta: MasterMeta, row_id: int, *, values: dict, user_code: str) -> dict:
     existing = get_row(conn, meta, row_id)
     _check_required(meta, {**existing, **values})
+    from app.meta.master_layouts import check_values
+
+    check_values(conn, meta.doc_id, {**existing, **values})
     _check_designer(conn, meta, {**existing, **values})
     values = _prepare_values(meta, {**values, **{k: values.get(k, existing.get(k)) for k in (meta.code_col, meta.name_col)}})
     code, name = values[meta.code_col], values[meta.name_col]

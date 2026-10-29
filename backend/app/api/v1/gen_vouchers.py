@@ -52,6 +52,15 @@ def _register(spec: gv.Spec) -> None:
         with with_transaction() as conn:
             return gv.create(conn, spec, data=data, fy=fy, user_code=user.user_code)
 
+    @router.put(base + "/{voucher_id}", name=f"update_{spec.short}")
+    def _update(voucher_id: int, body: CreateRequest, fy: FinancialYear = Depends(get_user_fy), user: CurrentUser = Depends(require_right(spec.doc_id, RIGHT_EDIT))):
+        data = gv.VoucherInput(
+            prefix=body.prefix, voucher_date=body.voucher_date, fields=body.fields,
+            lines=[gv.VoucherLine(l.ac_led_id, l.dr_amt, l.cr_amt) for l in body.lines],
+        )
+        with with_transaction() as conn:
+            return gv.update(conn, spec, voucher_id=voucher_id, data=data, fy=fy, user_code=user.user_code)
+
     @router.post(base + "/{voucher_id}/cancel", name=f"cancel_{spec.short}")
     def _cancel(voucher_id: int, body: CancelRequest, user: CurrentUser = Depends(require_right(spec.doc_id, RIGHT_EDIT))):
         with with_transaction() as conn:

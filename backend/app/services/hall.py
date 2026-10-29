@@ -28,8 +28,8 @@ from sqlalchemy.engine import Connection
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, table, update_row
-from app.meta import doc_rules, numbering
-from app.services import receipt as receipt_service
+from app.meta import doc_rules, edit_rules, numbering
+from app.services import ledger, receipt as receipt_service
 from app.utils.amount_in_words import amount_in_words
 
 DOC_ID = 1281
@@ -105,7 +105,29 @@ def availability_calendar(conn: Connection, *, hall_id: int, from_date: date, mo
     return [dict(r) for r in rows]
 
 
-def create(conn: Connection, *, data: HallBookingInput, fy: FinancialYear, user_code: str) -> dict:
+# Set by the payment flow (Receipt Info), never by the booking form: an edit leaves them as they are.
+PAYMENT_OWNED = ("PAYMNTMODE", "REFNO", "PAYMODE2", "REFNO3", "PAYMODE", "REF2", "PAYMODFH", "CASHCHEQ", "RCPDT", "BANK")
+
+
+@dataclass
+class _Prepared:
+    rows: list
+    values: dict
+    booking_type: str
+    hall_id: int
+    start: date | None
+    end: date | None
+    amount: float
+    cgst_amt: float
+    sgst_amt: float
+    total_gst: float
+    net_pay: float
+    nod: int
+
+
+def _prepare(conn: Connection, data: HallBookingInput, fy: FinancialYear, *, exclude_id: int | None = None) -> _Prepared:
+    """Everything a save needs that does not depend on the document number: Designer rules, the legacy date / overlap
+    checks and the amounts. `exclude_id` is the booking being edited (it must not clash with itself)."""
     rows = doc_rules.load_fields(conn, DOC_ID)
     if not rows:
         raise HTTPException(status.HTTP_409_CONFLICT, "Hall Booking has no fields configured in the Doc Designer")
@@ -124,49 +146,118 @@ def create(conn: Connection, *, data: HallBookingInput, fy: FinancialYear, user_
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Name of the Hall / Room is mandatory")
         if not start or not end:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Start Date and End Date are mandatory")
-        if end < start:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "From Date Should be less than To Date...")
-        if not check_availability(conn, hall_id=hall_id, start_date=start, end_date=end):
+    if start and end and end < start:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "From Date Should be less than To Date...")
+    # legacy: every type except CARPUS FUND is checked against the hall's other bookings (self excluded when editing)
+    if booking_type.upper() != "CARPUS FUND" and hall_id and start and end:
+        if not check_availability(conn, hall_id=hall_id, start_date=start, end_date=end, exclude_booking_id=exclude_id):
             raise HTTPException(status.HTTP_409_CONFLICT, "Booking Period Not Available.. Please check the List..")
     if amount <= 0:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
 
+    cgst_amt = round(amount * _num(values.get("CGSTPER")) / 100, 2)
+    sgst_amt = round(amount * _num(values.get("SGSTPER")) / 100, 2)
+    total_gst = round(cgst_amt + sgst_amt, 2)
+    net_pay = round(amount + total_gst, 2)
+    nod = (end - start).days + 1 if (hall_id and start and end) else 0
+    return _Prepared(rows, values, booking_type, hall_id, start, end, amount, cgst_amt, sgst_amt, total_gst, net_pay, nod)
+
+
+def _stay_rows(conn: Connection, hb_id: int, p: _Prepared) -> None:
+    """TrnST: one row per booked day (legacy SaveDoc deletes and re-inserts them on every save)."""
+    conn.execute(text("DELETE FROM TrnST WHERE HBID = :id"), {"id": hb_id})
+    for i in range(p.nod):
+        insert_row(conn, "TrnST", {"HALLID": p.hall_id, "HBID": hb_id, "STAYDATE": p.start + timedelta(days=i)})
+
+
+def _amount_cols(p: _Prepared) -> dict:
+    return {
+        "AMOUNT": p.amount, "TOTAMT": p.amount, "CGSTAMT": p.cgst_amt, "SGSTAMT": p.sgst_amt, "TOTGSTAMT": p.total_gst,
+        "AMTAFTTAX": p.net_pay, "NETPAY": p.net_pay,
+        "AMTINWORDS": amount_in_words(p.net_pay, "Rupees", "Paise"),
+        "TOTAMTIWRDS": amount_in_words(p.amount, "Rupees", "Paise"),
+        "NOD": p.nod,
+    }
+
+
+def create(conn: Connection, *, data: HallBookingInput, fy: FinancialYear, user_code: str) -> dict:
+    p = _prepare(conn, data, fy)
     doc_date = data.doc_date or date.today()
+    if not edit_rules.doc_date_editable(conn, DOC_ID):
+        doc_date = date.today()  # AllowEditDocDate = 'N': the legacy form locks the date to the system date
     assert_date_in_fy(doc_date, fy)
 
-    prefix = _prefix_for(conn, booking_type)
+    prefix = _prefix_for(conn, p.booking_type)
     doc_no = numbering.next_doc_no(
         conn, table_name=TABLE, no_column=NO_COLUMN, prefix=prefix,
         fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
     )
     print_no = numbering.print_doc_no(conn, doc_id=DOC_ID, doc_no=doc_no, prefix=prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year)
 
-    cgst_amt = round(amount * _num(values.get("CGSTPER")) / 100, 2)
-    sgst_amt = round(amount * _num(values.get("SGSTPER")) / 100, 2)
-    total_gst = round(cgst_amt + sgst_amt, 2)
-    net_pay = round(amount + total_gst, 2)
-    nod = (end - start).days + 1 if (is_hall_booking and start and end) else 0
-
-    cols = doc_rules.column_values(rows, values, table(TABLE))
+    cols = doc_rules.column_values(p.rows, p.values, table(TABLE))
     cols.update(
         {
             NO_COLUMN: doc_no, "Prefix": prefix, "PrintHBNO": print_no, "HBDate": doc_date,
-            "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
-            "AMOUNT": amount, "TOTAMT": amount, "CGSTAMT": cgst_amt, "SGSTAMT": sgst_amt, "TOTGSTAMT": total_gst,
-            "AMTAFTTAX": net_pay, "NETPAY": net_pay, "ADV": 0, "PMT2": 0, "FULLPAIDAMT": 0, "BALAMT": net_pay,
-            "AMTINWORDS": amount_in_words(net_pay, "Rupees", "Paise"),
-            "TOTAMTIWRDS": amount_in_words(amount, "Rupees", "Paise"),
-            "ISSUEDBY": user_code, "NOD": nod,
+            "Authorised": edit_rules.authorised_on_save(conn, DOC_ID), "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
+            "ADV": 0, "PMT2": 0, "FULLPAIDAMT": 0, "BALAMT": p.net_pay, "ISSUEDBY": user_code,
+            **_amount_cols(p),
         }
     )
     hb_id = insert_row(conn, TABLE, cols, returning="HBID")
-
-    if is_hall_booking:
-        for i in range(nod):
-            insert_row(conn, "TrnST", {"HALLID": hall_id, "HBID": hb_id, "STAYDATE": start + timedelta(days=i)})
+    _stay_rows(conn, hb_id, p)
 
     audit.record(conn, entity="Hall Booking", entity_id=hb_id, action="A", user_code=user_code, details=doc_no)
-    return {"hb_id": hb_id, "hb_no": doc_no, "print_no": print_no, "net_pay": net_pay, "balance": net_pay}
+    return {"hb_id": hb_id, "hb_no": doc_no, "print_no": print_no, "net_pay": p.net_pay, "balance": p.net_pay}
+
+
+def update(conn: Connection, *, hb_id: int, data: HallBookingInput, fy: FinancialYear, user_code: str) -> dict:
+    """
+    Edit a saved booking (legacy Mode "M"). The bill number, prefix and who/when it was added stay as they are; the header,
+    the amounts and the booked days are rewritten. Payments already received (ADV / PMT2 / FULLPAIDAMT and their modes /
+    references) are the payment flow's and are kept; the balance is the new net less what has been received.
+    """
+    old = conn.execute(text("SELECT * FROM TrnHdrHB WHERE HBID = :id"), {"id": hb_id}).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hall booking not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=old["HBDate"], authorised=old["Authorised"])
+
+    p = _prepare(conn, data, fy, exclude_id=hb_id)
+    received = round(float(old["ADV"] or 0) + float(old["PMT2"] or 0) + float(old["FULLPAIDAMT"] or 0), 2)
+    if p.net_pay + 0.005 < received:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"The net amount cannot be less than the amount already received (Rs. {received:.2f}). Delete a receipt first")
+
+    cols = doc_rules.column_values(p.rows, p.values, table(TABLE))
+    # computed here (set again below) or owned by the payment flow: the generic column writer would blank them
+    for k in [c for c in cols if c.upper() in PAYMENT_OWNED or c.upper() in COMPUTED or c.upper() == "BALAMT"]:
+        cols.pop(k)
+    cols.update({**_amount_cols(p), "BALAMT": round(p.net_pay - received, 2), "ChangedBy": user_code, "ChangedOn": datetime.now()})
+    if edit_rules.doc_date_editable(conn, DOC_ID) and data.doc_date:
+        assert_date_in_fy(data.doc_date, fy)
+        cols["HBDate"] = data.doc_date
+    if edit_rules.auth_required(conn, DOC_ID):
+        cols["Authorised"] = "N"  # an edited document goes back for authorisation (legacy: Authorised = 'N' on edit)
+    update_row(conn, TABLE, "HBID", hb_id, cols)
+    _stay_rows(conn, hb_id, p)
+
+    audit.record(conn, entity="Hall Booking", entity_id=hb_id, action="E", user_code=user_code, details=old["HBNO"])
+    return {"hb_id": hb_id, "hb_no": old["HBNO"], "print_no": old["PrintHBNO"] or old["HBNO"], "net_pay": p.net_pay, "balance": round(p.net_pay - received, 2)}
+
+
+def delete(conn: Connection, *, hb_id: int, user_code: str) -> None:
+    """Legacy delete: not for a cancelled booking, and not while receipts are linked to it."""
+    row = conn.execute(text("SELECT HBNO, HBDate, Cancelled, Authorised FROM TrnHdrHB WHERE HBID = :id"), {"id": hb_id}).mappings().first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hall booking not found")
+    if (row["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Deletion not possible!")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=row["HBDate"], authorised=row["Authorised"])
+    if conn.execute(text("SELECT TOP 1 1 FROM TrnHdrRCPTVCH WHERE HBID = :id"), {"id": hb_id}).first():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Already exist in Linked document. Deletion not possible.")
+    conn.execute(text("DELETE FROM TrnST WHERE HBID = :id"), {"id": hb_id})
+    conn.execute(text("DELETE FROM TrnHdrHB WHERE HBID = :id"), {"id": hb_id})
+    audit.record(conn, entity="Hall Booking", entity_id=hb_id, action="D", user_code=user_code, details=row["HBNO"])
 
 
 def get(conn: Connection, hb_id: int) -> dict:
@@ -208,7 +299,7 @@ def add_payment(conn: Connection, *, hb_id: int, data: PaymentInput, fy: Financi
     if booking is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Hall booking not found")
     if (booking["Cancelled"] or "N").upper() == "Y":
-        raise HTTPException(status.HTTP_409_CONFLICT, "Document is already cancelled")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Document Is already cancelled")
 
     balance = float(booking["BALAMT"] or 0)
     if data.amount <= 0:
@@ -312,10 +403,7 @@ def delete_receipt(conn: Connection, *, hb_id: int, receipt_id: int, user_code: 
     update_row(conn, "TrnHdrHB", "HBID", hb_id, updates)
     conn.execute(text("DELETE FROM TrnHdrRCPTVCH WHERE RCPTVCHID = :r"), {"r": receipt_id})
     conn.execute(text("DELETE FROM TrnDtlRCPTVCH WHERE RCPTVCHID = :r"), {"r": receipt_id})
-    acc = conn.execute(text("SELECT AccID FROM TrnHdrACC WHERE TrnID = :r AND DocType = 'RCPTVCH'"), {"r": receipt_id}).scalar()
-    if acc:
-        for tbl in ("TrnHdrACC", "TrnDtlACC", "TrnDtlACCAdj"):
-            conn.execute(text(f"DELETE FROM {tbl} WHERE AccID = :a"), {"a": acc})
+    ledger.delete_posting(conn, doc_type="RCPTVCH", trn_no=rcpt["RCPTVCHNO"], trn_id=receipt_id)  # every posting of the receipt, reversals included
     audit.record(conn, entity="Hall Booking Receipt", entity_id=hb_id, action="D", user_code=user_code, details=f"{rcpt['RCPTVCHNO']} {amt}")
     return {"balance": updates["BALAMT"]}
 

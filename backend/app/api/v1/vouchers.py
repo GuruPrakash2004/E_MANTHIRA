@@ -62,6 +62,20 @@ def create_payment_voucher(
         return payment_service.create(conn, data=data, fy=fy, user_code=user.user_code)
 
 
+@router.put("/vouchers/payments/{pmtvch_id}")
+def update_payment_voucher(
+    pmtvch_id: int,
+    body: PaymentVoucherCreateRequest,
+    fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(payment_service.DOC_ID, RIGHT_EDIT)),
+):
+    values = body.model_dump()
+    lines = [payment_service.VoucherLine(**l) for l in values.pop("lines")]
+    data = payment_service.PaymentVoucherInput(**values, lines=lines)
+    with with_transaction() as conn:
+        return payment_service.update(conn, pmtvch_id=pmtvch_id, data=data, fy=fy, user_code=user.user_code)
+
+
 @router.post("/vouchers/payments/{pmtvch_id}/cancel")
 def cancel_payment_voucher(pmtvch_id: int, body: CancelRequest, user: CurrentUser = Depends(require_right(payment_service.DOC_ID, RIGHT_EDIT))):
     with with_transaction() as conn:
@@ -116,6 +130,21 @@ def create_receipt_voucher(
         return {"receipt_id": r.receipt_id, "receipt_no": r.receipt_no}
 
 
+@router.put("/vouchers/receipts/{receipt_id}")
+def update_receipt_voucher(
+    receipt_id: int,
+    body: ReceiptVoucherCreateRequest,
+    fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(1248, RIGHT_EDIT)),
+):
+    with with_transaction() as conn:
+        r = receipt_service.update_receipt_voucher(
+            conn, receipt_id=receipt_id, fy=fy, receipt_date=body.receipt_date, fields=body.fields,
+            lines=[receipt_service.VoucherLine(**l.model_dump()) for l in body.lines], user_code=user.user_code,
+        )
+        return {"receipt_id": r.receipt_id, "receipt_no": r.receipt_no}
+
+
 @router.post("/vouchers/receipts/{receipt_id}/cancel")
 def cancel_receipt_voucher(receipt_id: int, body: CancelRequest, user: CurrentUser = Depends(require_right(1248, RIGHT_EDIT))):
     with with_transaction() as conn:
@@ -159,6 +188,20 @@ def create_journal_voucher(
     data = journal_service.JournalVoucherInput(**values, lines=lines)
     with with_transaction() as conn:
         return journal_service.create(conn, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.put("/vouchers/journals/{jnrvch_id}")
+def update_journal_voucher(
+    jnrvch_id: int,
+    body: JournalVoucherCreateRequest,
+    fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(journal_service.DOC_ID, RIGHT_EDIT)),
+):
+    values = body.model_dump()
+    lines = [journal_service.VoucherLine(**l) for l in values.pop("lines")]
+    data = journal_service.JournalVoucherInput(**values, lines=lines)
+    with with_transaction() as conn:
+        return journal_service.update(conn, jnrvch_id=jnrvch_id, data=data, fy=fy, user_code=user.user_code)
 
 
 @router.post("/vouchers/journals/{jnrvch_id}/cancel")

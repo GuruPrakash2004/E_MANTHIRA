@@ -16,8 +16,9 @@ from sqlalchemy.engine import Connection
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, update_row
+from app.meta import edit_rules
 from app.meta.numbering import next_doc_no
-from app.services import ledger, voucher_fields
+from app.services import ledger, voucher_fields, voucher_rules
 from app.utils.amount_in_words import amount_in_words
 
 
@@ -66,7 +67,10 @@ def _validate(data: VoucherInput, fy: FinancialYear) -> None:
 
 def create(conn: Connection, spec: Spec, *, data: VoucherInput, fy: FinancialYear, user_code: str) -> dict:
     s = spec.short
+    if not edit_rules.doc_date_editable(conn, spec.doc_id):
+        data.voucher_date = date.today()  # AllowEditDocDate = 'N': the legacy form locks the date to the system date
     _validate(data, fy)
+    voucher_rules.check_heads(conn, data.lines)
     header, values = voucher_fields.header_columns(conn, spec.doc_id, f"TrnHdr{s}", data.fields)
     narration = str(values.get("NARR") or "")
     doc_no = next_doc_no(
@@ -80,7 +84,7 @@ def create(conn: Connection, spec: Spec, *, data: VoucherInput, fy: FinancialYea
         f"TrnHdr{s}",
         {
             f"{s}NO": doc_no, "Prefix": data.prefix, f"Print{s}NO": doc_no, f"{s}Date": data.voucher_date,
-            "AddedBy": user_code, "AddedOn": datetime.now(), "Authorised": "Y", "Cancelled": "N",
+            "AddedBy": user_code, "AddedOn": datetime.now(), "Authorised": edit_rules.authorised_on_save(conn, spec.doc_id), "Cancelled": "N",
             "AMTINWORDS": amount_in_words(total_dr, "Rupees", "Paise"), "TOTDR": total_dr, "TOTCR": total_cr,
             **header,
         },
@@ -131,10 +135,56 @@ def cancel(conn: Connection, spec: Spec, *, voucher_id: int, reason: str, user_c
 
 def delete(conn: Connection, spec: Spec, *, voucher_id: int, user_code: str) -> None:
     s = spec.short
-    row = conn.execute(text(f"SELECT {s}NO AS NO FROM TrnHdr{s} WHERE {s}ID = :id"), {"id": voucher_id}).mappings().first()
+    row = conn.execute(text(f"SELECT {s}NO AS NO, {s}Date AS VDate, Cancelled, Authorised FROM TrnHdr{s} WHERE {s}ID = :id"), {"id": voucher_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"{spec.name} not found")
+    if (row["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Deletion not possible!")
+    edit_rules.assert_editable(conn, spec.doc_id, doc_date=row["VDate"], authorised=row["Authorised"])
     ledger.delete_posting(conn, doc_type=spec.doc_type, trn_no=row["NO"], trn_id=voucher_id)
     conn.execute(text(f"DELETE FROM TrnDtl{s} WHERE {s}ID = :id"), {"id": voucher_id})
     conn.execute(text(f"DELETE FROM TrnHdr{s} WHERE {s}ID = :id"), {"id": voucher_id})
     audit.record(conn, entity=spec.name, entity_id=voucher_id, action="D", user_code=user_code)
+
+
+def update(conn: Connection, spec: Spec, *, voucher_id: int, data: VoucherInput, fy: FinancialYear, user_code: str) -> dict:
+    """Edit a saved voucher (legacy Mode "M"): number / prefix / added-by stay; header, lines and ledger posting are rewritten."""
+    s = spec.short
+    old = conn.execute(text(f"SELECT {s}NO AS NO, {s}Date AS VDate, Cancelled, Authorised FROM TrnHdr{s} WHERE {s}ID = :id"), {"id": voucher_id}).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"{spec.name} not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, spec.doc_id, doc_date=old["VDate"], authorised=old["Authorised"])
+    if not edit_rules.doc_date_editable(conn, spec.doc_id):
+        data.voucher_date = old["VDate"].date() if isinstance(old["VDate"], datetime) else old["VDate"]  # date stays as saved
+    _validate(data, fy)
+    voucher_rules.check_heads(conn, data.lines)
+    header, values = voucher_fields.header_columns(conn, spec.doc_id, f"TrnHdr{s}", data.fields)
+    narration = str(values.get("NARR") or "")
+    total_dr = round(sum(l.dr_amt for l in data.lines), 2)
+    total_cr = round(sum(l.cr_amt for l in data.lines), 2)
+
+    cols = {
+        f"{s}Date": data.voucher_date, "AMTINWORDS": amount_in_words(total_dr, "Rupees", "Paise"), "TOTDR": total_dr, "TOTCR": total_cr,
+        "ChangedBy": user_code, "ChangedOn": datetime.now(), **header,
+    }
+    if edit_rules.auth_required(conn, spec.doc_id):
+        cols["Authorised"] = "N"  # an edited document goes back for authorisation (legacy: Authorised = 'N' on edit)
+    update_row(conn, f"TrnHdr{s}", f"{s}ID", voucher_id, cols)
+
+    ledger.delete_posting(conn, doc_type=spec.doc_type, trn_no=old["NO"], trn_id=voucher_id)
+    conn.execute(text(f"DELETE FROM TrnDtl{s} WHERE {s}ID = :id"), {"id": voucher_id})
+    for i, l in enumerate(data.lines, start=1):
+        insert_row(
+            conn,
+            f"TrnDtl{s}",
+            {f"{s}ID": voucher_id, "SlNo": i, "AcLedID": l.ac_led_id, f"{s}Amt": l.dr_amt or l.cr_amt, "CrAmt": l.cr_amt,
+             "DrAmt": l.dr_amt, "AmtType": "DR" if l.dr_amt else "CR", "AgRefAmt": 0, "NewRefAmt": 0},
+        )
+    ledger.post(
+        conn, doc_type=spec.doc_type, trn_id=voucher_id, trn_no=old["NO"], trn_date=data.voucher_date, due_date=data.voucher_date, narration=narration,
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+    )
+    audit.record(conn, entity=spec.name, entity_id=voucher_id, action="E", user_code=user_code, details=old["NO"])
+    return {"voucher_id": voucher_id, "voucher_no": old["NO"], "amount": total_dr}

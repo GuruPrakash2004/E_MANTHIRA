@@ -13,3 +13,4 @@ export const setMenuVisibility = (menuItemId, show) => put(`/meta/menu/${menuIte
 export const navigateDoc = (docId, params) => get(`/meta/docs/${docId}/nav`, { params })
 export const reloadDesigner = () => post('/meta/reload')
 export const getRefill = (docId, fieldCode) => get(`/meta/docs/${docId}/refill/${fieldCode}`)
+export const getDocRules = (docId) => get(`/meta/docs/${docId}/rules`)

@@ -24,12 +24,13 @@ class HbeCreateRequest(BaseModel):
 
 @router.get("")
 def list_hbe(
+    search: str = "",
     top: int = Query(50, le=1000),
     fy: FinancialYear = Depends(get_history_fy),
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right(hbe.DOC_ID, RIGHT_VIEW)),
 ):
-    return hbe.list_hbe(conn, fy=fy, top=top)
+    return hbe.list_hbe(conn, fy=fy, top=top, search=search)
 
 
 @router.get("/{hbe_id}")

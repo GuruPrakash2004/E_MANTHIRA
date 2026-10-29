@@ -1,8 +1,10 @@
 import { historyParams } from '../../lib/history'
 import { useEffect, useState } from 'react'
-import { ActionIcon, Button, Group, NumberInput, Select, Stack, Table, Text, Title } from '@mantine/core'
+import { ActionIcon, Badge, Button, Group, NumberInput, Select, Stack, Table, Text, Title } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
-import { Plus, Trash2 } from 'lucide-react'
+import { Copy, Plus, Trash2 } from 'lucide-react'
+import { useHotkeys } from 'react-hotkeys-hook'
+import { useSearchParams } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as voucherApi from '../../api/endpoints/voucher'
@@ -17,6 +19,9 @@ import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
 import DocNavBar from '../../components/ui/DocNavBar'
+import CopyFromDialog from '../../components/ui/CopyFromDialog'
+import DocXlMenu from '../../components/ui/DocXlMenu'
+import useDocRules from '../../hooks/useDocRules'
 import { formatINR, isoDate } from '../../utils/format'
 import { useAuth } from '../../hooks/useAuth'
 import { columnsFromLines, computeFormulas } from '../../utils/docCompute'
@@ -49,6 +54,12 @@ export default function VoucherEntry({ cfg }) {
   const [printFor, setPrintFor] = useState(null)
   const [viewId, setViewId] = useState(null) // a saved voucher being looked at (read-only)
   const [viewNo, setViewNo] = useState('')
+  const [copyOpen, setCopyOpen] = useState(false)
+  const [params] = useSearchParams()
+  const rules = useDocRules(cfg.docId) // UtlTransactions switches (Copy From, authorisation, document-date lock ...)
+  const [editing, setEditing] = useState(false)
+  const [stamp, setStamp] = useState(null) // legacy CANCELLED / AUTHORISED label of the voucher being viewed
+  const readOnly = Boolean(viewId) && !editing
 
   const { fields } = useDocFields(cfg.docId)
   const { user } = useAuth()
@@ -72,7 +83,7 @@ export default function VoucherEntry({ cfg }) {
   const totalCr = lines.reduce((s, l) => s + (Number(l.cr_amt) || 0), 0)
   const amount = cfg.amountSide === 'cr' ? totalCr : totalDr
   // Total Dr / Total Cr / Amount in Words: the Designer's formulas over the grid (SVTCOLSUM(5) = the Credit column)
-  const computed = viewId
+  const computed = readOnly
     ? undefined
     : computeFormulas(
         fields,
@@ -90,7 +101,7 @@ export default function VoucherEntry({ cfg }) {
     (!balanced ? 'Debit and Credit totals are NOT matching!' : null)
 
   async function onSave(mode) {
-    if (viewId) return
+    if (readOnly) return
     setAttempted(true)
     if (firstError) {
       notifications.show({ message: firstError, color: 'red' })
@@ -110,6 +121,16 @@ export default function VoucherEntry({ cfg }) {
         lines: lines
           .filter((l) => Number(l.dr_amt) || Number(l.cr_amt))
           .map((l) => ({ ac_led_id: Number(l.ac_led_id), dr_amt: Number(l.dr_amt) || 0, cr_amt: Number(l.cr_amt) || 0 })),
+      }
+      if (editing && viewId && cfg.update) {
+        await cfg.update(viewId, body)
+        notifications.show({ message: 'Updated successfully!', color: 'teal' })
+        setAttempted(false)
+        queryClient.invalidateQueries({ queryKey: [cfg.queryKey] })
+        refetch()
+        await viewRecord(viewId)
+        setEditing(false)
+        return
       }
       const result = await cfg.create(body)
       setLastSaved(result)
@@ -149,13 +170,86 @@ export default function VoucherEntry({ cfg }) {
       const d = h[`${cfg.headerPrefix}Date`]
       if (d) setDocDate(new Date(d))
       setLines(r.lines.map((l) => ({ ac_led_id: String(l.ac_led_id), dr_amt: l.dr_amt, cr_amt: l.cr_amt })))
+      const yes = (v) => String(v || 'N').trim().toUpperCase() === 'Y'
+      setStamp(yes(h.Cancelled) ? { text: 'CANCELLED', color: 'red' } : rules.auth_req ? (yes(h.Authorised) ? { text: 'AUTHORISED', color: 'green' } : { text: 'NOT AUTHORISED', color: 'orange' }) : null)
       setViewId(id)
       setViewNo(h[`Print${cfg.headerPrefix}NO`] || h[`${cfg.headerPrefix}NO`])
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not open that voucher', color: 'red' })
     }
   }
+  // Copy From: the chosen voucher's fields and lines become a new entry; "DC / CR Reversal" swaps the sides
+  async function copyFrom(id, { reverse = false } = {}) {
+    try {
+      const r = await voucherApi.getVoucher(cfg.kind, id)
+      if (reverse && r.has_bill_refs) {
+        notifications.show({ message: 'Reversal is not possible against reference present!', color: 'red' })
+        return
+      }
+      const next = {}
+      for (const f of fields) {
+        if (f.FldSection === 'Detail') continue
+        const v = r.header[f.FldCode]
+        if (v === null || v === undefined) next[f.FldCode] = ''
+        else if (f.FldDataType === 'Date') next[f.FldCode] = new Date(v)
+        else if (f.FldBlnComboData === 'Y') next[f.FldCode] = Number(v) || ''
+        else if (String(v).trim() === '0' && f.FldCode === 'CARDNO') next[f.FldCode] = ''
+        else next[f.FldCode] = String(v).trim()
+      }
+      setValues(next)
+      setLines(r.lines.map((l) => ({ ac_led_id: String(l.ac_led_id), dr_amt: reverse ? l.cr_amt : l.dr_amt, cr_amt: reverse ? l.dr_amt : l.cr_amt })))
+      notifications.show({ message: `Copied from ${r.header[`Print${cfg.headerPrefix}NO`] || r.header[`${cfg.headerPrefix}NO`]}${reverse ? ' (Dr/Cr reversed)' : ''}`, color: 'teal' })
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not copy that voucher', color: 'red' })
+    }
+  }
+  useHotkeys('ctrl+alt+f', (e) => { e.preventDefault(); if (!viewId && rules.allow_copy_from) setCopyOpen(true) }, { enableOnFormTags: true }, [viewId, rules.allow_copy_from])
+
+  // `?open=<id>` shows that saved voucher (e.g. a Hall Booking receipt opened from Receipt Info)
+  const openId = Number(params.get('open')) || 0
+  useEffect(() => {
+    if (openId && cfg.nav && fields.length && viewId !== openId) viewRecord(openId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId, fields.length])
+
+  // Edit / Cancel / Delete (legacy toolbar). The server applies the legacy rules and says why when it refuses.
+  async function startEdit() {
+    await viewRecord(viewId) // show what is saved right now, not what was loaded a while ago
+    setEditing(true)
+  }
+  async function cancelEdit() {
+    await viewRecord(viewId)
+    setEditing(false)
+  }
+  async function cancelDocument() {
+    if (stamp?.text === 'CANCELLED') return notifications.show({ message: 'Document is already cancelled', color: 'red' })
+    if (!(await confirm({ title: 'Cancel this document?', message: `${cfg.title} ${viewNo} will be cancelled and its ledger posting reversed.`, confirmLabel: 'Cancel document' }))) return
+    try {
+      const r = await cfg.cancel(viewId, 'Cancelled')
+      notifications.show({ message: r.message, color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: [cfg.queryKey] })
+      refetch()
+      await viewRecord(viewId)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not cancel the document', color: 'red' })
+    }
+  }
+  async function deleteDocument() {
+    if (!(await confirm({ title: 'Delete this document?', message: `${cfg.title} ${viewNo} and its ledger posting will be deleted.`, confirmLabel: 'Delete' }))) return
+    try {
+      const r = await cfg.remove(viewId)
+      notifications.show({ message: r.message, color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: [cfg.queryKey] })
+      refetch()
+      startNew()
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not delete the document', color: 'red' })
+    }
+  }
+
   function startNew() {
+    setEditing(false)
+    setStamp(null)
     setViewId(null)
     setViewNo('')
     setLines(newLines())
@@ -164,19 +258,19 @@ export default function VoucherEntry({ cfg }) {
     setDocDate(new Date())
     setAttempted(false)
   }
-  async function findVouchers(q) {
-    const rows = await cfg.list({ search: q, top: 30, days: 0 })
+  async function findVouchers(q, { allFy = true } = {}) {
+    const rows = await cfg.list({ search: q, top: 30, ...(allFy ? { days: 0 } : {}) })
     return rows.map((v) => ({ id: v[cfg.rowId], label: v[rowNo], sub: `${v.NARR || ''} · ${formatINR(v.TOTDR)}` }))
   }
 
   const directPrint = useDirectPrint(cfg.docId, setPrintFor)
   useDocShortcuts({
-    onSave: () => !viewId && onSave('save'),
+    onSave: () => !readOnly && onSave('save'),
     onPrint: () => lastSaved && setPrintFor(lastSaved[cfg.idKey]),
     onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
   })
 
-  const common = { docId: cfg.docId, values, setValue, setValues, resetKey, errors: attempted ? headErrors : {}, computed, readOnly: Boolean(viewId) }
+  const common = { docId: cfg.docId, values, setValue, setValues, resetKey, errors: attempted ? headErrors : {}, computed, readOnly }
   const Icon = cfg.icon
 
   return (
@@ -185,22 +279,30 @@ export default function VoucherEntry({ cfg }) {
         <Group gap="sm" wrap="nowrap">
           <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 40, width: 40 }} />
           <div>
-            <Title order={2}>{cfg.title}</Title>
+            <Group gap="sm" align="center">
+              <Title order={2}>{cfg.title}</Title>
+              {viewId && stamp && <Badge color={stamp.color} variant="light" size="lg">{stamp.text}</Badge>}
+            </Group>
             <Text size="sm" c="dimmed">
               {cfg.subtitle}
             </Text>
           </div>
         </Group>
         <Group gap="xs" align="flex-end">
+          {rules.allow_copy_from && !viewId && (
+            <Button variant="light" color="kumkum" leftSection={<Copy size={16} />} onClick={() => setCopyOpen(true)}>
+              Copy From
+            </Button>
+          )}
           {(prefixes || []).filter(Boolean).length > 1 && (
             <Select aria-label="Prefix" w={110} data={prefixes.filter(Boolean)} value={prefix || null} onChange={(v) => setPrefix(v || '')} allowDeselect={false} disabled={Boolean(viewId)} />
           )}
-          <DateInput aria-label={cfg.dateLabel} valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={Boolean(viewId)} w={150} />
+          <DateInput aria-label={cfg.dateLabel} valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={readOnly || !rules.edit_doc_date} w={150} />
         </Group>
       </Group>
 
       <EntryLayout
-        viewing={Boolean(viewId)}
+        viewing={readOnly}
         main={
           <Stack gap="lg">
             <SectionCard title="Voucher details" hint="Drawn from this temple's Doc Designer.">
@@ -211,10 +313,13 @@ export default function VoucherEntry({ cfg }) {
               title="Account heads"
               hint="Pick the ledger for each line and enter either a debit or a credit. Totals must match."
               action={
-                !viewId && (
-                  <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={() => setLines((ls) => [...ls, { ac_led_id: '', dr_amt: 0, cr_amt: 0 }])}>
-                    Add line
-                  </Button>
+                !readOnly && (
+                  <Group gap="xs">
+                    {rules.allow_imp_exp && <DocXlMenu docId={cfg.docId} name={cfg.title} rows={lines} setRows={setLines} />}
+                    <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={() => setLines((ls) => [...ls, { ac_led_id: '', dr_amt: 0, cr_amt: 0 }])}>
+                      Add line
+                    </Button>
+                  </Group>
                 )
               }
             >
@@ -232,13 +337,13 @@ export default function VoucherEntry({ cfg }) {
                     {lines.map((l, i) => (
                       <Table.Tr key={i}>
                         <Table.Td>
-                          <LookupSelect ledgerPicker ariaLabel={`Account head, line ${i + 1}`} label="" disabled={Boolean(viewId)} value={l.ac_led_id} onChange={(v) => updateLine(i, { ac_led_id: v })} />
+                          <LookupSelect ledgerPicker ariaLabel={`Account head, line ${i + 1}`} label="" disabled={readOnly} value={l.ac_led_id} onChange={(v) => updateLine(i, { ac_led_id: v })} />
                         </Table.Td>
                         <Table.Td>
-                          <NumberInput aria-label={`Debit, line ${i + 1}`} disabled={Boolean(viewId)} value={l.dr_amt} onChange={(v) => updateLine(i, { dr_amt: v, cr_amt: v ? 0 : l.cr_amt })} decimalScale={2} />
+                          <NumberInput aria-label={`Debit, line ${i + 1}`} disabled={readOnly} value={l.dr_amt} onChange={(v) => updateLine(i, { dr_amt: v, cr_amt: v ? 0 : l.cr_amt })} decimalScale={2} />
                         </Table.Td>
                         <Table.Td>
-                          <NumberInput aria-label={`Credit, line ${i + 1}`} disabled={Boolean(viewId)} value={l.cr_amt} onChange={(v) => updateLine(i, { cr_amt: v, dr_amt: v ? 0 : l.dr_amt })} decimalScale={2} />
+                          <NumberInput aria-label={`Credit, line ${i + 1}`} disabled={readOnly} value={l.cr_amt} onChange={(v) => updateLine(i, { cr_amt: v, dr_amt: v ? 0 : l.dr_amt })} decimalScale={2} />
                         </Table.Td>
                         <Table.Td>
                           <ActionIcon
@@ -246,7 +351,7 @@ export default function VoucherEntry({ cfg }) {
                             variant="subtle"
                             size={36}
                             aria-label={`Remove line ${i + 1}`}
-                            disabled={lines.length <= 2 || Boolean(viewId)}
+                            disabled={lines.length <= 2 || readOnly}
                             onClick={async () => {
                               if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) {
                                 setLines((ls) => ls.filter((_, ri) => ri !== i))
@@ -297,9 +402,9 @@ export default function VoucherEntry({ cfg }) {
               words={amount}
               warning={balanced || (totalDr === 0 && totalCr === 0) ? null : 'Debit and Credit totals are NOT matching!'}
               saving={saving}
-              onSave={viewId ? undefined : () => onSave('save')}
-              onSavePrint={viewId ? undefined : () => onSave('print')}
-              saveDisabled={Boolean(viewId)}
+              onSave={readOnly ? undefined : () => onSave('save')}
+              onSavePrint={readOnly || editing ? undefined : () => onSave('print')}
+              saveDisabled={readOnly}
             />
             {lastSaved && <SavedPanel lines={[`Voucher ${lastSaved[cfg.noKey]}`]} onPrint={() => setPrintFor(lastSaved[cfg.idKey])} />}
             <RecentCard
@@ -321,7 +426,20 @@ export default function VoucherEntry({ cfg }) {
         }
       />
 
-      {cfg.nav && <DocNavBar docId={cfg.docId} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} search={findVouchers} />}
+      <CopyFromDialog opened={copyOpen} onClose={() => setCopyOpen(false)} docName={cfg.title} search={findVouchers} onLoad={copyFrom} allowReversal />
+      {cfg.nav && (
+        <DocNavBar
+          docId={cfg.docId}
+          currentId={viewId}
+          viewLabel={viewNo}
+          onLoad={viewRecord}
+          onNew={startNew}
+          search={findVouchers}
+          {...(cfg.update ? { onEdit: startEdit, onCancelEdit: cancelEdit, onSave: () => onSave('save'), saving, editing } : {})}
+          {...(cfg.cancel ? { onCancelDoc: cancelDocument } : {})}
+          {...(cfg.remove ? { onDelete: deleteDocument } : {})}
+        />
+      )}
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={cfg.docId} recordId={printFor} title={cfg.title} />
     </Stack>
   )

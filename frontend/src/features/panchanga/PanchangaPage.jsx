@@ -1,8 +1,8 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
-import { ActionIcon, Button, Card, Chip, Group, Modal, Skeleton, Stack, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
+import { ActionIcon, Button, Card, Chip, Group, Modal, Select, Skeleton, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { DatePickerInput } from '../../components/ui/AppDates'
-import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, FileSpreadsheet, MoonStar } from 'lucide-react'
+import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, FileSpreadsheet, FileUp, Flag, MoonStar, Plus, X } from 'lucide-react'
 import { downloadXls } from '../../utils/xls'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -13,6 +13,7 @@ import { oleColorToCss } from '../../utils/color'
 import { WEEKDAY_LABELS, datesInRange } from '../../utils/dateRange'
 import { SectionCard } from '../../components/ui/EntryParts'
 import { PanchangaSymbol, symbolFor } from './symbols'
+import { PanchangaImportDialog, RathothsavaDialog } from './PanchangaTools'
 
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
 const KOLAM_PATTERN = '/illustrations/kolam.svg'
@@ -23,9 +24,11 @@ export default function PanchangaPage() {
   const queryClient = useQueryClient()
   const [month, setMonth] = useState(dayjs().startOf('month'))
   const [editDay, setEditDay] = useState(null)
-  const [editName, setEditName] = useState('')
+  const [editNames, setEditNames] = useState(['']) // the day's details, one Event master pick each (up to 11)
   const [saving, setSaving] = useState(false)
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [rathOpen, setRathOpen] = useState(false)
   const [bulkRange, setBulkRange] = useState([null, null])
   const [bulkDays, setBulkDays] = useState([])
   const [bulkName, setBulkName] = useState('')
@@ -37,6 +40,9 @@ export default function PanchangaPage() {
     queryFn: () => panchangaApi.listPanchanga(from.format('YYYY-MM-DD'), to.format('YYYY-MM-DD')),
   })
   const byDate = Object.fromEntries((data || []).map((d) => [d.date, d]))
+  // the Event master: what a day's details are chosen from
+  const { data: eventMaster = [] } = useQuery({ queryKey: ['panchanga-events'], queryFn: panchangaApi.listPanchangaEvents, staleTime: 60_000 })
+  const eventNames = eventMaster.map((e) => e.name)
 
   const todayIso = dayjs().format('YYYY-MM-DD')
   const events = (data || []).filter((d) => d.name).sort((a, b) => a.date.localeCompare(b.date))
@@ -53,19 +59,20 @@ export default function PanchangaPage() {
   function openDay(d) {
     const iso = d.format('YYYY-MM-DD')
     setEditDay(iso)
-    setEditName(byDate[iso]?.name || '')
+    setEditNames(byDate[iso]?.names?.length ? [...byDate[iso].names] : [''])
   }
 
   async function onSaveDay() {
-    if (!editName.trim() && !(await confirm({ title: 'Clear this day?', message: 'The event name for this day will be removed.', confirmLabel: 'Clear' }))) return
+    const picked = editNames.map((n) => (n || '').trim()).filter(Boolean)
+    if (!picked.length && !(await confirm({ title: 'Clear this day?', message: 'The details of this day will be removed.', confirmLabel: 'Clear' }))) return
     setSaving(true)
     try {
-      if (editName.trim()) {
-        await panchangaApi.setPanchangaDay(editDay, editName.trim())
+      if (picked.length) {
+        await panchangaApi.setPanchangaDay(editDay, picked)
       } else {
         await panchangaApi.deletePanchangaDay(editDay)
       }
-      notifications.show({ message: 'Saved', color: 'teal' })
+      notifications.show({ message: 'Updated Successfully', color: 'teal' })
       setEditDay(null)
       queryClient.invalidateQueries({ queryKey: ['panchanga'] })
       refetch()
@@ -118,6 +125,12 @@ export default function PanchangaPage() {
           <ActionIcon variant="light" color="kumkum" size={40} aria-label="Next month" onClick={() => setMonth((m) => m.add(1, 'month'))}>
             <ChevronRight size={18} />
           </ActionIcon>
+          <Button variant="default" size="sm" leftSection={<FileUp size={16} />} onClick={() => setImportOpen(true)}>
+            Import from Excel
+          </Button>
+          <Button variant="default" size="sm" leftSection={<Flag size={16} />} onClick={() => setRathOpen(true)}>
+            Rathothsava Date
+          </Button>
           <Button variant="default" size="sm" leftSection={<FileSpreadsheet size={16} />} disabled={events.length === 0} onClick={() => downloadXls(`Panchanga ${month.format('MMM YYYY')}.xls`, events, [{ label: 'Date', value: (e) => dayjs(e.date).format('DD-MMM-YYYY') }, { label: 'Day', value: (e) => dayjs(e.date).format('dddd') }, { label: 'Event Name', key: 'name' }])}>
             Export to Excel
           </Button>
@@ -240,31 +253,55 @@ export default function PanchangaPage() {
 
       <Modal opened={Boolean(editDay)} onClose={() => setEditDay(null)} title={editDay ? dayjs(editDay).format('dddd, DD MMMM YYYY') : ''} radius="lg">
         <Stack>
-          <Group gap="md" wrap="nowrap" align="flex-end">
+          <Group gap="md" wrap="nowrap" align="flex-start">
             <div className="vt-pg-preview" aria-hidden>
-              <PanchangaSymbol name={editName} size={44} />
+              <PanchangaSymbol name={editNames.find(Boolean) || ''} size={44} />
             </div>
-            <TextInput
-              style={{ flex: 1 }}
-              label="Event / Day Name"
-              placeholder="e.g. Rathothsava, Amavasya, Poornima"
-              leftSection={<MoonStar size={16} />}
-              description={editName.trim() ? symbolFor(editName).label : 'The symbol follows the name you type'}
-              value={editName}
-              onChange={(e) => setEditName(e.currentTarget.value)}
-              data-autofocus
-            />
+            <Stack gap={6} style={{ flex: 1 }}>
+              <Text size="sm" fw={600}>Details for the day</Text>
+              <Text size="xs" c="dimmed">Choose from the Event master.{editNames.find(Boolean) ? ` ${symbolFor(editNames.find(Boolean)).label}` : ''}</Text>
+              {editNames.map((n, i) => (
+                <Group key={i} gap={6} wrap="nowrap">
+                  <Select
+                    style={{ flex: 1 }}
+                    aria-label={`Detail ${i + 1}`}
+                    placeholder="Select an event"
+                    leftSection={<MoonStar size={16} />}
+                    searchable
+                    clearable
+                    nothingFoundMessage="Not in the Event master"
+                    data={Array.from(new Set([...eventNames, ...(n ? [n] : [])]))}
+                    value={n || null}
+                    onChange={(v) => setEditNames((cur) => cur.map((x, xi) => (xi === i ? v || '' : x)))}
+                    data-autofocus={i === 0 ? true : undefined}
+                  />
+                  {editNames.length > 1 && (
+                    <ActionIcon variant="subtle" color="red" aria-label={`Remove detail ${i + 1}`} onClick={() => setEditNames((cur) => cur.filter((_, xi) => xi !== i))}>
+                      <X size={16} />
+                    </ActionIcon>
+                  )}
+                </Group>
+              ))}
+              {editNames.length < 11 && (
+                <Button variant="subtle" color="kumkum" size="compact-sm" w="fit-content" leftSection={<Plus size={14} />} onClick={() => setEditNames((cur) => [...cur, ''])}>
+                  Add another detail
+                </Button>
+              )}
+            </Stack>
           </Group>
           <Group justify="flex-end" mt="sm">
             <Button variant="default" onClick={() => setEditDay(null)}>
               Cancel
             </Button>
             <Button color="kumkum" loading={saving} onClick={onSaveDay}>
-              {editName.trim() ? 'Save' : 'Clear'}
+              {editNames.some(Boolean) ? 'Save' : 'Clear'}
             </Button>
           </Group>
         </Stack>
       </Modal>
+
+      <PanchangaImportDialog opened={importOpen} onClose={() => setImportOpen(false)} />
+      <RathothsavaDialog opened={rathOpen} onClose={() => setRathOpen(false)} />
 
       <Modal opened={bulkOpen} onClose={() => setBulkOpen(false)} title="Set many days at once" radius="lg">
         <Stack>
@@ -280,7 +317,7 @@ export default function PanchangaPage() {
             </Chip.Group>
             <Text size="xs" c="dimmed" mt={4}>Leave all unticked for every day in the range (all Mondays, all Tuesdays ... when you tick them).</Text>
           </div>
-          <TextInput label="Event / Day Name" placeholder="e.g. Amavasya, Poornima" leftSection={<MoonStar size={16} />} description="Leave blank to clear the event from these days" value={bulkName} onChange={(e) => setBulkName(e.currentTarget.value)} />
+          <Select label="Event / Day Name" placeholder="Select an event" leftSection={<MoonStar size={16} />} searchable clearable nothingFoundMessage="Not in the Event master" data={eventNames} description="Leave empty to clear the details from these days" value={bulkName || null} onChange={(v) => setBulkName(v || '')} />
           <Text size="sm" c="dimmed">{bulkDates.length ? `${bulkDates.length} day${bulkDates.length === 1 ? '' : 's'} will be updated${bulkDates.length >= 400 ? ' (limit reached)' : ''}` : 'Pick a range to see how many days are affected'}</Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setBulkOpen(false)}>Cancel</Button>

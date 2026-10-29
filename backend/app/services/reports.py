@@ -70,7 +70,8 @@ def seva_collection(
         g["count"] += 1
         g["amount"] += float(r["Totalamt"] or 0)
 
-        pm = r["Payment"] or "—"
+        # grouped case-insensitively like the Crystal report: bills were saved both as "Cash" and "CASH"
+        pm = str(r["Payment"] or "—").strip().upper()
         p = by_payment_mode.setdefault(pm, {"payment_mode": pm, "count": 0, "amount": 0})
         p["count"] += 1
         p["amount"] += float(r["Totalamt"] or 0)

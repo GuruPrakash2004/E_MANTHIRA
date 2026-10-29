@@ -71,8 +71,8 @@ def set_active_financial_year(body: SetActiveRequest, user: CurrentUser = Depend
 def remove_financial_year(from_date: date, user: CurrentUser = Depends(get_current_user)):
     _require_admin(user)
     with with_transaction() as conn:
-        company_service.remove_financial_year(conn, from_date=from_date)
-    return {"message": "Financial year removed"}
+        message = company_service.remove_financial_year(conn, from_date=from_date)
+    return {"message": message}
 
 
 @router.get("/image")

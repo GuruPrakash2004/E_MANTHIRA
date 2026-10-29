@@ -29,4 +29,8 @@ def get_voucher(conn: Connection, kind: str, voucher_id: int) -> dict:
     if hdr is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Voucher not found")
     lines = conn.execute(text(f"SELECT SlNo, AcLedID, DrAmt, CrAmt FROM {dtl_t} WHERE {id_c} = :i ORDER BY SlNo"), {"i": voucher_id}).mappings().all()
-    return {"header": dict(hdr), "lines": [{"ac_led_id": l["AcLedID"], "dr_amt": float(l["DrAmt"] or 0), "cr_amt": float(l["CrAmt"] or 0)} for l in lines]}
+    # Copy From with "DC / CR Reversal" is refused when the journal carries bill references (legacy frmUtlCopyFrom)
+    bill_refs = False
+    if kind == "journals":
+        bill_refs = bool(conn.execute(text("SELECT TOP 1 1 FROM TrnDtlJNRVCHBillDet WHERE JNRVCHID = :i"), {"i": voucher_id}).first())
+    return {"has_bill_refs": bill_refs, "header": dict(hdr), "lines": [{"ac_led_id": l["AcLedID"], "dr_amt": float(l["DrAmt"] or 0), "cr_amt": float(l["CrAmt"] or 0)} for l in lines]}

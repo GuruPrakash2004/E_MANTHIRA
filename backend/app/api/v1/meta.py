@@ -12,6 +12,7 @@ from app.core import cache
 from app.core.db import get_conn, limit_clause, with_transaction
 from app.core.fy import FinancialYear, get_user_fy
 from app.core.security import CurrentUser, get_current_user
+from app.meta import edit_rules
 from app.meta import menu as meta_menu
 from app.meta import lookups as meta_lookups
 from app.meta.numbering import resolve_prefix
@@ -96,6 +97,12 @@ def reload_designer(user: CurrentUser = Depends(get_current_user)):
 def get_prefixes(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     """Available document-number prefixes for a doc — port of UtlDocNoPrefix resolution."""
     return resolve_prefix(conn, doc_id=doc_id, field_values={})
+
+
+@router.get("/docs/{doc_id}/rules")
+def doc_rules_flags(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """The document's UtlTransactions switches (authorisation, freeze, edit-limit days, date lock, copy-from, amendment...)."""
+    return edit_rules.rules(conn, doc_id)
 
 
 @router.get("/docs/{doc_id}/fields")

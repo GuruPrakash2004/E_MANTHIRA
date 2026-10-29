@@ -46,6 +46,9 @@ const PartyOutstandingPage = lazy(() => import('./features/tradeReports/PartyOut
 const AuthoriseDocumentsPage = lazy(() => import('./features/utilities/AuthoriseDocumentsPage'))
 const ShortCloseDocumentsPage = lazy(() => import('./features/utilities/ShortCloseDocumentsPage'))
 const ScreenDocsPage = lazy(() => import('./features/utilities/ScreenDocsPage'))
+const SharedDocumentsPage = lazy(() => import('./features/utilities/SharedDocumentsPage'))
+const ReminderAlertPage = lazy(() => import('./features/utilities/ReminderAlertPage'))
+const LabelPrintingPage = lazy(() => import('./features/utilities/LabelPrintingPage'))
 const NotInWebPage = lazy(() => import('./features/tradeReports/NotInWebPage'))
 
 const ExpenseEntryPage = lazy(() => import('./features/expense/ExpenseEntryPage'))
@@ -95,6 +98,9 @@ export default function App() {
           <Route path="/utilities/authorise" element={<AuthoriseDocumentsPage />} />
           <Route path="/utilities/shortclose" element={<ShortCloseDocumentsPage />} />
           <Route path="/utilities/screen-docs" element={<ScreenDocsPage />} />
+          <Route path="/utilities/shared-docs" element={<SharedDocumentsPage />} />
+          <Route path="/utilities/reminder-alert" element={<ReminderAlertPage />} />
+          <Route path="/utilities/label-printing" element={<LabelPrintingPage />} />
           <Route path="/audit-trail" element={<AuditTrailPage />} />
           <Route path="/audit-log" element={<AuditLogPage />} />
           <Route path="/reports/daily-sales" element={<DailySalesPage />} />

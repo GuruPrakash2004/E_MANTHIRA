@@ -29,6 +29,7 @@ def _f(code: str, caption: str, type_: str = "text", **kw: Any) -> dict:
     return {"code": code, "caption": caption, "type": type_, "required": False, "readonly": False, "width": 0, **kw}
 
 
+ITEM_TYPES = ["Raw Material", "Finished Goods", "Semi Finished Goods", "Sub Assembly", "Customer Part", "Production Consumables", "Others"]
 _ITEM_GROUP = _lookup("MstITEMGROUP", "ITEMGROUPID", "ITEMGROUPNAME")
 _UOM = _lookup("MstUOM", "UOMID", "UOMNAME")
 _SUPP_GROUP = _lookup("MstSUPPGROUP", "SUPPGROUPID", "SUPPGROUPNAME")
@@ -45,10 +46,24 @@ LAYOUTS: dict[int, dict[str, Any]] = {
             _f("ITEMDesc", "Description", "textarea", width=250),
             _f("HSNCode", "HSN Code", width=15),
             _f("ITEMGroupID", "ITEMGroup Mst", "lookup", required=True, lookup=_ITEM_GROUP),
-            _f("ItemType", "Item Type", "list", required=True, distinct=("MstITEM", "ItemType")),
+            # cboType: the form's own seven types (not mandatory); values already saved in the master stay selectable
+            _f("ItemType", "Item Type", "list", distinct=("MstITEM", "ItemType"), fixed=ITEM_TYPES),
             _f("UOMID", "Uom Mst", "lookup", required=True, lookup=_UOM),
             _f("BOMItem", "BOM Item", "flag"),
             _f("NonStkable", "Non Stockable", "flag"),
+            # "Purchase Related" group box: only when UtlMisc.ItemPurRelated = 'Y'
+            _f("MOQ", "MOQ", "numeric", misc_gate="ItemPurRelated"),
+            _f("SPQ", "SPQ", "numeric", misc_gate="ItemPurRelated"),
+            # "Stock Related" group box: only when UtlMisc.ItemStockRelated = 'Y'
+            _f("ReOrderItem", "Re-Order Item", "flag", misc_gate="ItemStockRelated"),
+            _f("ROL", "ROL", "numeric", misc_gate="ItemStockRelated", show_if={"field": "ReOrderItem", "eq": "Y"}),
+            _f("ROQ", "ROQ", "numeric", misc_gate="ItemStockRelated", show_if={"field": "ReOrderItem", "eq": "Y"}),
+            _f("CRITICALLEVEL", "Critical Level", "numeric", misc_gate="ItemStockRelated"),
+            _f("MAXLEVEL", "Max Level", "numeric", misc_gate="ItemStockRelated"),
+            _f("BinNo", "Bin No", width=20, misc_gate="ItemStockRelated"),
+            _f("LotWiseItem", "Lot Wise Item", "flag", misc_gate="ItemStockRelated"),
+            _f("LotType", "Lot Numbering", "list", misc_gate="ItemStockRelated", show_if={"field": "LotWiseItem", "eq": "Y"}, fixed=[{"value": "A", "label": "Auto"}, {"value": "M", "label": "Manual"}]),
+            _f("ShelfLifeItem", "Shelf Life Item", "flag", misc_gate="ItemStockRelated", show_if={"field": "LotWiseItem", "eq": "Y"}),
         ],
         "image": True,
         "copy_from": True,
@@ -111,16 +126,26 @@ def get_layout(conn: Connection, doc_id: int, table: str) -> dict[str, Any]:
     if spec is None:
         return out
     cols = {c.lower() for c in _table_columns(conn, table)}
+    misc_row = None
     for f in spec["fields"]:
         if f["code"].lower() not in cols:
             continue
-        item = {k: v for k, v in f.items() if k not in ("lookup", "distinct")}
+        gate = f.get("misc_gate")
+        if gate:  # a group box the client switched on in UtlMisc (Item: stock related / purchase related)
+            if misc_row is None:
+                misc_row = conn.execute(text("SELECT TOP 1 * FROM UtlMisc")).mappings().first() or {}
+            if str(misc_row.get(gate) or "N").strip().upper() != "Y":
+                continue
+        item = {k: v for k, v in f.items() if k not in ("lookup", "distinct", "misc_gate", "fixed")}
+        if f.get("fixed") and "distinct" not in f:
+            item["options"] = list(f["fixed"])
         if "lookup" in f:
             item["lookup"] = True
         if "distinct" in f:
             tbl, col = f["distinct"]
             rows = conn.execute(text(f"SELECT DISTINCT {col} FROM {tbl} WHERE {col} IS NOT NULL AND {col} <> '' ORDER BY {col}")).all()
-            item["options"] = [r[0] for r in rows]
+            fixed = list(f.get("fixed") or [])
+            item["options"] = fixed + [r[0].strip() for r in rows if r[0].strip() and r[0].strip() not in fixed]
         out["fields"].append(item)
     out["hide_inactive"] = spec.get("hide_inactive", False)
     out["list_subtitle_cols"] = spec.get("list_subtitle_cols", [])
@@ -183,3 +208,36 @@ def lookup_options(conn: Connection, doc_id: int, field_code: str, search: str =
     sql += f" ORDER BY {lk['label']} {limit_clause(200)}"
     rows = conn.execute(text(sql), params).mappings().all()
     return [{"value": r["value"], "label": r["label"], **{c: r[c] for c in lk["extra"]}} for r in rows]
+
+
+def normalise_values(doc_id: int, values: dict) -> dict:
+    """What the legacy form writes when a dependent control is hidden (frmMstItem save): no re-order level without
+    Re-Order Item, no lot type / shelf life without Lot Wise Item. Lot type is stored as one letter (A / M)."""
+    if doc_id != 1114:
+        return values
+    out = dict(values)
+    yes = lambda k: str(out.get(k) or "N").strip().upper() == "Y"  # noqa: E731
+    if "ReOrderItem" in out and not yes("ReOrderItem"):
+        out["ROL"] = 0
+        out["ROQ"] = 0
+    if "LotWiseItem" in out:
+        if yes("LotWiseItem"):
+            lt = str(out.get("LotType") or "").strip()
+            out["LotType"] = lt.upper() if lt.upper() in ("A", "M") else "A"
+        else:
+            out["LotType"] = ""
+            out["ShelfLifeItem"] = "N"
+    return out
+
+
+def check_values(conn: Connection, doc_id: int, values: dict) -> None:
+    """Item Master: the Item Type, when filled, must be one of the form's types or one already saved ("Not a valid ItemType!")."""
+    if doc_id != 1114:
+        return
+    from fastapi import HTTPException, status
+
+    t = str(values.get("ItemType") or "").strip()
+    if not t or t in ITEM_TYPES:
+        return
+    if conn.execute(text("SELECT TOP 1 1 FROM MstITEM WHERE ItemType = :t"), {"t": t}).first() is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Not a valid ItemType!")

@@ -8,26 +8,28 @@ import * as settingsApi from '../../api/endpoints/settings'
 import { useAuth } from '../../hooks/useAuth'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import WelcomeVideoCard from './WelcomeVideoCard'
+import { DeleteLinkageDialog, DocPrefixDialog, FieldCaptionsDialog, FilterSettingsDialog, FormUserwiseDialog, LoginSettingsDialog, MasterSettingsDialog, PostDocListDialog, SearchFieldsDialog, StockSettingsDialog, TransactionSettingsDialog } from './OtherSettingsDialogs'
+
+// Other Settings that open as a dialog right here (same as the legacy ShowDialog); the rest go to their web screen
+const DIALOGS = { 'Field Captions': FieldCaptionsDialog, 'Delete Linkage Updation': DeleteLinkageDialog, 'View Search Display Fields': SearchFieldsDialog, 'Login Settings': LoginSettingsDialog, 'Doc Prefix Settings': DocPrefixDialog, 'Transaction Settings': TransactionSettingsDialog, 'Master Settings': MasterSettingsDialog, 'Filter Settings': FilterSettingsDialog, 'Form Userwise Settings': FormUserwiseDialog, 'Stock Settings': StockSettingsDialog, 'Post Doc List': PostDocListDialog }
 
 // "Other Settings..." of the legacy screen -> the web screen that does the same job (null = not in the web app).
 const OTHER = [
-  ['Grid Colour Settings', null],
   ['SMTP Settings', '/settings/admin-master?tab=email'],
   ['SMS Settings', '/settings/admin-master?tab=email'],
-  ['Post Doc List', null],
-  ['Doc Prefix Settings', null],
-  ['Form Colour Settings', null],
-  ['Form Userwise Settings', null],
-  ['Login Settings', null],
-  ['Field Captions', null],
+  ['Post Doc List', 'dialog'],
+  ['Doc Prefix Settings', 'dialog'],
+  ['Form Userwise Settings', 'dialog'],
+  ['Login Settings', 'dialog'],
+  ['Field Captions', 'dialog'],
   ['Menu Sequence', '/settings/admin-master?tab=menu'],
-  ['Delete Linkage Updation', null],
-  ['Transaction Settings', null],
+  ['Delete Linkage Updation', 'dialog'],
+  ['Transaction Settings', 'dialog'],
   ['Print Settings', '/settings/admin-master?tab=print-settings'],
-  ['View Search Display Fields', null],
-  ['Stock Settings', null],
-  ['Master Settings', null],
-  ['Filter Settings', null],
+  ['View Search Display Fields', 'dialog'],
+  ['Stock Settings', 'dialog'],
+  ['Master Settings', 'dialog'],
+  ['Filter Settings', 'dialog'],
 ]
 
 const gkey = (g) => (g || '').trim().toUpperCase()
@@ -50,6 +52,7 @@ export default function GlobalSettingsTab() {
   const [sel, setSel] = useState(null)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [dialog, setDialog] = useState(null) // name of the Other Setting open as a dialog
 
   const groups = useMemo(() => {
     const m = new Map()
@@ -151,7 +154,7 @@ export default function GlobalSettingsTab() {
           </Menu.Target>
           <Menu.Dropdown mah={360} style={{ overflowY: 'auto' }}>
             {OTHER.filter(([n]) => isAdmin || n !== 'Login Settings').map(([name, to]) => (
-              <Menu.Item key={name} disabled={!to} onClick={() => to && navigate(to)} title={to ? undefined : 'Not available in the web app yet'}>{name}</Menu.Item>
+              <Menu.Item key={name} disabled={!to} onClick={() => (to === 'dialog' ? setDialog(name) : to && navigate(to))} title={to ? undefined : 'Only changes the colours of the Windows application, so there is nothing to set in the web app'}>{name}</Menu.Item>
             ))}
           </Menu.Dropdown>
         </Menu>
@@ -170,6 +173,7 @@ export default function GlobalSettingsTab() {
       {!isAdmin && <Text size="xs" c="dimmed">Only ADMIN can change these settings.</Text>}
 
       {adding && <AddDialog groups={groups.map(([, l]) => l).filter(Boolean)} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); qc.invalidateQueries({ queryKey: ['settings'] }) }} />}
+      {dialog && DIALOGS[dialog] && (() => { const D = DIALOGS[dialog]; return <D onClose={() => setDialog(null)} /> })()}
       <WelcomeVideoCard />
     </Stack>
   )

@@ -46,8 +46,12 @@ class FinancialYear:
 # financial years never overlap, the start year is a safe, stable synthetic
 # id — we never write to this table's RowID or otherwise touch the schema.
 def _to_fy(row) -> FinancialYear:
-    start = row["yrFdate"]
-    return FinancialYear(id=start.year, start_date=start, end_date=row["yrTdate"], is_active=(row["Active"] or "N").upper() == "Y")
+    # SQL Server datetime -> plain dates: every report compares these with date parameters (a datetime raised
+    # "can't compare datetime.datetime to datetime.date" in the stock reports)
+    start, end = row["yrFdate"], row["yrTdate"]
+    start = start.date() if hasattr(start, "date") else start
+    end = end.date() if hasattr(end, "date") else end
+    return FinancialYear(id=start.year, start_date=start, end_date=end, is_active=(row["Active"] or "N").upper() == "Y")
 
 
 def _all_fy_rows(conn: Connection) -> list[dict]:

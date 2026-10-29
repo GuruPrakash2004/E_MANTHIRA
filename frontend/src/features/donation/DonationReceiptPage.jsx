@@ -2,7 +2,7 @@ import { historyParams } from '../../lib/history'
 import { useEffect, useState } from 'react'
 import { Button, Group, NumberInput, Select, Stack, Text, Title } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
-import { Gift } from 'lucide-react'
+import { Copy, Gift } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as donationApi from '../../api/endpoints/donation'
@@ -15,6 +15,8 @@ import usePrefixes from '../../hooks/usePrefixes'
 import { useHotkeys } from 'react-hotkeys-hook'
 import DonorHistoryModal from './DonorHistoryModal'
 import DocNavBar from '../../components/ui/DocNavBar'
+import CopyFromDialog from '../../components/ui/CopyFromDialog'
+import useDocRules from '../../hooks/useDocRules'
 import { useLocation } from 'react-router-dom'
 import useDocFields from '../../hooks/useDocFields'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
@@ -46,6 +48,8 @@ export default function DonationReceiptPage() {
   const [viewId, setViewId] = useState(null)
   const [viewNo, setViewNo] = useState('')
   const [donorLimit, setDonorLimit] = useState('')
+  const [copyOpen, setCopyOpen] = useState(false)
+  const rules = useDocRules(DOC_ID) // UtlTransactions switches: Copy From, document-date lock ...
 
   const { fields } = useDocFields(DOC_ID)
   const { user } = useAuth()
@@ -164,9 +168,19 @@ export default function DonationReceiptPage() {
     setResetKey((k) => k + 1) // re-applies the Designer defaults
     setDocDate(new Date())
   }
-  async function findDonations(q) {
-    const rows = await donationApi.listDonations({ search: q, top: 30, days: 0 })
+  async function findDonations(q, { allFy = true } = {}) {
+    const rows = await donationApi.listDonations({ search: q, top: 30, ...(allFy ? { days: 0 } : {}) })
     return rows.map((r) => ({ id: r.DONRECID, label: r.PrintDONRECNO || r.DONRECNO, sub: `${r.DONOR || ''} ${r.CONTACTNO || ''}`.trim() }))
+  }
+  // Copy From: the chosen saved receipt's details become a new entry (nothing is opened for viewing)
+  async function copyFrom(id) {
+    try {
+      const l = await donationApi.getDonation(id)
+      fillFromDonation(l)
+      notifications.show({ message: `Copied from ${l.PrintDONRECNO || l.DONRECNO}`, color: 'teal' })
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not copy that document', color: 'red' })
+    }
   }
   useHotkeys('f6', (e) => { e.preventDefault(); if (!viewId) loadLastEntry() }, { enableOnFormTags: true }, [viewId])
 
@@ -234,7 +248,7 @@ export default function DonationReceiptPage() {
           {(prefixes || []).filter(Boolean).length > 1 && (
             <Select aria-label="Prefix" w={110} data={prefixes.filter(Boolean)} value={prefix || null} onChange={(v) => setPrefix(v || '')} allowDeselect={false} disabled={Boolean(viewId)} />
           )}
-          <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={Boolean(viewId)} w={150} />
+          <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={Boolean(viewId) || !rules.edit_doc_date} w={150} />
         </Group>
       </Group>
 
@@ -261,6 +275,11 @@ export default function DonationReceiptPage() {
                   <Button variant="light" color="kumkum" onClick={() => setDonorOpen(true)}>
                     Show Donor
                   </Button>
+                  {rules.allow_copy_from && (
+                    <Button variant="light" color="kumkum" leftSection={<Copy size={16} />} onClick={() => setCopyOpen(true)}>
+                      Copy From
+                    </Button>
+                  )}
                 </Group>
               )}
             </SectionCard>
@@ -325,6 +344,7 @@ export default function DonationReceiptPage() {
         }
       />
 
+      <CopyFromDialog opened={copyOpen} onClose={() => setCopyOpen(false)} docName="Donation Reciept Entry" search={findDonations} onLoad={copyFrom} />
       <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} search={findDonations} />
       <DonorHistoryModal opened={donorOpen} onClose={() => setDonorOpen(false)} onPick={applyDonor} initialName={values.DONOR || ''} limit={Number(donorLimit) || 0} />
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Donation Receipt" />

@@ -125,6 +125,7 @@ export default function MasterPage() {
   const [saving, setSaving] = useState(false)
   const [panel, setPanel] = useState(null) // open Supplier sub-screen / Attach Seva dialog
   const [copyOpen, setCopyOpen] = useState(false)
+  const [similar, setSimilar] = useState(null) // { code, caption, rows } shown after the legacy "Similar code already exists" prompt
   const [itemImgVersion, setItemImgVersion] = useState(0)
   const imgInput = useRef(null)
 
@@ -173,6 +174,8 @@ export default function MasterPage() {
   const bodyFields = useMemo(() => (fieldsData?.fields || []).filter((f) => f.FldCode !== meta?.code_col && f.FldCode !== meta?.name_col), [fieldsData, meta])
   // Live values keyed by legacy FldCode, for evaluating conditional hide/mandatory rules exactly like the dynamic
   // transaction-screen engine (useDocFields + docFieldConditions); `extra` is already keyed by FldCode.
+  // a built-in field that depends on another one (Item: ROL / ROQ need Re-Order Item, lot type needs Lot Wise Item)
+  const shownCore = coreFields.filter((f) => !f.show_if || String(extra[f.show_if.field] ?? 'N').toUpperCase() === f.show_if.eq)
   const codeValues = { [meta?.code_col]: form.code, [meta?.name_col]: form.name, ...extra }
   const extraFields = bodyFields.filter((f) => !isFieldHidden(f, codeValues))
 
@@ -211,6 +214,21 @@ export default function MasterPage() {
   }, [selectedId])
 
   const setExtraField = (code, value) => setExtra((e) => ({ ...e, [code]: value }))
+
+  // Legacy txtCode_Validating: leaving the code field, a code that is the same once punctuation and spaces are ignored
+  // gets "Similar <code> already exists. Do you want to view them?" and, on Yes, the list. A warning only.
+  async function checkSimilar(value) {
+    const code = String(value || '').trim()
+    if (!editing || !code || !meta) return
+    try {
+      const r = await mastersApi.similarCodes(docId, code, mode === 'edit' ? selectedId : null)
+      if (!r.rows.length) return
+      const label = layout?.code_caption || `${meta.short_form} Code`
+      if (await confirm({ title: `Similar ${label} already exists`, message: 'Do you want to view them?', confirmLabel: 'View' })) setSimilar({ code, caption: String(r.caption || '').replace(/ Master$/i, ''), rows: r.rows, label })
+    } catch {
+      /* a failed look-up must never stop data entry */
+    }
+  }
 
   function goto(i) {
     if (editing || !rows.length) return
@@ -474,6 +492,7 @@ export default function MasterPage() {
                   readOnly={!editing}
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, code: e.currentTarget.value, name: e.currentTarget.value }))}
+                  onBlur={(e) => checkSimilar(e.currentTarget.value)}
                   maw={520}
                 />
               ) : (
@@ -486,6 +505,7 @@ export default function MasterPage() {
                     readOnly={!editing}
                     value={form.code}
                     onChange={(e) => setForm((f) => ({ ...f, code: e.currentTarget.value }))}
+                    onBlur={(e) => checkSimilar(e.currentTarget.value)}
                     maw={520}
                   />
                   <TextInput
@@ -500,7 +520,7 @@ export default function MasterPage() {
                 </>
               )}
               {/* Built-in fields served by GET /masters/{doc}/layout (Item, Supplier, State City Country ...) */}
-              {coreFields.filter((f) => f.type !== 'flag').map((f) => (
+              {shownCore.filter((f) => f.type !== 'flag').map((f) => (
                 <div key={f.code} style={{ maxWidth: 520 }}>
                   <CoreField
                     docId={docId}
@@ -517,9 +537,9 @@ export default function MasterPage() {
                   />
                 </div>
               ))}
-              {coreFields.some((f) => f.type === 'flag') && (
+              {shownCore.some((f) => f.type === 'flag') && (
                 <Group gap="lg" wrap="wrap">
-                  {coreFields.filter((f) => f.type === 'flag').map((f) => (
+                  {shownCore.filter((f) => f.type === 'flag').map((f) => (
                     <CoreField key={f.code} docId={docId} field={f} value={extra[f.code]} locked={!editing} onChange={(v) => setExtra((e) => ({ ...e, [f.code]: v }))} />
                   ))}
                 </Group>
@@ -733,6 +753,32 @@ export default function MasterPage() {
         </Group>
       </div>
 
+      {similar && (
+        <Modal opened onClose={() => setSimilar(null)} radius="lg" title={<Text fw={700} size="lg" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>Similar {similar.caption}</Text>}>
+          <Stack gap="sm">
+            <Text size="sm">{similar.label} '{similar.code}' is similar to below {similar.caption} :</Text>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>{similar.label}</Table.Th>
+                  <Table.Th>Name</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {similar.rows.map((r) => (
+                  <Table.Tr key={`${r.code}-${r.name}`}>
+                    <Table.Td>{r.code}</Table.Td>
+                    <Table.Td>{r.name}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setSimilar(null)}>Close</Button>
+            </Group>
+          </Stack>
+        </Modal>
+      )}
       {selectedRow && panel === 'attach-seva' && <AttachSevaModal opened onClose={() => setPanel(null)} docId={panelDocId} sannidhiId={selectedId} sannidhiName={selectedRow[meta.name_col]} />}
       {selectedRow && hasParty && (
         <>

@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ActionIcon, Badge, Button, Divider, Group, Modal, NumberInput, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
-import { Receipt, Trash2 } from 'lucide-react'
+import { FileDown, Receipt, Trash2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { formatINR } from '../../utils/format'
+import { downloadXls } from '../../utils/xls'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as hallApi from '../../api/endpoints/hall'
@@ -23,6 +25,7 @@ const RECEIPT_TYPES = ['ADV', 'Partial', 'Final']
  */
 export default function HallPaymentPanel({ hbId, onClose }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const confirm = useConfirm()
   const [amount, setAmount] = useState(0)
   const [mode, setMode] = useState('Cash')
@@ -37,6 +40,14 @@ export default function HallPaymentPanel({ hbId, onClose }) {
     queryFn: () => hallApi.getBooking(hbId),
     enabled: Boolean(hbId),
   })
+
+  // legacy Generate Voucher takes the income ledger and the cash / bank account from the booking itself
+  useEffect(() => {
+    if (!booking) return
+    if (!ledgerId && Number(booking.LEDGER) > 0) setLedgerId(String(booking.LEDGER))
+    if (!cashBankLedgerId && Number(booking.LEDID) > 0) setCashBankLedgerId(String(booking.LEDID))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booking])
 
   const balance = Number(booking?.BALAMT) || 0
   const isFinalAmount = Math.abs(Number(amount) - balance) < 0.005
@@ -65,6 +76,22 @@ export default function HallPaymentPanel({ hbId, onClose }) {
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not delete the receipt', color: 'red' })
     }
+  }
+
+  // legacy vsfRec double-click: open the receipt as a Receipt Voucher
+  function openReceipt(r) {
+    onClose()
+    navigate(`/vouchers/receipt?open=${r.RCPTVCHID}`)
+  }
+  function exportReceipts() {
+    downloadXls(`receipts-${booking?.PrintHBNO || hbId}`, booking?.receipts || [], [
+      { label: 'Receipt No', value: (r) => r.PrintRCPTVCHNO },
+      { label: 'Date', value: (r) => (r.RCPTVCHDate ? dayjs(r.RCPTVCHDate).format('DD-MMM-YYYY') : '') },
+      { label: 'Type', value: (r) => r.RCPTTYPE },
+      { label: 'Amount', value: (r) => Number(r.TOTDR || 0) },
+      { label: 'Voucher type', value: (r) => r.VCHTYP },
+      { label: 'Narration', value: (r) => r.NARR },
+    ])
   }
 
   async function onSubmit() {
@@ -177,7 +204,7 @@ export default function HallPaymentPanel({ hbId, onClose }) {
                   </Table.Tr>
                 )}
                 {(booking.receipts || []).map((r) => (
-                  <Table.Tr key={r.RCPTVCHID} style={{ opacity: r.Cancelled === 'Y' ? 0.5 : 1 }}>
+                  <Table.Tr key={r.RCPTVCHID} style={{ opacity: r.Cancelled === 'Y' ? 0.5 : 1, cursor: 'pointer' }} title="Double-click to open this receipt" onDoubleClick={() => openReceipt(r)}>
                     <Table.Td>{r.PrintRCPTVCHNO}</Table.Td>
                     <Table.Td className="vt-num">{r.RCPTVCHDate ? dayjs(r.RCPTVCHDate).format('DD-MMM-YYYY') : ''}</Table.Td>
                     <Table.Td>
@@ -191,7 +218,7 @@ export default function HallPaymentPanel({ hbId, onClose }) {
                     <Table.Td>{r.VCHTYP}</Table.Td>
                     <Table.Td>{r.NARR}</Table.Td>
                     <Table.Td>
-                      <ActionIcon variant="subtle" color="red" size={32} aria-label={`Delete receipt ${r.PrintRCPTVCHNO}`} onClick={() => onDeleteReceipt(r)}>
+                      <ActionIcon variant="subtle" color="red" size={32} aria-label={`Delete receipt ${r.PrintRCPTVCHNO}`} onClick={(e) => { e.stopPropagation(); onDeleteReceipt(r) }} onDoubleClick={(e) => e.stopPropagation()}>
                         <Trash2 size={16} />
                       </ActionIcon>
                     </Table.Td>
@@ -200,6 +227,11 @@ export default function HallPaymentPanel({ hbId, onClose }) {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+          <Group justify="flex-end">
+            <Button size="xs" variant="default" leftSection={<FileDown size={14} />} disabled={(booking.receipts || []).length === 0} onClick={exportReceipts}>
+              Export to Excel
+            </Button>
+          </Group>
 
           {balance > 0 && (
             <>

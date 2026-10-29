@@ -25,6 +25,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { lazy } from 'react'
 const WelcomeSplash = lazy(() => import('./WelcomeSplash'))
 
+// Utilities entries that only repeat screens the Administration section already has
+const ADMIN_DUPLICATES = new Set(['Security', 'Global Settings...', 'Database Connectivity', 'Bulk Master Update'])
+
 // Transparent cutouts of the official logo (logo/primary-logo@2x.png), made with Pillow:
 // lockup-horizontal (header), lockup-transparent (vertical), lockup-light (vertical, for dark
 // panels), mark (badge only), plus public/favicon.png.
@@ -86,14 +89,14 @@ const CAPTION_ROUTE = {
   'Daily Sales Report': '/reports/daily-sales',
   'Product Sales Summary Report': '/reports/product-sales',
   'Profit Margin': '/not-in-web?c=Profit%20Margin',
-  'Label Printing': '/not-in-web?c=Label%20Printing',
+  'Label Printing': '/utilities/label-printing',
   'Authorise Documents': '/utilities/authorise',
   'ShortClosedFields': '/not-in-web?c=ShortClosedFields',
   'ShortClose Documents': '/utilities/shortclose',
   'Screen Docs': '/utilities/screen-docs',
   'Post Doc Entry': '/not-in-web?c=Post%20Doc%20Entry',
-  'Shared Documents': '/not-in-web?c=Shared%20Documents',
-  'Reminder Alert': '/not-in-web?c=Reminder%20Alert',
+  'Shared Documents': '/utilities/shared-docs',
+  'Reminder Alert': '/utilities/reminder-alert',
   'Barcode Layout Format': '/not-in-web?c=Barcode%20Layout%20Format',
   'Barcode Ammendment': '/not-in-web?c=Barcode%20Ammendment',
   'Voice Command Alternatives': '/not-in-web?c=Voice%20Command%20Alternatives',
@@ -249,11 +252,11 @@ export default function AppShellLayout() {
     if (!medium) setOverlay(false)
   }, [medium])
 
+  // A query (not a one-off fetch) so "Refresh from Doc Designer" re-reads the menu too
+  const { data: menuRows } = useQuery({ queryKey: ['menu'], queryFn: getMenu, staleTime: 5 * 60_000 })
   useEffect(() => {
-    getMenu()
-      .then(setMenu)
-      .catch(() => setMenu([]))
-  }, [])
+    setMenu((menuRows || []).filter((m) => !ADMIN_DUPLICATES.has(m.caption)))
+  }, [menuRows])
 
   // "/" jumps to the header search, unless the user is actually typing somewhere (a real
   // input/textarea/contenteditable): never hijacks normal form entry.

@@ -26,6 +26,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.core.db import limit_clause
+from app.meta import edit_rules
 from app.print import voucher_print
 from app.print.rpt_registry import find_rpt, normalize_rpt_name
 
@@ -118,6 +119,7 @@ def build_job(
         if not doc_no:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Give the record id or the document number")
         doc_id_value = resolve_doc_id_value(conn, doc_id, doc_no)
+    edit_rules.assert_printable(conn, doc_id, int(doc_id_value))
 
     # Vouchers print from the FmtVchDtl scratch tables, refilled first exactly like the desktop (see voucher_print.py).
     voucher = None

@@ -20,8 +20,9 @@ from sqlalchemy.engine import Connection
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, update_row
+from app.meta import edit_rules
 from app.meta.numbering import next_doc_no
-from app.services import ledger, voucher_fields
+from app.services import ledger, voucher_fields, voucher_rules
 from app.utils.amount_in_words import amount_in_words
 
 DOC_ID = 1254
@@ -60,7 +61,10 @@ def validate(data: JournalVoucherInput, fy: FinancialYear) -> None:
 
 
 def create(conn: Connection, *, data: JournalVoucherInput, fy: FinancialYear, user_code: str) -> dict:
+    if not edit_rules.doc_date_editable(conn, DOC_ID):
+        data.voucher_date = date.today()  # AllowEditDocDate = 'N': the legacy form locks the date to the system date
     validate(data, fy)
+    voucher_rules.check_heads(conn, data.lines)
     header, values = voucher_fields.header_columns(conn, DOC_ID, TABLE, data.fields)
     narration = str(values.get("NARR") or "")
 
@@ -86,7 +90,7 @@ def create(conn: Connection, *, data: JournalVoucherInput, fy: FinancialYear, us
             "JNRVCHDate": data.voucher_date,
             "AddedBy": user_code,
             "AddedOn": datetime.now(),
-            "Authorised": "Y",
+            "Authorised": edit_rules.authorised_on_save(conn, DOC_ID),
             "Cancelled": "N",
             "AMTINWORDS": amount_in_words(total_dr, "Rupees", "Paise"),
             "TOTDR": total_dr,
@@ -156,10 +160,55 @@ def cancel(conn: Connection, *, jnrvch_id: int, reason: str, user_code: str) -> 
 
 
 def delete(conn: Connection, *, jnrvch_id: int, user_code: str) -> None:
-    row = conn.execute(text("SELECT JNRVCHNO FROM TrnHdrJNRVCH WHERE JNRVCHID = :id"), {"id": jnrvch_id}).mappings().first()
+    row = conn.execute(text("SELECT JNRVCHNO, JNRVCHDate, Cancelled, Authorised FROM TrnHdrJNRVCH WHERE JNRVCHID = :id"), {"id": jnrvch_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Journal Voucher not found")
+    if (row["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Deletion not possible!")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=row["JNRVCHDate"], authorised=row["Authorised"])
     ledger.delete_posting(conn, doc_type="JNRVCH", trn_no=row["JNRVCHNO"], trn_id=jnrvch_id)
     conn.execute(text("DELETE FROM TrnDtlJNRVCH WHERE JNRVCHID = :id"), {"id": jnrvch_id})
     conn.execute(text("DELETE FROM TrnHdrJNRVCH WHERE JNRVCHID = :id"), {"id": jnrvch_id})
     audit.record(conn, entity="Journal Voucher", entity_id=jnrvch_id, action="D", user_code=user_code)
+
+
+def update(conn: Connection, *, jnrvch_id: int, data: JournalVoucherInput, fy: FinancialYear, user_code: str) -> dict:
+    """Edit a saved journal voucher (legacy Mode "M"): number / prefix / added-by stay; header, lines and ledger posting are rewritten."""
+    old = conn.execute(text("SELECT JNRVCHNO, JNRVCHDate, Cancelled, Authorised FROM TrnHdrJNRVCH WHERE JNRVCHID = :id"), {"id": jnrvch_id}).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Journal Voucher not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=old["JNRVCHDate"], authorised=old["Authorised"])
+    if not edit_rules.doc_date_editable(conn, DOC_ID):
+        data.voucher_date = old["JNRVCHDate"].date() if isinstance(old["JNRVCHDate"], datetime) else old["JNRVCHDate"]  # date stays as saved
+    validate(data, fy)
+    voucher_rules.check_heads(conn, data.lines)
+    header, values = voucher_fields.header_columns(conn, DOC_ID, TABLE, data.fields)
+    narration = str(values.get("NARR") or "")
+    total_dr = round(sum(l.dr_amt for l in data.lines), 2)
+    total_cr = round(sum(l.cr_amt for l in data.lines), 2)
+
+    cols = {
+        "JNRVCHDate": data.voucher_date, "AMTINWORDS": amount_in_words(total_dr, "Rupees", "Paise"), "TOTDR": total_dr, "TOTCR": total_cr,
+        "ChangedBy": user_code, "ChangedOn": datetime.now(), **header,
+    }
+    if edit_rules.auth_required(conn, DOC_ID):
+        cols["Authorised"] = "N"  # an edited document goes back for authorisation (legacy: Authorised = 'N' on edit)
+    update_row(conn, TABLE, "JNRVCHID", jnrvch_id, cols)
+
+    ledger.delete_posting(conn, doc_type="JNRVCH", trn_no=old["JNRVCHNO"], trn_id=jnrvch_id)
+    conn.execute(text("DELETE FROM TrnDtlJNRVCH WHERE JNRVCHID = :id"), {"id": jnrvch_id})
+    for i, line in enumerate(data.lines, start=1):
+        insert_row(
+            conn,
+            "TrnDtlJNRVCH",
+            {"JNRVCHID": jnrvch_id, "SlNo": i, "AcLedID": line.ac_led_id, "JNRVCHAmt": line.dr_amt or line.cr_amt, "CrAmt": line.cr_amt, "DrAmt": line.dr_amt,
+             "AmtType": "DR" if line.dr_amt else "CR", "AgRefAmt": 0, "NewRefAmt": 0},
+        )
+    ledger.post(
+        conn, doc_type="JNRVCH", trn_id=jnrvch_id, trn_no=old["JNRVCHNO"], trn_date=data.voucher_date, due_date=data.voucher_date, narration=narration,
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+    )
+    audit.record(conn, entity="Journal Voucher", entity_id=jnrvch_id, action="E", user_code=user_code, details=old["JNRVCHNO"])
+    return {"jnrvch_id": jnrvch_id, "jnrvch_no": old["JNRVCHNO"], "amount": total_dr}

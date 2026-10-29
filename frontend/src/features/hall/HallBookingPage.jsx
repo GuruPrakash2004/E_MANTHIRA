@@ -1,9 +1,9 @@
 import { historyParams } from '../../lib/history'
 import { useState } from 'react'
-import { Button, Group, Menu, Stack, Text, Title } from '@mantine/core'
+import { Badge, Button, Group, Menu, Stack, Text, Title } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
 import { notifications } from '@mantine/notifications'
-import { Building, ChevronDown } from 'lucide-react'
+import { Building, ChevronDown, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as hallApi from '../../api/endpoints/hall'
 import useDirectPrint from '../../hooks/useDirectPrint'
@@ -12,14 +12,26 @@ import { handleAfterSave } from '../../lib/printing'
 import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import useDocFields from '../../hooks/useDocFields'
 import HallPaymentPanel from './HallPaymentPanel'
+import HallCalendarBox from './HallCalendarBox'
 import DocNavBar from '../../components/ui/DocNavBar'
 import { useNavigate } from 'react-router-dom'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
+import useDocRules from '../../hooks/useDocRules'
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
 import { formatINR, isoDate } from '../../utils/format'
 
 const DOC_ID = 1281
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
+const SIDE_OPEN_KEY = 'vt-hall-side-open' // per-browser: whether the Recent bookings list is shown under the summary
+
+function readSideOpen() {
+  try {
+    return localStorage.getItem(SIDE_OPEN_KEY) !== '0'
+  } catch {
+    return true // storage blocked: show it
+  }
+}
 // Calculated by the server (or owned by the payment flow), so not drawn as inputs.
 const COMPUTED_CODES = [
   'TOTAMT', 'CGSTAMT', 'SGSTAMT', 'TOTGSTAMT', 'AMTAFTTAX', 'NETPAY', 'BALAMT', 'NOD',
@@ -45,7 +57,23 @@ export default function HallBookingPage() {
   const [paymentFor, setPaymentFor] = useState(null)
   const [viewId, setViewId] = useState(null)
   const [viewNo, setViewNo] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [stamp, setStamp] = useState(null) // legacy CANCELLED / AUTHORISED label of the booking being viewed
+  const rules = useDocRules(DOC_ID) // UtlTransactions switches: authorisation, document-date lock ...
+  const confirm = useConfirm()
   const navigate = useNavigate()
+  const readOnly = Boolean(viewId) && !editing
+  const [sideOpen, setSideOpen] = useState(readSideOpen)
+  function toggleSide() {
+    setSideOpen((o) => {
+      try {
+        localStorage.setItem(SIDE_OPEN_KEY, o ? '0' : '1')
+      } catch {
+        /* storage blocked: the choice just is not remembered */
+      }
+      return !o
+    })
+  }
   const { data: hbOptions = [] } = useQuery({ queryKey: ['hall-booking-options'], queryFn: hallApi.bookingOptions, staleTime: 5 * 60_000 })
 
   const { fields, isLoading: fieldsLoading } = useDocFields(DOC_ID)
@@ -80,6 +108,16 @@ export default function HallBookingPage() {
           .filter(([k, v]) => v !== '' && v !== null && v !== undefined && !COMPUTED_CODES.includes(k))
           .map(([k, v]) => [k, dateCodes.has(k) ? isoDate(v) : v])
       )
+      if (editing && viewId) {
+        await hallApi.updateBooking(viewId, { fields: fieldsPayload, doc_date: isoDate(docDate) })
+        notifications.show({ message: 'Updated successfully!', color: 'teal' })
+        setAttempted(false)
+        queryClient.invalidateQueries({ queryKey: ['hall-bookings'] })
+        refetch()
+        await viewRecord(viewId)
+        setEditing(false)
+        return
+      }
       const result = await hallApi.createBooking({ fields: fieldsPayload, doc_date: isoDate(docDate) })
       setLastSaved(result)
       // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
@@ -113,14 +151,53 @@ export default function HallBookingPage() {
       }
       setValues(next)
       if (b.HBDate) setDocDate(new Date(b.HBDate))
+      const yes = (v) => String(v || 'N').trim().toUpperCase() === 'Y'
+      setStamp(yes(b.Cancelled) ? { text: 'CANCELLED', color: 'red' } : rules.auth_req ? (yes(b.Authorised) ? { text: 'AUTHORISED', color: 'green' } : { text: 'NOT AUTHORISED', color: 'orange' }) : null)
       setViewId(id)
       setViewNo(b.PrintHBNO || b.HBNO)
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not open that record', color: 'red' })
     }
   }
+  // Edit / Cancel / Delete (legacy toolbar). The server applies the legacy rules and says why when it refuses.
+  async function startEdit() {
+    await viewRecord(viewId) // show what is saved right now, not what was loaded a while ago
+    setEditing(true)
+  }
+  async function cancelEdit() {
+    await viewRecord(viewId)
+    setEditing(false)
+  }
+  async function cancelDocument() {
+    if (stamp?.text === 'CANCELLED') return notifications.show({ message: 'Document Is already cancelled', color: 'red' })
+    if (!(await confirm({ title: 'Cancel this document?', message: `Booking ${viewNo} will be cancelled and its receipts voided.`, confirmLabel: 'Cancel document' }))) return
+    try {
+      const r = await hallApi.cancelBooking(viewId, 'Cancelled')
+      notifications.show({ message: r.message, color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: ['hall-bookings'] })
+      refetch()
+      await viewRecord(viewId)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not cancel the booking', color: 'red' })
+    }
+  }
+  async function deleteDocument() {
+    if (!(await confirm({ title: 'Delete this document?', message: `Booking ${viewNo} will be deleted.`, confirmLabel: 'Delete' }))) return
+    try {
+      const r = await hallApi.deleteBooking(viewId)
+      notifications.show({ message: r.message, color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: ['hall-bookings'] })
+      refetch()
+      startNew()
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not delete the booking', color: 'red' })
+    }
+  }
+
   function startNew() {
     setViewId(null)
+    setEditing(false)
+    setStamp(null)
     setViewNo('')
     setValues({})
     setAttempted(false)
@@ -139,19 +216,34 @@ export default function HallBookingPage() {
     onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
   })
 
+  // The Options button of the open booking (legacy svtBtnCtrl): Receipt Info and Donation for <prefix>, from the same list as the Recent bookings menu
+  const navOptions = hbOptions.map((o) => ({
+    name: o.name,
+    label: o.label,
+    onClick: (id) => {
+      if (o.kind === 'receipt-info') return setPaymentFor(id)
+      navigate('/donations', {
+        state: { prefill: { prefix: o.prefix, hb_id: id, donor: values.CONPRS || '', contact_no: values.CONTACTNO || '', address: values.ADDRESS || '', pan_no: values.PAN || '', reference_no: o.prefix === 'SLV' ? '' : values.REFNO || '' } },
+      })
+    },
+  }))
+
   return (
     <Stack gap="lg" className="vt-rise">
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <Group gap="sm" wrap="nowrap">
           <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 40, width: 40 }} />
           <div>
-            <Title order={2}>Hall Booking</Title>
+            <Group gap="sm" align="center">
+              <Title order={2}>Hall Booking</Title>
+              {viewId && stamp && <Badge color={stamp.color} variant="light" size="lg">{stamp.text}</Badge>}
+            </Group>
             <Text size="sm" c="dimmed">
               Book the community hall and record advance and final payments
             </Text>
           </div>
         </Group>
-        <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={Boolean(viewId)} w={150} />
+        <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={readOnly || !rules.edit_doc_date} w={150} />
       </Group>
 
       <EntryLayout
@@ -175,7 +267,7 @@ export default function HallBookingPage() {
                   resetKey={resetKey}
                   errors={attempted ? errors : {}}
                   skip={COMPUTED_CODES}
-                  readOnly={Boolean(viewId)}
+                  readOnly={readOnly}
                 />
               </SectionCard>
             )}
@@ -183,7 +275,9 @@ export default function HallBookingPage() {
         }
         side={
           <>
+            <HallCalendarBox />
             <SummaryCard
+              compact
               rows={[
                 { label: caption('AMOUNT', 'Hall charges'), value: formatINR(gross) },
                 ...(has('CGSTPER') ? [{ label: `${caption('CGSTPER', 'CGST')} ${Number(values.CGSTPER) || 0}%`, value: formatINR(cgst) }] : []),
@@ -195,7 +289,7 @@ export default function HallBookingPage() {
               words={net}
               warning={firstError || null}
               saving={saving}
-              saveDisabled={Boolean(viewId)}
+              saveDisabled={readOnly}
               onSave={() => onSave('save')}
               onSavePrint={() => onSave('print')}
             />
@@ -206,6 +300,18 @@ export default function HallBookingPage() {
                 onPrint={() => setPrintFor(lastSaved.hb_id)}
               />
             )}
+            <Button
+              variant="subtle"
+              color="kumkum"
+              size="compact-sm"
+              onClick={toggleSide}
+              aria-expanded={sideOpen}
+              leftSection={sideOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+              style={{ alignSelf: 'flex-end' }}
+            >
+              {sideOpen ? 'Hide recent bookings' : 'Show recent bookings'}
+            </Button>
+            {sideOpen && (
             <RecentCard
               title="Recent bookings"
               icon={Building}
@@ -246,11 +352,12 @@ export default function HallBookingPage() {
                 ),
               })}
             />
+            )}
           </>
         }
       />
 
-      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} search={findBookings} />
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('save')} saving={saving} editing={editing} onCancelDoc={cancelDocument} onDelete={deleteDocument} search={findBookings} extraOptions={navOptions} />
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Hall Booking Receipt" />
       <HallPaymentPanel hbId={paymentFor} onClose={() => setPaymentFor(null)} />
     </Stack>

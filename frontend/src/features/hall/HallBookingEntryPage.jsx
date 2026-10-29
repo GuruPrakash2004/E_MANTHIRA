@@ -1,7 +1,8 @@
 import { historyParams } from '../../lib/history'
 import { useEffect, useState } from 'react'
-import { Group, Stack, Text, Title } from '@mantine/core'
-import { CalendarRange } from 'lucide-react'
+import { Button, Group, Stack, Text, Title } from '@mantine/core'
+import { CalendarRange, Copy } from 'lucide-react'
+import { useHotkeys } from 'react-hotkeys-hook'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as hbeApi from '../../api/endpoints/hallBookingEntry'
@@ -9,6 +10,9 @@ import useDocFields from '../../hooks/useDocFields'
 import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import DocDetailGrid, { blankLine, detailErrors } from '../../components/DocDetailGrid'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
+import useDocRules from '../../hooks/useDocRules'
+import CopyFromDialog from '../../components/ui/CopyFromDialog'
+import DocXlMenu from '../../components/ui/DocXlMenu'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
 import { formatINR, isoDate } from '../../utils/format'
 import { useAuth } from '../../hooks/useAuth'
@@ -32,6 +36,8 @@ export default function HallBookingEntryPage() {
   const [attempted, setAttempted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
+  const [copyOpen, setCopyOpen] = useState(false)
+  const rules = useDocRules(DOC_ID) // UtlTransactions switches (Copy From ...)
 
   const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['hbe', 'recent'], queryFn: () => hbeApi.listHbe(historyParams()) })
   const { fields } = useDocFields(DOC_ID)
@@ -87,6 +93,33 @@ export default function HallBookingEntryPage() {
     }
   }
 
+  // Copy From (legacy frmUtlCopyFrom): a saved entry's fields and lines become a new entry
+  async function findEntries(q, { allFy = true } = {}) {
+    const rows = await hbeApi.listHbe({ search: q, top: 30, ...(allFy ? { days: 0 } : {}) })
+    return rows.map((r) => ({ id: r.HBEID, label: r.PrintHBENO || r.HBENO, sub: `${r.NMEOFFUNC || ''} ${r.CONPRS || ''} ${formatINR(r.NETPAY)}`.trim() }))
+  }
+  async function copyFrom(id) {
+    try {
+      const r = await hbeApi.getHbe(id)
+      const next = {}
+      for (const f of fields) {
+        if (f.FldSection === 'Detail') continue
+        const v = r.header[f.FldCode]
+        if (v === null || v === undefined) next[f.FldCode] = ''
+        else if (f.FldDataType === 'Date') next[f.FldCode] = new Date(v)
+        else if (f.FldBlnComboData === 'Y') next[f.FldCode] = Number(v) || ''
+        else next[f.FldCode] = String(v).trim()
+      }
+      setValues(next)
+      const detail = fields.filter((f) => f.FldSection === 'Detail')
+      setLines((r.lines || []).map((l) => Object.fromEntries(detail.map((f) => [f.FldCode, l[f.FldCode] ?? '']))))
+      notifications.show({ message: `Copied from ${r.header.PrintHBENO || r.header.HBENO}`, color: 'teal' })
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not copy that entry', color: 'red' })
+    }
+  }
+  useHotkeys('ctrl+alt+f', (e) => { e.preventDefault(); if (rules.allow_copy_from) setCopyOpen(true) }, { enableOnFormTags: true }, [rules.allow_copy_from])
+
   useDocShortcuts({ onSave })
 
   const common = { docId: DOC_ID, values, setValue, setValues, resetKey, errors: attempted ? headErrors : {}, computed }
@@ -103,7 +136,14 @@ export default function HallBookingEntryPage() {
             </Text>
           </div>
         </Group>
+        {rules.allow_copy_from && (
+          <Button variant="light" color="kumkum" leftSection={<Copy size={16} />} onClick={() => setCopyOpen(true)}>
+            Copy From
+          </Button>
+        )}
       </Group>
+
+      <CopyFromDialog opened={copyOpen} onClose={() => setCopyOpen(false)} docName="Hall Booking Entry" search={findEntries} onLoad={copyFrom} />
 
       <EntryLayout
         main={
@@ -112,7 +152,11 @@ export default function HallBookingEntryPage() {
               <DocFieldsForm {...common} section="Header" />
             </SectionCard>
 
-            <SectionCard title={caption('NAMEOFHALL', 'Halls and items')} hint="One line per hall or item; the line amounts make up the total.">
+            <SectionCard
+              title={caption('NAMEOFHALL', 'Halls and items')}
+              hint="One line per hall or item; the line amounts make up the total."
+              action={rules.allow_imp_exp && <DocXlMenu docId={DOC_ID} name="Hall Booking Entry" rows={lines} setRows={setLines} />}
+            >
               <DocDetailGrid docId={DOC_ID} rows={lines} setRows={setLines} values={values} errors={attempted ? lineErrors : {}} />
             </SectionCard>
 

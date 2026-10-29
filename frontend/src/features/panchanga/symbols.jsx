@@ -111,7 +111,7 @@ function Kalasha({ size }) {
 
 const RULES = [
   { key: 'newmoon', label: 'New moon', test: /amavasya|amavasye|amavase|amavas|new moon/i, Icon: NewMoon },
-  { key: 'fullmoon', label: 'Full moon', test: /poornima|purnima|pournami|pournima|hunnime|full moon/i, Icon: FullMoon },
+  { key: 'fullmoon', label: 'Full moon', test: /poornima|poornami|purnima|pournami|pournima|hunnime|full moon/i, Icon: FullMoon },
   { key: 'ekadashi', label: 'Ekadashi', test: /ekadashi|ekadasi|ekadashi/i, Icon: Lotus },
   { key: 'ratha', label: 'Rathothsava / festival procession', test: /ratha|rathothsava|rathotsava|rathotsav|rath\b|jatra|brahmotsava|brahmothsava|utsava|uthsava|teppotsava|teppothsava/i, Icon: Chakra },
   { key: 'deepa', label: 'Aradhane / lamp festival', test: /aradhana|aradhane|vardhanti|punya|deepavali|diwali|deepotsava|dipotsava|karthika|kartika|deepam/i, Icon: Diya },

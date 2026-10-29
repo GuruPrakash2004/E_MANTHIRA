@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ActionIcon, Badge, Button, Group, Modal, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core'
-import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Pencil, Plus, Save, Search } from 'lucide-react'
+import { Ban, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useQuery } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
@@ -18,7 +18,7 @@ import DocOptionsMenu from './DocOptionsMenu'
  *   onNew()    - go back to a blank entry
  *   search     - async (text) => [{ id, label, sub }] used by Find
  */
-export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, onEdit, onCancelEdit, onSave, saving = false, editing = false, showNew = true, search, prefix = '' }) {
+export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, onEdit, onCancelEdit, onSave, saving = false, editing = false, showNew = true, search, prefix = '', extraOptions = [], onCancelDoc, onDelete }) {
   const [findOpen, setFindOpen] = useState(false)
   const [q, setQ] = useState('')
 
@@ -72,7 +72,16 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
                 Edit
               </Button>
             )}
-            <DocOptionsMenu docId={docId} recordId={currentId} />
+            {currentId && !editing && onCancelDoc && (
+              <Button variant="light" color="orange" leftSection={<Ban size={16} />} onClick={onCancelDoc}>
+                Cancel
+              </Button>
+            )}
+            {currentId && !editing && onDelete && (
+              <Button variant="light" color="red" leftSection={<Trash2 size={16} />} onClick={onDelete}>
+                Delete
+              </Button>
+            )}
             {currentId ? (
               <Badge size="lg" variant="light" color="gray" tt="none">
                 {editing ? 'Editing' : 'View'}: {viewLabel || currentId}
@@ -84,6 +93,7 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
             )}
           </Group>
           <Group gap={6} wrap="nowrap">
+            <DocOptionsMenu docId={docId} recordId={currentId} extra={extraOptions} />
             {btn('First record (Ctrl+Shift+F)', <ChevronFirst size={18} />, () => go('first'))}
             {btn('Previous record (Shift+Left)', <ChevronLeft size={18} />, () => go('prev'))}
             {btn('Find (Ctrl+Shift+S)', <Search size={17} />, () => setFindOpen(true))}

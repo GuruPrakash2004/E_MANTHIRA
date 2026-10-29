@@ -38,7 +38,7 @@ def _render_fitted(job: rpt_print.PrintJob) -> tuple[bytes, page_fit.Page]:
     t0 = time.perf_counter()
     r = rpt_bridge.render(job)
     t1 = time.perf_counter()
-    fitted = page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt)
+    fitted = page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt, widened_right_pt=r.widened_right_pt)
     print(f"[print] timing: bridge render {t1 - t0:.2f}s, page fit {time.perf_counter() - t1:.2f}s ({job.rpt_file})", flush=True)
     return fitted
 

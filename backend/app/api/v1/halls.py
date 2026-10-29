@@ -12,7 +12,7 @@ from sqlalchemy.engine import Connection
 from app.core.db import get_conn, with_transaction
 from app.core.fy import FinancialYear, get_user_fy, get_history_fy
 from app.core.security import CurrentUser, get_current_user, require_right
-from app.meta.menu import RIGHT_ADD, RIGHT_EDIT, RIGHT_VIEW
+from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
 from app.services import hall as hall_service
 
 router = APIRouter(prefix="/halls", tags=["halls"])
@@ -84,6 +84,20 @@ def create_booking(body: HallBookingCreateRequest, fy: FinancialYear = Depends(g
     data = hall_service.HallBookingInput(fields=body.fields, doc_date=body.doc_date)
     with with_transaction() as conn:
         return hall_service.create(conn, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.put("/bookings/{hb_id}")
+def update_booking(hb_id: int, body: HallBookingCreateRequest, fy: FinancialYear = Depends(get_user_fy), user: CurrentUser = Depends(require_right(hall_service.DOC_ID, RIGHT_EDIT))):
+    data = hall_service.HallBookingInput(fields=body.fields, doc_date=body.doc_date)
+    with with_transaction() as conn:
+        return hall_service.update(conn, hb_id=hb_id, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.delete("/bookings/{hb_id}")
+def delete_booking(hb_id: int, user: CurrentUser = Depends(require_right(hall_service.DOC_ID, RIGHT_DELETE))):
+    with with_transaction() as conn:
+        hall_service.delete(conn, hb_id=hb_id, user_code=user.user_code)
+    return {"message": "Deleted Hall Booking Successfully!"}
 
 
 @router.post("/bookings/{hb_id}/payments", status_code=201)
