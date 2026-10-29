@@ -28,6 +28,8 @@ EXPECTED_PUBLIC = {
     ("GET", "/print/agent"),
     ("GET", "/welcome/video"),
     ("GET", "/health"),
+    # the built web app (frontend/dist) is served by the backend itself: static files + the SPA fallback, present only once the frontend is built
+    ("GET", "/{path:path}"),
 }
 
 PATH_VALUES = {
