@@ -74,7 +74,6 @@ const CAPTION_ROUTE = {
   'Audit Trail': '/audit-trail',
   // Already-built screens whose exact MstMenu caption was never added here —
   // confirmed against the live DB (MenuItemID 1, 809, 1287, 1728, 1405).
-  'Display in Browser': '/display',
   'Import from Excel': '/settings/import-excel',
   'Global Settings...': '/settings/admin-master?tab=global-settings',
   'Security': '/settings/admin-master?tab=users', // DocID 18 = User Master (legacy FRMUSERRIGHTS)
@@ -128,7 +127,6 @@ const EXTRA_SEARCH_LINKS = [
   { caption: 'Receipt Voucher', to: '/vouchers/receipt', group: 'Vouchers', keywords: 'income receive' },
   { caption: 'Journal Voucher', to: '/vouchers/journal', group: 'Vouchers', keywords: 'adjustment transfer non-cash' },
   { caption: 'Panchanga', to: '/panchanga', group: 'Utilities', keywords: 'calendar tithi festival amavasya ekadashi' },
-  { alias: true, caption: 'Display Board', to: '/display', group: 'Utilities', keywords: 'display in browser screen tv' },
   { caption: 'Reports', to: '/reports', group: 'Reports', keywords: 'report launcher' },
   { alias: true, caption: 'Complete Day Report', to: '/reports', group: 'Reports', keywords: 'daily day collection' },
   { caption: 'Detailed Collection Report', to: '/reports?tab=collection', group: 'Reports', keywords: 'collection' },

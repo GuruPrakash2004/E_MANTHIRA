@@ -53,7 +53,7 @@ DEFAULT_RIGHTS = "000000000000"  # deny-by-default, same fallback as legacy
 
 
 # MstMenu is shared with the legacy EXE, so its rows stay; these captions just never reach the web sidebar.
-WEB_HIDDEN_CAPTIONS = {"DOWNLOAD LATEST EXE"}
+WEB_HIDDEN_CAPTIONS = {"DOWNLOAD LATEST EXE", "DISPLAY IN BROWSER"}
 
 
 def get_menu_tree(conn: Connection) -> list[dict[str, Any]]:
