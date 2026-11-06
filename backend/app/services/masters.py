@@ -57,10 +57,10 @@ def get_meta(conn: Connection, doc_id: int) -> MasterMeta:
         auth_req=(row["AuthReq"] or "N").strip().upper() == "Y",
         caption=row["DocName"] or sf,
         short_form=sf,
-        file_attach_req=(row["FileAttachReq"] or "N").strip().upper() == "Y",
+        file_attach_req=(row.get("FileAttachReq") or "N").strip().upper() == "Y",
         inactive_rmks_col=override.get("inactive_rmks_col", "InActiveRmks"),
-        restrict_code_chars=(row["FldStrSplCharCode"] or "") if (row["FldBlnRestrictSplCharCode"] or "N").strip().upper() == "Y" else None,
-        restrict_name_chars=(row["FldStrSplCharName"] or "") if (row["FldBlnRestrictSplCharName"] or "N").strip().upper() == "Y" else None,
+        restrict_code_chars=(row.get("FldStrSplCharCode") or "") if (row.get("FldBlnRestrictSplCharCode") or "N").strip().upper() == "Y" else None,
+        restrict_name_chars=(row.get("FldStrSplCharName") or "") if (row.get("FldBlnRestrictSplCharName") or "N").strip().upper() == "Y" else None,
     )
 
 
@@ -96,14 +96,14 @@ def remove_spl_characters(value: str, chars: str = "") -> str:
 def list_rows(conn: Connection, meta: MasterMeta, *, search: str = "", top: int = 200, include_inactive: bool = True) -> list[dict]:
     from app.core.db import limit_clause
 
-    sql = f"SELECT * FROM {meta.table} WHERE {meta.id_col} >= 0"
+    sql = f"SELECT * FROM {meta.table} WHERE {meta.id_col} >= 0 AND {meta.code_col} <> '-'"  # legacy listing: `and <CODE> <> '-'`
     params: dict = {}
     if search:
         sql += f" AND ({meta.code_col} LIKE :q OR {meta.name_col} LIKE :q)"
         params["q"] = f"%{search}%"
     if not include_inactive:
         sql += " AND (InActive IS NULL OR InActive <> 'Y')"
-    sql += f" ORDER BY {meta.id_col} {limit_clause(top)}"
+    sql += f" ORDER BY {meta.id_col} DESC {limit_clause(top)}"  # newest first, so the cap keeps the latest records
     rows = conn.execute(text(sql), params).mappings().all()
     return [_alias_rmks(meta, _json_safe(dict(r))) for r in rows]
 

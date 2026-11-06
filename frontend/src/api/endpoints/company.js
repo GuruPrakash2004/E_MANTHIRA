@@ -5,6 +5,7 @@ export const getCompany = () => get('/company')
 export const updateCompany = (values) => put('/company', values)
 export const listFinancialYears = () => get('/company/financial-years')
 export const addFinancialYear = (fromDate, toDate) => post('/company/financial-years', { from_date: fromDate, to_date: toDate })
+export const stockCarryForward = () => post('/company/financial-years/stock-carry-forward')
 export const setActiveFinancialYear = (fromDate) => put('/company/financial-years/active', { from_date: fromDate })
 export const removeFinancialYear = (fromDate) => del(`/company/financial-years/${fromDate}`)
 /** Company picture (MstComp.JpgFile) as a Blob; rejects with 404 when none is stored. */

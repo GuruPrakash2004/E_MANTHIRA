@@ -13,6 +13,18 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
+    # "Ask the Data" (Vanna text-to-SQL). Runs a local Hugging Face model in-process; no hosted LLM.
+    # Retrieval-first (app/services/ask_templates.py) answers with no model. The small model below is only an
+    # OPTIONAL fallback for unmatched questions (~1 GB RAM); off by default so light machines never load it.
+    ask_hf_model: str = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
+    ask_llm_fallback: bool = False
+    # Alertify (the reminder app): its own SQL Server, used only to create alerts. Editable in Temple Settings; these are the fallback.
+    alertify_db_host: str = ""
+    alertify_db_port: int = 1433
+    alertify_db_name: str = ""
+    alertify_db_user: str = ""
+    alertify_db_password: str = ""
+    ask_store_dir: str = "vanna_store"
     api_prefix: str = "/api/v1"
     # Folder of the built frontend that the backend serves at "/" (blank = ../frontend/dist next to the backend).
     frontend_dist: str = ""

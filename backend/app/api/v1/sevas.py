@@ -11,6 +11,7 @@ from app.core.db import get_conn, with_transaction
 from app.core.fy import FinancialYear, get_user_fy, get_history_fy
 from app.core.security import CurrentUser, get_current_user, require_right
 from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
+from app.api.v1.split_payments import SplitPartIn, ensure_ok, to_parts
 from app.services import seva as seva_service
 
 router = APIRouter(prefix="/sevas", tags=["sevas"])
@@ -27,6 +28,10 @@ class SevaCreateRequest(BaseModel):
     doc_date: date
     regular: bool = False  # the "Regular Devotee" tick
     days_text: str = ""  # Date Text from the Dates Selection dialog
+    rate: float | None = None  # the Rate box (blank = the Seva master's amount)
+    amount: float | None = None  # the Amount box when typed (blank = Rate x number of dates)
+    extra_seva_ids: list[int] = []  # more sevas for the same devotee: each becomes its own bill (create only)
+    split_payments: list[SplitPartIn] | None = None  # the bill paid in parts by different modes (new table WebSplitPayment)
 
 
 class CancelRequest(BaseModel):
@@ -122,8 +127,14 @@ def create_seva(
         doc_date=body.doc_date,
         regular=body.regular,
         days_text=body.days_text,
+        rate=body.rate,
+        amount=body.amount,
+        split=to_parts(body.split_payments),
     )
+    ensure_ok(data.split, bool(body.extra_seva_ids))
     with with_transaction() as conn:
+        if body.extra_seva_ids:
+            return {"bills": seva_service.create_many(conn, data=data, extra_seva_ids=body.extra_seva_ids, fy=fy, user_code=user.user_code)}
         return seva_service.create(conn, data=data, fy=fy, user_code=user.user_code)
 
 
@@ -140,6 +151,9 @@ def update_seva(
         doc_date=body.doc_date,
         regular=body.regular,
         days_text=body.days_text,
+        rate=body.rate,
+        amount=body.amount,
+        split=to_parts(body.split_payments),
     )
     with with_transaction() as conn:
         return seva_service.update(conn, seva_id=seva_id, data=data, fy=fy, user_code=user.user_code)

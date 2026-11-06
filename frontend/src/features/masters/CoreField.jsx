@@ -31,7 +31,10 @@ export default function CoreField({ docId, field, value, onChange, locked }) {
         placeholderData: keepPreviousData,
         staleTime: 15_000,
       })
-      return { data, loading, options: data.map((o) => ({ value: String(o.value), label: o.label })) }
+      // a master can hold the same value twice (City names on State City Country); the dropdown rejects duplicates
+      const seen = new Set()
+      const options = data.filter((o) => !seen.has(String(o.value)) && seen.add(String(o.value))).map((o) => ({ value: String(o.value), label: o.label == null ? '' : String(o.label) }))
+      return { data, loading, options }
     },
   })
 
@@ -49,7 +52,7 @@ export default function CoreField({ docId, field, value, onChange, locked }) {
   }
   if (field.type === 'combo') {
     // free text, with the values already in the master suggested (e.g. Country on State City Country)
-    return <Autocomplete className={cls} label={label} aria-label={aria} required={field.required} disabled={readOnly} data={options.map((o) => o.label)} value={value || ''} onChange={(v) => onChange(v)} />
+    return <Autocomplete className={cls} label={label} aria-label={aria} required={field.required} disabled={readOnly} data={[...new Set(options.map((o) => o.label).filter((l) => l != null && l !== ''))]} value={value || ''} onChange={(v) => onChange(v)} />
   }
   if (isLookup) {
     return (
@@ -72,5 +75,5 @@ export default function CoreField({ docId, field, value, onChange, locked }) {
       />
     )
   }
-  return <TextInput className={cls} label={label} aria-label={aria} required={field.required} readOnly={readOnly} maxLength={field.width || undefined} value={value || ''} onChange={(e) => onChange(e.currentTarget.value)} />
+  return <TextInput className={cls} label={label} aria-label={aria} required={field.required} readOnly={readOnly} maxLength={field.width || undefined} placeholder={field.placeholder || undefined} value={value || ''} onChange={(e) => onChange(e.currentTarget.value)} />
 }

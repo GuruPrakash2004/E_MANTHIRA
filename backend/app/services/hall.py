@@ -27,7 +27,7 @@ from sqlalchemy.engine import Connection
 
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
-from app.legacy.tables import insert_row, table, update_row
+from app.legacy.tables import insert_row, table, update_row, pad_blanks
 from app.meta import doc_rules, edit_rules, numbering
 from app.services import ledger, receipt as receipt_service
 from app.utils.amount_in_words import amount_in_words
@@ -203,6 +203,7 @@ def create(conn: Connection, *, data: HallBookingInput, fy: FinancialYear, user_
             **_amount_cols(p),
         }
     )
+    pad_blanks(cols)
     hb_id = insert_row(conn, TABLE, cols, returning="HBID")
     _stay_rows(conn, hb_id, p)
 
@@ -238,6 +239,7 @@ def update(conn: Connection, *, hb_id: int, data: HallBookingInput, fy: Financia
         cols["HBDate"] = data.doc_date
     if edit_rules.auth_required(conn, DOC_ID):
         cols["Authorised"] = "N"  # an edited document goes back for authorisation (legacy: Authorised = 'N' on edit)
+    pad_blanks(cols)
     update_row(conn, TABLE, "HBID", hb_id, cols)
     _stay_rows(conn, hb_id, p)
 

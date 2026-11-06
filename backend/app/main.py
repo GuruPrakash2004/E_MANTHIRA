@@ -10,9 +10,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.gzip_mw import SelectiveGZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import NoSuchTableError, ProgrammingError
 
-from app.api.v1 import doc_actions, mail_settings, master_extras, other_settings, audit, auth, bulk_update, company, db_settings, display, donations, expense, hall_booking_entry, gen_vouchers, halls, header_detail_docs, header_docs, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, exports, trading_reports, users, utilities, vouchers, welcome
+from app.api.v1 import alertify, split_payments, ask_data, acc_reports, admin_tools, party_reports, attendance, legacy_masters, doc_actions, mail_settings, master_extras, other_settings, audit, auth, bulk_update, company, db_settings, display, donations, expense, hall_booking_entry, gen_vouchers, halls, header_detail_docs, header_docs, inventory, masters, meta, panchanga, print as print_router, print_options, reports, roles, settings as settings_router, sevas, exports, trading_reports, users, utilities, vouchers, welcome
 from app.core.config import get_settings
 from app.core.db import DatabaseUnavailable, get_engine, healthcheck, with_transaction
 from app.core.audit import ensure_schema
@@ -63,11 +63,19 @@ async def _missing_object(_request, exc: ProgrammingError):
     # "Invalid object name 'X'" (SQL Server 208 / MySQL 1146): this temple's database simply has no such table
     # (e.g. Hall Booking's TrnHdrHB) — say so instead of a 500 traceback. Any other SQL error stays a 500.
     msg = str(getattr(exc, "orig", exc))
+    col = re.search(r"Invalid column name '([^']+)'|Unknown column '([^']+)'", msg)
+    if col:  # an older/newer temple schema lacks a column this screen reads
+        return JSONResponse(status_code=404, content={"detail": f"Not available in this database (no column {col.group(1) or col.group(2)}).", "code": "NO_SUCH_COLUMN"})
     m = re.search(r"Invalid object name '([^']+)'|Table '[^']*\.([^']+)' doesn't exist", msg)
     if not m:
         raise exc
     table = m.group(1) or m.group(2)
     return JSONResponse(status_code=404, content={"detail": f"Not available in this database (no {table} table).", "code": "NO_SUCH_TABLE"})
+
+
+@app.exception_handler(NoSuchTableError)
+async def _no_such_table(_request, exc: NoSuchTableError):
+    return JSONResponse(status_code=404, content={"detail": f"Not available in this database ({exc}).", "code": "NO_SUCH_TABLE"})
 
 
 @app.exception_handler(Exception)
@@ -96,6 +104,11 @@ app.add_middleware(
 app.include_router(db_settings.router, prefix=settings.api_prefix)
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(meta.router, prefix=settings.api_prefix)
+app.include_router(attendance.router, prefix=settings.api_prefix)
+app.include_router(acc_reports.router, prefix=settings.api_prefix)
+app.include_router(admin_tools.router, prefix=settings.api_prefix)
+app.include_router(party_reports.router, prefix=settings.api_prefix)
+app.include_router(legacy_masters.router, prefix=settings.api_prefix)
 app.include_router(masters.router, prefix=settings.api_prefix)
 app.include_router(master_extras.router, prefix=settings.api_prefix)
 app.include_router(mail_settings.router, prefix=settings.api_prefix)
@@ -124,6 +137,9 @@ app.include_router(bulk_update.router, prefix=settings.api_prefix)
 app.include_router(inventory.router, prefix=settings.api_prefix)
 app.include_router(audit.router, prefix=settings.api_prefix)
 app.include_router(welcome.router, prefix=settings.api_prefix)
+app.include_router(ask_data.router, prefix=settings.api_prefix)
+app.include_router(split_payments.router, prefix=settings.api_prefix)
+app.include_router(alertify.router, prefix=settings.api_prefix)
 app.include_router(utilities.router, prefix=settings.api_prefix)
 app.include_router(exports.router, prefix=settings.api_prefix)
 

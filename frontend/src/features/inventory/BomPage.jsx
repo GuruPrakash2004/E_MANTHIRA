@@ -181,6 +181,7 @@ export default function BomPage() {
             />
             {lastSaved && <SavedPanel lines={[`BOM ${lastSaved.bom_no}`]} />}
             <RecentCard
+              docId={DOC_ID}
               title="Recent BOMs"
               icon={Layers}
               loading={recentLoading}

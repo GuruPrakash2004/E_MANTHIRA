@@ -1,16 +1,24 @@
-import { useMemo, useState } from 'react'
-import { Button, Card, Group, Select, SimpleGrid, Skeleton, Stack, Table, Text, Title } from '@mantine/core'
+import { useMemo, useRef, useState } from 'react'
+import { ActionIcon, Button, Card, Group, Select, SimpleGrid, Skeleton, Stack, Table, Text, Title } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
-import { Building, CalendarCheck, CalendarDays, DoorOpen, FileDown, Search } from 'lucide-react'
+import { Building, CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, DoorOpen, FileDown, Search } from 'lucide-react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { isoDate } from '../../utils/format'
 import * as hallApi from '../../api/endpoints/hall'
 import StatCard from '../../components/ui/StatCard'
 import EmptyState from '../../components/ui/EmptyState'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
 import { downloadXls } from '../../utils/xls'
 import { SectionCard } from '../../components/ui/EntryParts'
 import { BOOKED, Legend, Month, PARTIAL } from './HallCalendarBox'
+
+const DEFAULT_MONTHS_AHEAD = 6
+function defaultRange() {
+  const from = dayjs().startOf('month')
+  const to = dayjs().add(DEFAULT_MONTHS_AHEAD, 'month').endOf('month')
+  return { asDates: { from: from.toDate(), to: to.toDate() }, asDayjs: { from, to } }
+}
 
 /**
  * Legacy Hall Status report (frmRptRoomStatus): grid of halls x days. Booked cells are maroon, today's column is gold.
@@ -18,9 +26,9 @@ import { BOOKED, Legend, Month, PARTIAL } from './HallCalendarBox'
  * date controls; `compact` drops the summary cards and the bookings list and shortens the grid.
  */
 export default function HallStatusBoard({ headerLeft = null, compact = false }) {
-  // Legacy: pick a From / To date range, press View. Default is the current month.
-  const [draft, setDraft] = useState({ from: dayjs().startOf('month').toDate(), to: dayjs().endOf('month').toDate() })
-  const [range, setRange] = useState({ from: dayjs().startOf('month'), to: dayjs().endOf('month') })
+  // Legacy: pick a From / To date range, press View. Default: this month plus the next DEFAULT_MONTHS_AHEAD, from today.
+  const [draft, setDraft] = useState(() => defaultRange().asDates)
+  const [range, setRange] = useState(() => defaultRange().asDayjs)
   const monthStart = range.from.format('YYYY-MM-DD')
   const rangeEnd = range.to.format('YYYY-MM-DD')
   function onView() {
@@ -29,6 +37,7 @@ export default function HallStatusBoard({ headerLeft = null, compact = false }) 
     setRange({ from: dayjs(draft.from).startOf('day'), to: dayjs(draft.to).startOf('day') })
   }
   const today = dayjs().format('YYYY-MM-DD')
+  const [hallSel, setHallSel] = useState('all') // 'all' or one HALLID; drives the stat cards, the calendar and the bookings list
 
   const { data: halls, isLoading: hallsLoading } = useQuery({ queryKey: ['halls'], queryFn: hallApi.listHalls })
 
@@ -56,6 +65,7 @@ export default function HallStatusBoard({ headerLeft = null, compact = false }) 
       for (const row of availabilityQueries[hi]?.data || []) {
         const iso = dayjs(row.STAYDATE).format('YYYY-MM-DD')
         byDay[iso] = row
+        if (hallSel !== 'all' && String(h.HALLID) !== hallSel) continue
         total += 1
         if (iso === today) nowCount += 1
         const key = row.PrintHBNO || iso
@@ -71,10 +81,12 @@ export default function HallStatusBoard({ headerLeft = null, compact = false }) 
     list.sort((a, b) => a.from.localeCompare(b.from))
     return { rows: out, bookings: list, bookedDays: total, bookedToday: nowCount }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [halls, availabilityQueries.map((q) => q.dataUpdatedAt).join(',')])
+  }, [halls, hallSel, availabilityQueries.map((q) => q.dataUpdatedAt).join(',')])
 
   const hallCount = (halls || []).length
-  const [hallSel, setHallSel] = useState('all')
+  const rowRef = useRef(null)
+  // one month per step; the row snaps to each month
+  const slide = (dir) => rowRef.current?.scrollBy({ left: dir * (rowRef.current.firstElementChild?.offsetWidth || 280) + dir * 16, behavior: 'smooth' })
   // calendar view: day -> bookings of the halls in view, and one grid per month of the range
   const calByDay = useMemo(() => {
     const out = {}
@@ -95,6 +107,9 @@ export default function HallStatusBoard({ headerLeft = null, compact = false }) 
     downloadXls(`hall-status-${monthStart}-to-${rangeEnd}.xls`, lines, head.map((label, i) => ({ label, value: (r) => r[i] })))
   }
 
+  const printCols = [{ key: 'date', label: 'Date' }, ...rows.map((r, i) => ({ key: `h${i}`, label: r.hall.HALLNAME }))]
+  const printRows = days.map((d) => Object.fromEntries([['date', fmt(d.format('YYYY-MM-DD'))], ...rows.map((r, i) => [`h${i}`, r.byDay[d.format('YYYY-MM-DD')] ? `Booked ${r.byDay[d.format('YYYY-MM-DD')].PrintHBNO || ''}`.trim() : ''])]))
+
   return (
     <Stack gap="lg">
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
@@ -105,6 +120,7 @@ export default function HallStatusBoard({ headerLeft = null, compact = false }) 
           <Button color="kumkum" leftSection={<Search size={16} />} onClick={onView}>
             View
           </Button>
+          <ReportPrintButtons title="Hall Status" period={`${fmt(range.from.format('YYYY-MM-DD'))} to ${fmt(range.to.format('YYYY-MM-DD'))}`} columns={printCols} rows={printRows} disabled={loading || hallCount === 0} />
           <Button variant="default" leftSection={<FileDown size={16} />} disabled={loading || hallCount === 0} onClick={onExport}>
             Export to Excel
           </Button>
@@ -115,7 +131,7 @@ export default function HallStatusBoard({ headerLeft = null, compact = false }) 
       <SimpleGrid cols={{ base: 1, xs: 3 }}>
         <StatCard label="Halls" value={hallCount} icon={Building} footer="Configured halls and rooms" loading={hallsLoading} />
         <StatCard label="Booked hall-days" value={bookedDays} icon={CalendarCheck} tone="dark" footer={`${fmt(monthStart)} to ${fmt(rangeEnd)}`} loading={loading} />
-        <StatCard label="Booked today" value={todayInRange ? bookedToday : '-'} icon={DoorOpen} footer={todayInRange ? `${Math.max(hallCount - bookedToday, 0)} free today` : 'Today is outside this range'} loading={loading} />
+        <StatCard label="Booked today" value={todayInRange ? bookedToday : '-'} icon={DoorOpen} footer={todayInRange ? `${Math.max(hallsInView - bookedToday, 0)} free today` : 'Today is outside this range'} loading={loading} />
       </SimpleGrid>
       )}
 
@@ -144,11 +160,27 @@ export default function HallStatusBoard({ headerLeft = null, compact = false }) 
         ) : hallCount === 0 ? (
           <EmptyState icon={Building} title="No halls configured" hint="Add halls in the Hall master and they will appear here." />
         ) : (
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: compact ? 2 : 3 }} spacing="lg">
-            {calMonths.map((m) => (
-              <Month key={m.format('YYYY-MM')} month={m} today={dayjs().startOf('day')} byDay={calByDay} hallsInView={hallsInView} rangeFrom={range.from} rangeTo={range.to} dimPast={false} />
-            ))}
-          </SimpleGrid>
+          <Group gap="xs" wrap="nowrap" align="flex-start">
+            <ActionIcon variant="light" color="kumkum" size="lg" mt={28} aria-label="Previous month" onClick={() => slide(-1)}>
+              <ChevronLeft size={18} />
+            </ActionIcon>
+            <div
+              ref={rowRef}
+              role="group"
+              aria-roledescription="carousel"
+              aria-label="Months"
+              style={{ display: 'flex', gap: 16, flex: 1, minWidth: 0, overflowX: 'auto', scrollSnapType: 'x mandatory', paddingBottom: 8 }}
+            >
+              {calMonths.map((m) => (
+                <div key={m.format('YYYY-MM')} style={{ flex: '0 0 min(300px, 85%)', scrollSnapAlign: 'start' }}>
+                  <Month month={m} today={dayjs().startOf('day')} byDay={calByDay} hallsInView={hallsInView} rangeFrom={range.from} rangeTo={range.to} dimPast={false} />
+                </div>
+              ))}
+            </div>
+            <ActionIcon variant="light" color="kumkum" size="lg" mt={28} aria-label="Next month" onClick={() => slide(1)}>
+              <ChevronRight size={18} />
+            </ActionIcon>
+          </Group>
         )}
       </Card>
 

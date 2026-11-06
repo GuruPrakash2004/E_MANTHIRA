@@ -23,3 +23,18 @@ simpleeval==0.9.13
 python-dotenv==1.0.1
 pytest==8.3.3
 pytest-asyncio==0.24.0
+
+# Ask the Data (local text-to-SQL). vanna is installed --no-deps (its pinned old chromadb needs a C++ compiler):
+#   pip install --no-deps vanna==0.7.9
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+vanna==0.7.9 ; python_version < "0"   # documented only; see note above
+chromadb>=1.0
+transformers>=4.44
+accelerate>=0.33
+pandas
+plotly
+tabulate
+sqlparse
+kaleido
+flask
+anthropic

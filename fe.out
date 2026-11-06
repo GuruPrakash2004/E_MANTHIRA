@@ -1,0 +1,482 @@
+
+> vtemple-web-frontend@0.1.0 dev
+> vite
+
+
+  [32m[1mVITE[22m v5.4.21[39m  [2mready in [0m[1m1114[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[2m1:15:47 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m1:19:27 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/th[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting server...[39m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting server...[39m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting server...[39m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m server restarted.
+jsx, /src/components/WelcomeSplash.jsx, /src/components/DatabaseSettingsPanel.jsx, /src/components/RequireDesignerDoc.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/components/DocFieldsForm.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/components/DocDetailGrid.jsx, /src/features/masters/MasterPage.jsx, /src/components/ui/EntryParts.jsx, /src/components/ui/ListingGrid.jsx, /src/components/ui/DocNavBar.jsx, /src/components/ui/DocOptionsMenu.jsx, /src/components/DesignerRefreshButton.jsx, /src/components/DynamicField.jsx, /src/components/LookupSelect.jsx, /src/features/seva/SannidhiShortlistModal.jsx, /src/features/seva/ExtraSevas.jsx, /src/components/ui/SplitPaymentPanel.jsx, /src/features/dashboard/DashboardPage.jsx, /src/features/seva/GroupSevaModal.jsx, /src/features/seva/SevakartharuModal.jsx, /src/features/donation/DonorHistoryModal.jsx, /src/components/ui/DocExtraDialogs.jsx, /src/features/masters/CoreField.jsx, /src/features/masters/AttachSevaModal.jsx, /src/features/masters/PartyPanels.jsx, /src/features/inventory/MasterOptionsSelect.jsx, /src/components/ui/ExportExcelButton.jsx, /src/components/ui/DataGrid.jsx, /src/components/PrintDialog.jsx, /src/components/ReportFonts.jsx, /src/features/inventory/AddLineItemDialog.jsx, /src/features/seva/SevaDatesDialog.jsx, /src/features/alertify/AlertifyModal.jsx, /src/features/audit/AuditTrailPage.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx, /src/features/inventory/AddLineItemDialog.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AppShellLayout.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AppShellLayout.jsx, /src/components/RequireDesignerDoc.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/components/DocFieldsForm.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/components/DocDetailGrid.jsx, /src/features/masters/MasterPage.jsx, /src/components/ui/EntryParts.jsx, /src/components/ui/ListingGrid.jsx, /src/components/ui/DocNavBar.jsx, /src/components/ui/DocOptionsMenu.jsx, /src/components/DesignerRefreshButton.jsx, /src/components/DynamicField.jsx, /src/components/LookupSelect.jsx, /src/features/seva/SannidhiShortlistModal.jsx, /src/features/seva/ExtraSevas.jsx, /src/components/ui/SplitPaymentPanel.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DocNavBar.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/audit/AuditTrailPage.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AppShellLayout.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DatabaseSettingsPanel.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DesignerRefreshButton.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DocFieldsForm.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicField.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/LookupSelect.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ShortcutHelp.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ThemeToggle.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/auth/LoginPage.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/donation/DonationReceiptPage.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DocNavBar.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DocOptionsMenu.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/EntryParts.jsx[22m
+[2m1:22:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/ExportExcelButton.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/theme/global.css[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/audit/AuditTrailPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/MasterPage.jsx, /src/components/DynamicField.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/components/DocFieldsForm.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/components/DocDetailGrid.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting server...[39m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/auth/LoginPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/donation/DonationReceiptPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/MasterOptionsSelect.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/CoreField.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/MasterPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/PartyPanels.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/MasterPage.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2msrc/theme/theme.js[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/ExportExcelButton.jsx, /src/components/ui/ListingGrid.jsx, /src/components/ui/DataGrid.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/hooks/useAuth.jsx, /src/components/AppShellLayout.jsx, /src/features/auth/LoginPage.jsx, /src/components/WelcomeSplash.jsx, /src/components/DatabaseSettingsPanel.jsx, /src/components/RequireDesignerDoc.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/components/DocFieldsForm.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/components/DocDetailGrid.jsx, /src/features/masters/MasterPage.jsx, /src/components/ui/EntryParts.jsx, /src/components/ui/ListingGrid.jsx, /src/components/ui/DocNavBar.jsx, /src/components/ui/DocOptionsMenu.jsx, /src/components/DesignerRefreshButton.jsx, /src/components/DynamicField.jsx, /src/components/LookupSelect.jsx, /src/features/seva/SannidhiShortlistModal.jsx, /src/features/seva/ExtraSevas.jsx, /src/components/ui/SplitPaymentPanel.jsx, /src/features/dashboard/DashboardPage.jsx, /src/features/seva/GroupSevaModal.jsx, /src/features/seva/SevakartharuModal.jsx, /src/features/donation/DonorHistoryModal.jsx, /src/components/ui/DocExtraDialogs.jsx, /src/features/masters/CoreField.jsx, /src/features/masters/AttachSevaModal.jsx, /src/features/masters/PartyPanels.jsx, /src/features/inventory/MasterOptionsSelect.jsx, /src/components/ui/ExportExcelButton.jsx, /src/components/ui/DataGrid.jsx, /src/components/PrintDialog.jsx, /src/components/ReportFonts.jsx, /src/features/inventory/AddLineItemDialog.jsx, /src/features/seva/SevaDatesDialog.jsx, /src/features/alertify/AlertifyModal.jsx, /src/features/audit/AuditTrailPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx, /src/features/inventory/AddLineItemDialog.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AppShellLayout.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DocNavBar.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AppShellLayout.jsx, /src/components/RequireDesignerDoc.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/components/DocFieldsForm.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/components/DocDetailGrid.jsx, /src/features/masters/MasterPage.jsx, /src/components/ui/EntryParts.jsx, /src/components/ui/ListingGrid.jsx, /src/components/ui/DocNavBar.jsx, /src/components/ui/DocOptionsMenu.jsx, /src/components/DesignerRefreshButton.jsx, /src/components/DynamicField.jsx, /src/components/LookupSelect.jsx, /src/features/seva/SannidhiShortlistModal.jsx, /src/features/seva/ExtraSevas.jsx, /src/components/ui/SplitPaymentPanel.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DatabaseSettingsPanel.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DesignerRefreshButton.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DocFieldsForm.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicField.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/LookupSelect.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ShortcutHelp.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ThemeToggle.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/audit/AuditTrailPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/auth/LoginPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/donation/DonationReceiptPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DocOptionsMenu.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/EntryParts.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/ExportExcelButton.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/theme/global.css[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/MasterPage.jsx, /src/components/DynamicField.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/components/DocFieldsForm.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/components/DocDetailGrid.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting server...[39m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/audit/AuditTrailPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/auth/LoginPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/donation/DonationReceiptPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/MasterOptionsSelect.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/CoreField.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/MasterPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/PartyPanels.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/MasterPage.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/theme/global.css[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2msrc/theme/theme.js[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/MasterPage.jsx, /src/components/DynamicField.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/components/DocFieldsForm.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/components/DocDetailGrid.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/ExportExcelButton.jsx, /src/components/ui/ListingGrid.jsx, /src/components/ui/DataGrid.jsx[22m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting server...[39m
+[2m1:22:39 pm[22m [36m[1m[vite][22m[39m server restarted.
+[2m1:26:51 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/MasterPage.jsx[22m
+[2m1:26:57 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/MasterOptionsSelect.jsx[22m
+[2m2:21:03 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/LookupSelect.jsx[22m
+[2m2:21:03 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/LookupSelect.jsx, /src/features/masters/CoreField.jsx[22m
+[2m2:25:26 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx, /src/features/inventory/AddLineItemDialog.jsx, /src/features/inventory/ItemReferencerPage.jsx, /src/features/inventory/CurrentStockBalancePage.jsx[22m
+[2m2:25:26 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx[22m
+[2m2:37:24 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx[22m
+[2m2:38:12 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/EntryParts.jsx[22m
+[2m2:38:12 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/theme/global.css[22m
+[2m2:38:12 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx[22m
+[2m2:41:34 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DesignerRefreshButton.jsx, /src/components/AppShellLayout.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/features/masters/MasterPage.jsx, /src/features/masters/CompanyMasterPage.jsx, /src/components/ui/DocNavBar.jsx, /src/components/ui/EntryParts.jsx, /src/components/ui/DocOptionsMenu.jsx, /src/components/ui/ListingGrid.jsx, /src/components/DocFieldsForm.jsx, /src/components/RequireDesignerDoc.jsx, /src/features/settings/UsersTab.jsx, /src/features/seva/ExtraSevas.jsx, /src/components/DynamicField.jsx, /src/features/seva/SannidhiShortlistModal.jsx, /src/components/ui/SplitPaymentPanel.jsx, /src/components/LookupSelect.jsx, /src/features/reports/ReportsPage.jsx, /src/features/settings/MenuSettingsPage.jsx[22m
+[2m2:41:34 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/DocFieldsForm.jsx[22m Could not Fast Refresh ("captionOf" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m2:41:34 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/inventory/PurchaseBillPage.jsx[22m
+[2m2:41:35 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m Could not Fast Refresh ("refRequiredModes" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m2:41:35 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx[22m
+[2m2:42:16 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx[22m
+[2m2:42:16 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx[22m
+[2m2:42:16 pm[22m [31m[1m[vite][22m[39m [31mInternal server error: C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\src\features\inventory\PurchaseBillPage.jsx: Unexpected token (162:236)
+
+[0m [90m 160 |[31m   [36mreturn[31m (
+ [90m 161 |[31m     [33m<[31m[33mStack[31m gap[33m=[31m[32m"md"[31m className[33m=[31m[32m"vt-rise"[31m[33m>[31m
+[31m[1m>[22m[31m[90m 162 |[31m       [33m<[31m[33mPageHeader[31m title[33m=[31m[32m"Purchase Bill"[31m subtitle[33m=[31m[32m"Record items received from a supplier"[31m right[33m=[31m{[33m<[31m[33mDocNoDate[31m docId[33m=[31m{[33mDOC_ID[31m} viewNo[33m=[31m{viewId [33m?[31m viewNo [33m:[31m [32m''[31m} date[33m=[31m{form[33m.[31mdoc_date} onDate[33m=[31m{(v) [33m=>[31m [36mset[31m([32m'doc_date'[31m[33m,[31m v)} dateDisabled[33m=[31m{readOnly} [35m/> /[31m[33m>[31m
+ [90m     |[31m                                                                                                                                                                                                                                             [31m[1m^[22m[31m
+ [90m 163 |[31m                       [33m<[31m[33mTextInput[31m value[33m=[31m{nextNo [33m?[31m [33mString[31m(nextNo[33m.[31mseq) [33m:[31m [32m''[31m} readOnly w[33m=[31m{[35m80[31m} aria[33m-[31mlabel[33m=[31m[32m"Number"[31m styles[33m=[31m{{ input[33m:[31m { textAlign[33m:[31m [32m'center'[31m[33m,[31m fontWeight[33m:[31m [35m700[31m } }} [33m/[31m[33m>[31m
+ [90m 164 |[31m                       [33m<[31m[33mBadge[31m size[33m=[31m[32m"lg"[31m variant[33m=[31m[32m"light"[31m color[33m=[31m[32m"kumkum"[31m tt[33m=[31m[32m"none"[31m mb[33m=[31m{[35m4[31m}[33m>[31m{nextNo[33m?[31m[33m.[31mprint_no [33m||[31m [32m'...'[31m}[33m<[31m[33m/[31m[33mBadge[31m[33m>[31m
+ [90m 165 |[31m                     [33m<[31m[33m/[31m[33mGroup[31m[33m>[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mC:/Users/LEGION/Desktop/guru/E_MANTHIRA/frontend/src/features/inventory/PurchaseBillPage.jsx[39m:162:236
+[33m  161|      <Stack gap="md" className="vt-rise">
+  162|        <PageHeader title="Purchase Bill" subtitle="Record items received from a supplier" right={<DocNoDate docId={DOC_ID} viewNo={viewId ? viewNo : ''} date={form.doc_date} onDate={(v) => set('doc_date', v)} dateDisabled={readOnly} /> />
+  163|                        <TextInput value={nextNo ? String(nextNo.seq) : ''} readOnly w={80} aria-label="Number" styles={{ input: { textAlign: 'center', fontWeight: 700 } }} />
+     |                                                                                                                                                                 ^
+  164|                        <Badge size="lg" variant="light" color="kumkum" tt="none" mb={4}>{nextNo?.print_no || '...'}</Badge>
+  165|                      </Group>[39m
+      at constructor (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:369:19)
+      at JSXParserMixin.raise (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:6622:19)
+      at JSXParserMixin.unexpected (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:6642:16)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11473:22)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4782:20)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOpBaseRightExpr (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11012:34)
+      at JSXParserMixin.parseExprOpRightExpr (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11007:21)
+      at JSXParserMixin.parseExprOp (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10973:27)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10934:17)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at JSXParserMixin.parseExpressionBase (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10810:23)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10806:39
+      at JSXParserMixin.allowInAnd (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12460:12)
+      at JSXParserMixin.parseExpression (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10806:17)
+      at JSXParserMixin.jsxParseExpressionContainer (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4650:31)
+      at JSXParserMixin.jsxParseAttributeValue (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4622:21)
+      at JSXParserMixin.jsxParseAttribute (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4671:38)
+      at JSXParserMixin.jsxParseOpeningElementAfterName (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4685:28)
+      at JSXParserMixin.jsxParseOpeningElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4680:17)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4704:33)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElement (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4767:17)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4777:19)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10930:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:39
+      at JSXParserMixin.allowInAnd (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12460:12)
+      at JSXParserMixin.parseMaybeAssignAllowIn (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:17)
+      at JSXParserMixin.parseMaybeAssignAllowInOrVoidPattern (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12527:17)
+      at JSXParserMixin.parseParenAndDistinguishExpression (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11706:28)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11362:23)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4782:20)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10930:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at JSXParserMixin.parseExpressionBase (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10810:23)
+[2m2:42:28 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx[22m
+[2m2:42:50 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ReportFonts.jsx, /src/features/settings/PrintOptionsTab.jsx, /src/components/DatabaseSettingsPanel.jsx, /src/components/AppShellLayout.jsx, /src/features/settings/AdminMasterPage.jsx, /src/hooks/useAuth.jsx, /src/components/DesignerRefreshButton.jsx, /src/features/seva/SevaEntryPage.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/features/masters/MasterPage.jsx, /src/features/masters/CompanyMasterPage.jsx, /src/components/ui/DocNavBar.jsx, /src/components/ui/EntryParts.jsx, /src/components/ui/DocOptionsMenu.jsx, /src/components/ui/ListingGrid.jsx, /src/components/DocFieldsForm.jsx, /src/components/RequireDesignerDoc.jsx, /src/features/settings/UsersTab.jsx, /src/features/seva/ExtraSevas.jsx, /src/components/DynamicField.jsx, /src/features/seva/SannidhiShortlistModal.jsx, /src/components/ui/SplitPaymentPanel.jsx, /src/components/LookupSelect.jsx, /src/features/reports/ReportsPage.jsx, /src/features/settings/MenuSettingsPage.jsx, /src/components/ui/DocNoDate.jsx, /src/features/seva/SevaDatesDialog.jsx, /src/features/auth/LoginPage.jsx, /src/features/settings/WelcomeVideoCard.jsx, /src/components/WelcomeSplash.jsx, /src/features/alertify/AlertifyModal.jsx, /src/features/settings/AlertifyCard.jsx, /src/features/seva/SevakartharuModal.jsx, /src/features/seva/GroupSevaModal.jsx, /src/features/dashboard/DashboardPage.jsx, /src/features/inventory/MasterOptionsSelect.jsx, /src/features/masters/AttachSevaModal.jsx, /src/features/masters/CoreField.jsx, /src/features/masters/PartyPanels.jsx, /src/features/settings/RolesRightsTab.jsx, /src/components/PrintDialog.jsx, /src/features/reports/PdfGeneratorPage.jsx, /src/components/LocalPrinterSetting.jsx, /src/components/ui/DocExtraDialogs.jsx, /src/components/ui/ExportExcelButton.jsx, /src/components/ui/DataGrid.jsx, /src/features/hall/HallStatusBoard.jsx, /src/features/reports/HallVoucherPanel.jsx, /src/features/reports/PartyGLPanel.jsx, /src/features/audit/AuditTrailPage.jsx, /src/features/inventory/AddLineItemDialog.jsx, /src/features/inventory/ItemReferencerPage.jsx, /src/features/inventory/CurrentStockBalancePage.jsx, /src/features/hall/HallCalendarBox.jsx, /src/features/reports/SubsidiaryCatalogPanel.jsx, /src/features/reports/CustomReportsPanel.jsx, /src/features/settings/BulkUpdateTab.jsx, /src/features/settings/EmailSettingsTab.jsx, /src/features/settings/GlobalSettingsTab.jsx, /src/features/settings/OtherSettingsDialogs.jsx[22m
+[2m2:42:50 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DocNoDate.jsx[22m
+[2m2:42:50 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/hooks/useAuth.jsx[22m Could not Fast Refresh ("useAuth" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m2:42:50 pm[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2msrc/hooks/useAuth.jsx[22m
+[2m2:42:50 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/DocFieldsForm.jsx[22m Could not Fast Refresh ("captionOf" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m2:42:50 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/inventory/PurchaseBillPage.jsx[22m
+[2m2:42:50 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m Could not Fast Refresh ("refRequiredModes" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m2:42:50 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx[22m
+[2m2:43:56 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DocNoDate.jsx[22m
+[2m2:44:46 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DynamicField.jsx[22m
+[2m2:44:46 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DocFieldsForm.jsx[22m
+[2m2:44:46 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/DocFieldsForm.jsx[22m Could not Fast Refresh ("captionOf" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m2:44:46 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/features/hall/HallBookingEntryPage.jsx, /src/features/vouchers/VoucherEntry.jsx, /src/features/seva/GroupSevaDocPage.jsx, /src/features/expense/ExpenseEntryPage.jsx, /src/features/inventory/StoreIssuePage.jsx, /src/features/assets/AssetEntryPage.jsx, /src/features/inventory/StockAdjustmentPage.jsx, /src/features/inventory/PurchaseVoucherPage.jsx[22m
+[2m2:45:18 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/theme/global.css[22m
+[2m3:03:55 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DocNoDate.jsx[22m
+[2m3:05:17 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DocNoDate.jsx[22m
+[2m3:05:17 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/theme/global.css[22m
+[2m3:10:46 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m
+[2m3:10:46 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m Could not Fast Refresh ("refRequiredModes" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m3:10:46 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m3:11:33 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m
+[2m3:11:33 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m Could not Fast Refresh ("refRequiredModes" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m3:11:33 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m3:15:06 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m
+[2m3:15:06 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m Could not Fast Refresh ("refRequiredModes" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m3:15:06 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m3:15:12 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m
+[2m3:15:12 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m Could not Fast Refresh ("refRequiredModes" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m3:15:12 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m3:15:49 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m
+[2m3:15:49 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/ui/SplitPaymentPanel.jsx[22m Could not Fast Refresh ("refRequiredModes" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m3:15:49 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/donation/DonationReceiptPage.jsx[22m
+[2m3:22:37 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/EntryParts.jsx[22m
+[2m3:22:37 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/ui/EntryParts.jsx[22m Could not Fast Refresh (new export)
+[2m3:22:37 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/features/masters/MasterPage.jsx, /src/features/hall/HallStatusBoard.jsx, /src/features/reports/PdfGeneratorPage.jsx, /src/features/inventory/ItemReferencerPage.jsx, /src/features/inventory/CurrentStockBalancePage.jsx, /src/features/settings/AdminMasterPage.jsx, /src/features/settings/BulkUpdateTab.jsx, /src/features/settings/EmailSettingsTab.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/features/hall/HallBookingEntryPage.jsx, /src/features/vouchers/VoucherEntry.jsx, /src/features/seva/GroupSevaDocPage.jsx, /src/features/expense/ExpenseEntryPage.jsx, /src/features/inventory/StoreIssuePage.jsx, /src/features/assets/AssetEntryPage.jsx, /src/features/inventory/StockAdjustmentPage.jsx, /src/features/inventory/PurchaseVoucherPage.jsx[22m
+[2m3:22:46 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/EntryParts.jsx[22m
+[2m3:22:46 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/hall/HallBookingEntryPage.jsx[22m
+[2m3:22:51 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/hall/HallBookingEntryPage.jsx[22m
+[2m3:25:24 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DatabaseSettingsPanel.jsx[22m
+[2m3:36:31 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx, /src/features/inventory/AddLineItemDialog.jsx, /src/features/inventory/ItemReferencerPage.jsx, /src/features/inventory/CurrentStockBalancePage.jsx, /src/features/inventory/StoreIssuePage.jsx, /src/features/inventory/StockAdjustmentPage.jsx, /src/features/inventory/PurchaseVoucherPage.jsx, /src/features/inventory/StockBalanceReportPage.jsx, /src/features/inventory/ItemListPicker.jsx[22m
+[2m3:36:31 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StoreIssuePage.jsx[22m
+[2m3:36:31 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockAdjustmentPage.jsx[22m
+[2m3:36:40 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StoreIssuePage.jsx[22m
+[2m3:36:40 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockAdjustmentPage.jsx[22m
+[2m3:40:05 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AppShellLayout.jsx[22m
+[2m3:40:05 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/DocFieldsForm.jsx[22m
+[2m3:40:05 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StoreIssuePage.jsx[22m
+[2m3:40:05 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockAdjustmentPage.jsx[22m
+[2m3:40:05 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/DocFieldsForm.jsx[22m Could not Fast Refresh ("captionOf" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m3:40:05 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/seva/SevaEntryPage.jsx, /src/features/inventory/PurchaseBillPage.jsx, /src/features/donation/DonationReceiptPage.jsx, /src/features/hall/HallBookingEntryPage.jsx, /src/features/vouchers/VoucherEntry.jsx, /src/features/seva/GroupSevaDocPage.jsx, /src/features/expense/ExpenseEntryPage.jsx, /src/features/inventory/StoreIssuePage.jsx, /src/features/assets/AssetEntryPage.jsx, /src/features/inventory/StockAdjustmentPage.jsx, /src/features/inventory/PurchaseVoucherPage.jsx, /src/features/hall/HallBookingPage.jsx[22m
+[2m3:54:37 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AppShellLayout.jsx, /src/features/masters/CompanyMasterPage.jsx[22m
+[2m3:55:22 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/CompanyMasterPage.jsx[22m
+[2m3:55:22 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/CompanyMasterPage.jsx[22m
+[2m3:55:31 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/masters/CompanyMasterPage.jsx[22m
+[2m4:18:58 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m4:34:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m4:34:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m4:34:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m4:34:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m4:34:49 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m4:34:49 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m4:34:49 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m4:35:15 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StoreIssuePage.jsx[22m
+[2m4:35:40 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockAdjustmentPage.jsx[22m
+[2m4:35:54 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx[22m
+[2m4:52:43 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx, /src/features/inventory/AddLineItemDialog.jsx, /src/features/inventory/ItemReferencerPage.jsx, /src/features/inventory/CurrentStockBalancePage.jsx, /src/features/inventory/StoreIssuePage.jsx, /src/features/inventory/StockAdjustmentPage.jsx, /src/features/inventory/PurchaseVoucherPage.jsx, /src/features/inventory/StockBalanceReportPage.jsx, /src/features/inventory/ItemListPicker.jsx[22m
+[2m4:52:51 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx[22m
+[2m4:53:05 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx[22m
+[2m4:53:24 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/AddLineItemDialog.jsx[22m
+[2m4:53:24 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StoreIssuePage.jsx[22m
+[2m4:53:24 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockAdjustmentPage.jsx[22m
+[2m5:07:44 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx, /src/features/inventory/AddLineItemDialog.jsx, /src/features/inventory/ItemReferencerPage.jsx, /src/features/inventory/CurrentStockBalancePage.jsx, /src/features/inventory/StoreIssuePage.jsx, /src/features/inventory/StockAdjustmentPage.jsx, /src/features/inventory/PurchaseVoucherPage.jsx, /src/features/inventory/StockBalanceReportPage.jsx, /src/features/inventory/ItemListPicker.jsx[22m
+[2m5:08:10 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/PurchaseBillPage.jsx, /src/features/inventory/AddLineItemDialog.jsx, /src/features/inventory/ItemReferencerPage.jsx, /src/features/inventory/CurrentStockBalancePage.jsx, /src/features/inventory/StoreIssuePage.jsx, /src/features/inventory/StockAdjustmentPage.jsx, /src/features/inventory/PurchaseVoucherPage.jsx, /src/features/inventory/StockBalanceReportPage.jsx, /src/features/inventory/ItemListPicker.jsx[22m
+[2m5:08:10 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/ItemListPicker.jsx[22m
+[2m5:08:10 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/features/inventory/ItemListPicker.jsx[22m Could not Fast Refresh (new export)
+[2m5:08:10 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx, /src/features/inventory/AddItemsDialog.jsx[22m
+[2m5:08:10 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/features/inventory/ItemListPicker.jsx[22m Could not Fast Refresh (new export)
+[2m5:08:10 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx, /src/features/inventory/AddItemsDialog.jsx[22m
+[2m5:08:10 pm[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/features/inventory/ItemListPicker.jsx[22m Could not Fast Refresh (new export)
+[2m5:08:10 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx, /src/features/inventory/AddItemsDialog.jsx[22m
+[2m5:17:56 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx[22m
+[2m5:18:36 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx[22m
+[2m5:18:36 pm[22m [31m[1m[vite][22m[39m [31mInternal server error: C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\src\features\inventory\StockBalanceReportPage.jsx: Expected corresponding JSX closing tag for <ScrollArea.Autosize>. (185:18)
+
+[0m [90m 183 |[31m                       [33m<[31m[33m/[31m[33mSimpleGrid[31m[33m>[31m
+ [90m 184 |[31m                     [33m<[31m[33m/[31m[33mCheckbox[31m[33m.[31m[33mGroup[31m[33m>[31m
+[31m[1m>[22m[31m[90m 185 |[31m                   [33m<[31m[33m/[31m[33mScrollArea[31m[33m>[31m
+ [90m     |[31m                   [31m[1m^[22m[31m
+ [90m 186 |[31m                 [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m 187 |[31m               )}
+ [90m 188 |[31m               {showValue [33m&&[31m [33m<[31m[33mText[31m size[33m=[31m[32m"xs"[31m c[33m=[31m[32m"dimmed"[31m[33m>[31m[33mValuation[31m [33mMethod[31m [33m:[31m {lookups[33m?[31m[33m.[31mvaluation_name [33m||[31m [32m''[31m}[33m<[31m[33m/[31m[33mText[31m[33m>[31m}[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mC:/Users/LEGION/Desktop/guru/E_MANTHIRA/frontend/src/features/inventory/StockBalanceReportPage.jsx[39m:185:18
+[33m  183|                        </SimpleGrid>
+  184|                      </Checkbox.Group>
+  185|                    </ScrollArea>
+     |                    ^
+  186|                  </div>
+  187|                )}[39m
+      at constructor (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:369:19)
+      at JSXParserMixin.raise (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:6622:19)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4745:16)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElement (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4767:17)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4777:19)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10930:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:39
+      at JSXParserMixin.allowInAnd (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12460:12)
+      at JSXParserMixin.parseMaybeAssignAllowIn (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:17)
+      at JSXParserMixin.parseMaybeAssignAllowInOrVoidPattern (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12527:17)
+      at JSXParserMixin.parseParenAndDistinguishExpression (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11706:28)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11362:23)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4782:20)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOpBaseRightExpr (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11012:34)
+      at JSXParserMixin.parseExprOpRightExpr (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11007:21)
+      at JSXParserMixin.parseExprOp (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10973:27)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10934:17)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at JSXParserMixin.parseExpressionBase (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10810:23)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10806:39
+      at JSXParserMixin.allowInAnd (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12460:12)
+      at JSXParserMixin.parseExpression (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10806:17)
+      at JSXParserMixin.jsxParseExpressionContainer (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4650:31)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4729:36)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElement (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4767:17)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4777:19)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10930:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:39
+[2m5:18:36 pm[22m [31m[1m[vite][22m[39m [31mInternal server error: C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\src\features\inventory\StockBalanceReportPage.jsx: Expected corresponding JSX closing tag for <ScrollArea.Autosize>. (185:18)
+
+[0m [90m 183 |[31m                       [33m<[31m[33m/[31m[33mSimpleGrid[31m[33m>[31m
+ [90m 184 |[31m                     [33m<[31m[33m/[31m[33mCheckbox[31m[33m.[31m[33mGroup[31m[33m>[31m
+[31m[1m>[22m[31m[90m 185 |[31m                   [33m<[31m[33m/[31m[33mScrollArea[31m[33m>[31m
+ [90m     |[31m                   [31m[1m^[22m[31m
+ [90m 186 |[31m                 [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m 187 |[31m               )}
+ [90m 188 |[31m               {showValue [33m&&[31m [33m<[31m[33mText[31m size[33m=[31m[32m"xs"[31m c[33m=[31m[32m"dimmed"[31m[33m>[31m[33mValuation[31m [33mMethod[31m [33m:[31m {lookups[33m?[31m[33m.[31mvaluation_name [33m||[31m [32m''[31m}[33m<[31m[33m/[31m[33mText[31m[33m>[31m}[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mC:/Users/LEGION/Desktop/guru/E_MANTHIRA/frontend/src/features/inventory/StockBalanceReportPage.jsx[39m:185:18
+[33m  183|                        </SimpleGrid>
+  184|                      </Checkbox.Group>
+  185|                    </ScrollArea>
+     |                    ^
+  186|                  </div>
+  187|                )}[39m
+      at constructor (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:369:19)
+      at JSXParserMixin.raise (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:6622:19)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4745:16)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElement (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4767:17)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4777:19)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10930:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:39
+      at JSXParserMixin.allowInAnd (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12460:12)
+      at JSXParserMixin.parseMaybeAssignAllowIn (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:17)
+      at JSXParserMixin.parseMaybeAssignAllowInOrVoidPattern (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12527:17)
+      at JSXParserMixin.parseParenAndDistinguishExpression (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11706:28)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11362:23)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4782:20)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOpBaseRightExpr (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11012:34)
+      at JSXParserMixin.parseExprOpRightExpr (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11007:21)
+      at JSXParserMixin.parseExprOp (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10973:27)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10934:17)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at JSXParserMixin.parseExpressionBase (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10810:23)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10806:39
+      at JSXParserMixin.allowInAnd (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12460:12)
+      at JSXParserMixin.parseExpression (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10806:17)
+      at JSXParserMixin.jsxParseExpressionContainer (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4650:31)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4729:36)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElement (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4767:17)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4777:19)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10930:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:39
+[2m5:18:36 pm[22m [31m[1m[vite][22m[39m [31mInternal server error: C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\src\features\inventory\StockBalanceReportPage.jsx: Expected corresponding JSX closing tag for <ScrollArea.Autosize>. (185:18)
+
+[0m [90m 183 |[31m                       [33m<[31m[33m/[31m[33mSimpleGrid[31m[33m>[31m
+ [90m 184 |[31m                     [33m<[31m[33m/[31m[33mCheckbox[31m[33m.[31m[33mGroup[31m[33m>[31m
+[31m[1m>[22m[31m[90m 185 |[31m                   [33m<[31m[33m/[31m[33mScrollArea[31m[33m>[31m
+ [90m     |[31m                   [31m[1m^[22m[31m
+ [90m 186 |[31m                 [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+ [90m 187 |[31m               )}
+ [90m 188 |[31m               {showValue [33m&&[31m [33m<[31m[33mText[31m size[33m=[31m[32m"xs"[31m c[33m=[31m[32m"dimmed"[31m[33m>[31m[33mValuation[31m [33mMethod[31m [33m:[31m {lookups[33m?[31m[33m.[31mvaluation_name [33m||[31m [32m''[31m}[33m<[31m[33m/[31m[33mText[31m[33m>[31m}[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mC:/Users/LEGION/Desktop/guru/E_MANTHIRA/frontend/src/features/inventory/StockBalanceReportPage.jsx[39m:185:18
+[33m  183|                        </SimpleGrid>
+  184|                      </Checkbox.Group>
+  185|                    </ScrollArea>
+     |                    ^
+  186|                  </div>
+  187|                )}[39m
+      at constructor (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:369:19)
+      at JSXParserMixin.raise (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:6622:19)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4745:16)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElement (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4767:17)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4777:19)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10930:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:39
+      at JSXParserMixin.allowInAnd (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12460:12)
+      at JSXParserMixin.parseMaybeAssignAllowIn (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:17)
+      at JSXParserMixin.parseMaybeAssignAllowInOrVoidPattern (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12527:17)
+      at JSXParserMixin.parseParenAndDistinguishExpression (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11706:28)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11362:23)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4782:20)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOpBaseRightExpr (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11012:34)
+      at JSXParserMixin.parseExprOpRightExpr (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11007:21)
+      at JSXParserMixin.parseExprOp (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10973:27)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10934:17)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at JSXParserMixin.parseExpressionBase (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10810:23)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10806:39
+      at JSXParserMixin.allowInAnd (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:12460:12)
+      at JSXParserMixin.parseExpression (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10806:17)
+      at JSXParserMixin.jsxParseExpressionContainer (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4650:31)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4729:36)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElementAt (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4716:32)
+      at JSXParserMixin.jsxParseElement (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4767:17)
+      at JSXParserMixin.parseExprAtom (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:4777:19)
+      at JSXParserMixin.parseExprSubscripts (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11107:23)
+      at JSXParserMixin.parseUpdate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11092:21)
+      at JSXParserMixin.parseMaybeUnary (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:11072:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10925:61)
+      at JSXParserMixin.parseExprOps (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10930:23)
+      at JSXParserMixin.parseMaybeConditional (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10907:23)
+      at JSXParserMixin.parseMaybeAssign (C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10857:21)
+      at C:\Users\LEGION\Desktop\guru\E_MANTHIRA\frontend\node_modules\@babel\parser\lib\index.js:10826:39
+[2m5:18:36 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx[22m
+[2m5:20:06 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx[22m
+[2m5:20:51 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx[22m
+[2m5:32:30 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx[22m
+[2m5:39:30 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/reports/ReportsPage.jsx[22m
+[2m5:53:00 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DataGrid.jsx[22m
+[2m5:53:22 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/theme/global.css[22m
+[2m5:53:51 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/reports/ReportsPage.jsx[22m
+[2m5:54:18 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/reports/ReportsPage.jsx[22m
+[2m5:55:07 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/DataGrid.jsx[22m
+[2m5:55:07 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockBalanceReportPage.jsx[22m
+[2m5:55:48 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/inventory/StockLedgerReportPage.jsx[22m
+[2m5:55:48 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/reports/PartyGLPanel.jsx[22m
+[2m5:57:21 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ui/ExportExcelButton.jsx[22m
+[2m5:57:41 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/reports/HallVoucherPanel.jsx[22m
+[2m5:57:41 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/reports/CustomReportsPanel.jsx[22m
+[2m5:58:04 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/hall/HallStatusBoard.jsx[22m
+[2m5:58:04 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/hall/HallPaymentPanel.jsx[22m
+[2m6:01:59 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/reports/ReportsPage.jsx[22m
+[2m6:02:00 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AppShellLayout.jsx[22m
+[2m6:03:35 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/ReportFonts.jsx, /src/features/settings/PrintOptionsTab.jsx[22m
+[2m6:04:32 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/settings/PrintOptionsTab.jsx[22m
+[2m6:24:22 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/reports/ReportsPage.jsx, /src/features/reports/HallVoucherPanel.jsx, /src/features/reports/SubsidiaryCatalogPanel.jsx, /src/features/reports/CustomReportsPanel.jsx, /src/features/reports/PartyGLPanel.jsx, /src/components/AppShellLayout.jsx[22m
+[2m6:24:38 pm[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/features/reports/ReportsPage.jsx[22m

@@ -9,7 +9,7 @@ from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
 from app.core.security import CurrentUser, get_current_user, require_right_from_path
-from app.meta.menu import RIGHT_EDIT, RIGHT_VIEW
+from app.meta.menu import RIGHT_EDIT, RIGHT_PRINT, RIGHT_VIEW
 
 from app.services import doc_extras, doc_xl
 from app.utils import xls as xls_util
@@ -29,7 +29,7 @@ def providers(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get
     return svc.sms_providers(conn)
 
 
-@router.get("/{doc_id}/email-templates")
+@router.get("/{doc_id}/email-templates", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def email_templates(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return svc.email_templates(conn, doc_id)
 
@@ -38,7 +38,7 @@ class PrepareBody(BaseModel):
     template: str
 
 
-@router.post("/{doc_id}/{record_id}/email/prepare")
+@router.post("/{doc_id}/{record_id}/email/prepare", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def email_prepare(doc_id: int, record_id: int, body: PrepareBody, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return svc.email_prepare(conn, doc_id, record_id, body.template)
 
@@ -50,19 +50,19 @@ class EmailBody(BaseModel):
     body: str
 
 
-@router.post("/{doc_id}/{record_id}/email/send")
+@router.post("/{doc_id}/{record_id}/email/send", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def email_send(doc_id: int, record_id: int, body: EmailBody, user: CurrentUser = Depends(get_current_user)):
     with with_transaction() as conn:
         n = svc.email_send(conn, to=body.to, cc=body.cc, subject=body.subject, body=body.body)
     return {"message": "Email Sent....", "recipients": n}
 
 
-@router.get("/{doc_id}/sms-templates")
+@router.get("/{doc_id}/sms-templates", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def sms_templates(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return svc.sms_templates(conn, doc_id)
 
 
-@router.post("/{doc_id}/{record_id}/sms/prepare")
+@router.post("/{doc_id}/{record_id}/sms/prepare", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def sms_prepare(doc_id: int, record_id: int, body: PrepareBody, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return svc.sms_prepare(conn, doc_id, record_id, body.template)
 
@@ -73,7 +73,7 @@ class SmsBody(BaseModel):
     provider: str = ""
 
 
-@router.post("/{doc_id}/{record_id}/sms/send")
+@router.post("/{doc_id}/{record_id}/sms/send", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def sms_send(doc_id: int, record_id: int, body: SmsBody, user: CurrentUser = Depends(get_current_user)):
     with with_transaction() as conn:
         n = svc.sms_send(conn, mobile=body.mobile, message=body.text, provider=body.provider)
@@ -139,37 +139,37 @@ def label_documents(conn: Connection = Depends(get_conn), _: CurrentUser = Depen
     return label_print.documents(conn)
 
 
-@router.get("/{doc_id}/label-columns")
+@router.get("/{doc_id}/label-columns", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def label_columns(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return label_print.columns(conn, doc_id)
 
 
-@router.get("/{doc_id}/label-templates")
+@router.get("/{doc_id}/label-templates", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def label_templates(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return label_print.templates(conn, doc_id)
 
 
-@router.post("/{doc_id}/label-templates", status_code=201)
+@router.post("/{doc_id}/label-templates", status_code=201, dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def label_template_add(doc_id: int, body: LabelTemplate, _: CurrentUser = Depends(get_current_user)):
     with with_transaction() as conn:
         tid = label_print.save_template(conn, doc_id, None, body.name, body.lines)
     return {"id": tid, "message": "Saved Successfully!"}
 
 
-@router.put("/{doc_id}/label-templates/{template_id}")
+@router.put("/{doc_id}/label-templates/{template_id}", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def label_template_update(doc_id: int, template_id: int, body: LabelTemplate, _: CurrentUser = Depends(get_current_user)):
     with with_transaction() as conn:
         label_print.save_template(conn, doc_id, template_id, body.name, body.lines)
     return {"id": template_id, "message": "Updated successfully."}
 
 
-@router.delete("/{doc_id}/label-templates/{template_id}")
+@router.delete("/{doc_id}/label-templates/{template_id}", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def label_template_delete(doc_id: int, template_id: int, _: CurrentUser = Depends(get_current_user)):
     with with_transaction() as conn:
         label_print.delete_template(conn, doc_id, template_id)
     return {"message": "Deleted Successfully!"}
 
 
-@router.post("/{doc_id}/labels")
+@router.post("/{doc_id}/labels", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def label_run(doc_id: int, body: LabelRun, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return {"labels": label_print.labels(conn, doc_id, body.template_id, body.record_ids, body.top)}

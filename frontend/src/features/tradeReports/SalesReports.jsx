@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
 import { Alert, Button, Card, Checkbox, Group, Select, Stack, Text } from '@mantine/core'
 import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
@@ -95,6 +96,7 @@ export function DailySalesPage() {
       <Filters s={s} daily />
       <ScaleGrid columns={columns} rows={rows} loading={s.loading} emptyTitle={r ? 'No sales in this period' : 'Press View'} emptyHint={r ? undefined : 'Choose the dates and press View.'} />
       <Group>
+        <ReportPrintButtons title="Daily Sales Report" period={`Period From ${dayjs(from).format('DD/MM/YYYY')} To ${dayjs(to).format('DD/MM/YYYY')}`} columns={columns} rows={rows} hotkey />
         <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls('Daily Sales Report.xls', rows, columns.map((c) => ({ label: c.label, value: (x) => (c.render ? c.render(x) : x[c.key]) })))}>Export to Excel</Button>
       </Group>
     </Stack>
@@ -125,6 +127,7 @@ export function ProductSalesPage() {
       <Filters s={s} />
       <ScaleGrid columns={columns} rows={rows} loading={s.loading} emptyTitle={r ? 'No sales in this period' : 'Press View'} emptyHint={r ? undefined : 'Choose the dates and press View.'} />
       <Group>
+        <ReportPrintButtons title="Product Sales Summary Report" period={`Period From ${dayjs(from).format('DD/MM/YYYY')} To ${dayjs(to).format('DD/MM/YYYY')}`} columns={columns} rows={rows} hotkey />
         <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls('Product Sales Summary.xls', rows, columns.map((c) => ({ label: c.label, value: (x) => (c.render ? c.render(x) : x[c.key]) })))}>Export to Excel</Button>
       </Group>
     </Stack>

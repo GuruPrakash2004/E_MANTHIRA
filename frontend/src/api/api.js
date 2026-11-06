@@ -3,12 +3,9 @@
 // never axios directly — see /CLAUDE.md §5.
 import axios from 'axios'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL
-
-if (!BASE_URL) {
-  // Fail loudly in dev rather than silently calling a relative path.
-  console.error('VITE_API_BASE_URL is not set — copy frontend/.env.example to frontend/.env')
-}
+// Unset = same origin: the backend serves this site and the API under /api/v1, so a deployed build needs no config.
+// (`npm run dev` proxies /api to the backend, see vite.config.js.) Set VITE_API_BASE_URL only to point at another server.
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 /** Absolute URL for a backend path, for tags that cannot go through axios (e.g. <video src>). */
 export const apiUrl = (path) => `${BASE_URL || ''}${path}`
@@ -60,7 +57,12 @@ api.interceptors.request.use((config) => {
 let refreshPromise = null
 
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // a saved / deleted document moves the "next bill no" on: screens showing that preview listen for this
+    const m = String(res.config?.method || 'get').toLowerCase()
+    if (m !== 'get' && typeof window !== 'undefined') window.dispatchEvent(new Event('vt-doc-written'))
+    return res
+  },
   async (error) => {
     const original = error.config
     if (error.response?.status === 401 && !original._retried && getRefreshToken()) {

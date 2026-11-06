@@ -218,6 +218,28 @@ def delete_journal_voucher(jnrvch_id: int, user: CurrentUser = Depends(require_r
     return {"message": "Deleted Journal Voucher Successfully!"}
 
 
+@router.get("/vouchers/account-heads")
+def account_heads_list(
+    doc_id: int = Query(...),
+    side: str = Query("DR", pattern="^(?i:DR|CR|TO|BY)$"),
+    search: str = Query("", max_length=100),
+    conn: Connection = Depends(get_conn),
+    _: CurrentUser = Depends(get_current_user),
+):
+    """The Account Head list for one voucher line: the ledger groups this document allows for that side (UtlAccAmtTypeLedGrps) and their children."""
+    from app.services import account_heads
+
+    return account_heads.list_heads(conn, doc_id=doc_id, side=side, search=search)
+
+
+@router.get("/vouchers/account-heads/{ac_led_id}")
+def account_head_detail(ac_led_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """One head: name, group, balance (legacy getAcBalance) and the reason it cannot be used, if any."""
+    from app.services import account_heads
+
+    return account_heads.detail(conn, ac_led_id)
+
+
 @router.get("/vouchers/{kind}/{voucher_id}")
 def get_voucher(kind: str, voucher_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     from app.services import voucher_view

@@ -15,13 +15,13 @@ export function saveBlob(blob, filename) {
  * Download rows as an Excel 97-2003 (.xls) file — the only spreadsheet format the app exports. The server builds the
  * file (POST /export/xls). columns: [{ label, key? , value?(row) }].
  */
-export async function downloadXls(filename, rows, columns) {
+export async function downloadXls(filename, rows, columns, title) {
   const name = String(filename || 'export').replace(/\.(csv|xlsx?)$/i, '')
   try {
     const blob = await api
       .post(
         '/export/xls',
-        { filename: name, sheet: name.slice(0, 31), headers: columns.map((c) => c.label), rows: rows.map((r) => columns.map((c) => (c.value ? c.value(r) : r[c.key]) ?? '')) },
+        { filename: name, sheet: name.slice(0, 31), title: title || name, headers: columns.map((c) => c.label), rows: rows.map((r) => columns.map((c) => (c.value ? c.value(r) : r[c.key]) ?? '')) },
         { responseType: 'blob' },
       )
       .then((r) => r.data)

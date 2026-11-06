@@ -68,7 +68,7 @@ def ledger(conn: Connection, *, fy: FinancialYear, from_date: date, to_date: dat
     _check_range(fy, from_date, to_date)
     if not item_ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Select at least one item")
-    params: dict = {"d1": from_date, "d2": to_date, "fs": fy.start_date, "fyid": fy.id}
+    params: dict = {"d1": from_date, "d2": to_date, "fs": fy.start_date, "fyid": fy.start_date.year % 100}
     loc = ""
     if loc_id:
         loc = " AND s.LocID = :loc"
@@ -144,7 +144,7 @@ def balance(
     """Legacy "OP Rcpt Issue Balance": per item - opening, receipts, issues, closing (+ values)."""
     _check_range(fy, from_date, to_date)
     val = (_gsetting(conn, "Inventory", "VaulationMethod", "S") or "S").upper()
-    params: dict = {"d1": from_date, "d2": to_date, "fs": fy.start_date, "fyid": fy.id}
+    params: dict = {"d1": from_date, "d2": to_date, "fs": fy.start_date, "fyid": fy.start_date.year % 100}
     loc = ""
     if loc_id:
         loc = " AND s.LocID = :loc"

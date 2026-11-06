@@ -93,17 +93,17 @@ export function AddressesModal({ opened, onClose, docId, rowId, party }) {
       {edit ? (
         <Stack gap="sm">
           <TextInput className="vt-field-required" label="Category" required data-autofocus value={edit.AddCat} onChange={(e) => set('AddCat', e.currentTarget.value)} />
-          <TextInput className="vt-field-required" label="Address" required value={edit.Add1} onChange={(e) => set('Add1', e.currentTarget.value)} />
-          <TextInput aria-label="Address line 2" value={edit.Add2} onChange={(e) => set('Add2', e.currentTarget.value)} />
-          <TextInput aria-label="Address line 3" value={edit.Add3} onChange={(e) => set('Add3', e.currentTarget.value)} />
-          <TextInput aria-label="Address line 4" value={edit.Add4} onChange={(e) => set('Add4', e.currentTarget.value)} />
+          <TextInput className="vt-field-required" label="Address" required placeholder="Address line 1 - building / street" value={edit.Add1} onChange={(e) => set('Add1', e.currentTarget.value)} />
+          <TextInput aria-label="Address line 2" placeholder="Address line 2 - area / locality" value={edit.Add2} onChange={(e) => set('Add2', e.currentTarget.value)} />
+          <TextInput aria-label="Address line 3" placeholder="Address line 3 - city / district" value={edit.Add3} onChange={(e) => set('Add3', e.currentTarget.value)} />
+          <TextInput aria-label="Address line 4" placeholder="Address line 4 - state / PIN code" value={edit.Add4} onChange={(e) => set('Add4', e.currentTarget.value)} />
           <TextInput label="GST No" value={edit.SHPGSTNO} maxLength={15} onChange={(e) => set('SHPGSTNO', e.currentTarget.value)} />
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <Autocomplete
               className="vt-field-required"
               label="City"
               required
-              data={cities.map((c) => c.label)}
+              data={[...new Set(cities.map((c) => c.label).filter((l) => l != null && l !== ''))]}
               value={edit.City}
               onChange={(v) => {
                 const hit = cities.find((c) => c.label === v)

@@ -1,4 +1,4 @@
-import { get, post, put } from '../api'
+import { del, get, post, put } from '../api'
 
 export const listAllPrintOptions = () => get('/print-options')
 export const listServerPrinters = (refresh = false) => get('/print-options/printers', { params: { refresh } })
@@ -13,3 +13,9 @@ export const uploadFontFile = (file) => {
   body.append('file', file)
   return post('/print-options/font-files', body)
 }
+
+// Add / delete a print format, and the lists the form picks from
+export const createPrintOption = (body) => post('/print-options', body)
+export const deletePrintOption = (docId, optionName) => del(`/print-options/${docId}/${encodeURIComponent(optionName)}`)
+export const listPrintScreens = () => get('/print-options/screens')
+export const listRptFiles = () => get('/print-options/rpt-files')

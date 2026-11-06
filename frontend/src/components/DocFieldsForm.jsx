@@ -1,10 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Grid, Text } from '@mantine/core'
 import { useQueryClient } from '@tanstack/react-query'
 import DynamicField from './DynamicField'
 import useDocFields from '../hooks/useDocFields'
 import * as metaApi from '../api/endpoints/meta'
-import { fieldDefault, fieldListOptions, isFieldHidden, isFieldMandatory, isReadOnlyByCondition, referencedCodes } from '../utils/docFieldConditions'
+import { fieldDefault, fieldListOptions, isFieldHidden, isFieldMandatory, isReadOnlyByCondition, referencedCodes, comboDependencies } from '../utils/docFieldConditions'
 import { withComputed } from '../utils/docCompute'
 
 /**
@@ -49,11 +49,49 @@ export default function DocFieldsForm({
   computed,
   rowGroups = [],
   fieldFilters = {},
+  inlineLabels,
 }) {
   const { fields, isLoading } = useDocFields(docId)
   const queryClient = useQueryClient()
   const latest = useRef(values)
   latest.current = values
+
+  // Nakshatra -> Rashi: each Nakshatra field is paired with its Rashi field (the "Sec..." pair together, otherwise in order).
+  // The nakshatra master stores one or two rashis; one fills the Rashi in, two limit the Rashi list to those two.
+  const nakPairs = useMemo(() => {
+    const tbl = (f) => String(f.FldCmbTblName || '').trim().toUpperCase()
+    const naks = fields.filter((f) => f.FldBlnComboData === 'Y' && tbl(f) === 'MSTNAKSHATRA')
+    const rashis = fields.filter((f) => f.FldBlnComboData === 'Y' && tbl(f) === 'MSTRASHI')
+    const sec = (f) => /^SEC/i.test(f.FldCode)
+    return naks
+      .map((n, i) => ({ nak: n.FldCode, rashi: (rashis.find((r) => sec(r) === sec(n)) || rashis[i])?.FldCode }))
+      .filter((p) => p.rashi)
+  }, [fields])
+  const [rashiAllowed, setRashiAllowed] = useState({})
+  const rashiIds = (nakId) =>
+    queryClient.fetchQuery({ queryKey: ['nak-rashis', Number(nakId)], queryFn: () => metaApi.getNakshatraRashis(Number(nakId)), staleTime: 10 * 60_000 }).then((r) => (r || []).map((x) => Number(x.value)))
+  const nakKey = nakPairs.map((p) => `${p.nak}:${values?.[p.nak] ?? ''}`).join('|')
+  useEffect(() => {
+    let off = false
+    ;(async () => {
+      const next = {}
+      for (const p of nakPairs) {
+        const v = Number(values?.[p.nak])
+        if (!v) continue
+        try {
+          const ids = await rashiIds(v)
+          if (ids.length) next[p.rashi] = ids
+        } catch {
+          /* no link: the Rashi list stays unrestricted */
+        }
+      }
+      if (!off) setRashiAllowed(next)
+    })()
+    return () => {
+      off = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nakKey])
 
   // Apply the Designer's static defaults (FldUseDefault / FldDefStdDefault) once per (re)start of an entry.
   useEffect(() => {
@@ -102,7 +140,7 @@ export default function DocFieldsForm({
     const next = { ...latest.current, [code]: value }
     for (const f of fields) {
       if (f.FldCode === code) continue
-      const dependsCombo = referencedCodes(f.FldCmbAddnlCond).includes(code)
+      const dependsCombo = comboDependencies(f).includes(code) // changing the Sannidhi clears the Seva (legacy), a Nakshatra clears the Rashi ...
       const after = referencedCodes(f.FldPickUPAfterFld || f.FldPickUP)
       const pickup = f.FldPickUP && after.includes(code)
       if (dependsCombo) setValue(f.FldCode, '')
@@ -113,6 +151,16 @@ export default function DocFieldsForm({
         } catch {
           /* leave the field as it is */
         }
+      }
+    }
+    const pair = nakPairs.find((p) => p.nak === code)
+    if (pair && Number(value) > 0) {
+      try {
+        const ids = await rashiIds(value)
+        if (ids.length === 1) setValue(pair.rashi, ids[0]) // a single rashi fills itself in
+        else if (ids.length > 1 && !ids.includes(Number(latest.current?.[pair.rashi]))) setValue(pair.rashi, '') // two: the person picks one
+      } catch {
+        /* leave the Rashi as it is */
       }
     }
   }
@@ -129,13 +177,16 @@ export default function DocFieldsForm({
     return n > 1 ? Math.floor(12 / n) : 0
   }
 
+  // Header = the main block. Footer / Total / Detail are "additional information": one column, caption left, value right.
+  // Footer / Total / Detail blocks default to caption-left rows; a block that shares a card with the Header fields keeps the normal grid (inlineLabels={false})
+  const inline = inlineLabels ?? section !== 'Header'
   return (
-    <Grid>
+    <Grid className={inline ? 'vt-inline-fields' : undefined}>
       {list.map((f) => {
-        const ctx = referencedCodes(f.FldCmbAddnlCond).reduce((acc, c) => ({ ...acc, [c]: shown[c] ?? '' }), null)
+        const ctx = comboDependencies(f).reduce((acc, c) => ({ ...acc, [c]: shown[c] ?? '' }), null)
         const wide = f.FldTxtBlnMultiLine === 'Y' || Number(f.FldDataWidth) >= 400
         return (
-          <Grid.Col key={f.FldCode} span={shareOf(f.FldCode) ? { base: 12, sm: shareOf(f.FldCode) } : { base: 12, sm: wide ? 12 : 6, xl: wide ? 12 : 4 }}>
+          <Grid.Col key={f.FldCode} span={inline ? 12 : shareOf(f.FldCode) ? { base: 12, sm: shareOf(f.FldCode) } : { base: 12, sm: wide ? 12 : 6, xl: wide ? 12 : 4 }}>
             <DynamicField
               docId={docId}
               field={f}
@@ -144,9 +195,10 @@ export default function DocFieldsForm({
               required={isFieldMandatory(f, shown)}
               locked={readOnly || isReadOnlyByCondition(f, shown)}
               noSeed
+              noAddressLines={fields.some((x) => /^ADD[2-4]$/i.test(x.FldCode))} // the designer already splits the address into lines
               error={errors[f.FldCode]}
               ctx={ctx}
-              allowedValues={fieldFilters[f.FldCode]}
+              allowedValues={rashiAllowed[f.FldCode] || fieldFilters[f.FldCode]}
               onBlur={onBlurField ? () => onBlurField(f.FldCode) : undefined}
             />
           </Grid.Col>

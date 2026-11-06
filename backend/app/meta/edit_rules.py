@@ -18,7 +18,8 @@ from sqlalchemy.engine import Connection
 
 def _flags(conn: Connection, doc_id: int) -> dict:
     row = conn.execute(
-        text("SELECT AuthReq, blnFreezeDoc, AllowEditDeleteForDays, PrintCancelled, AllowEditDocDate FROM UtlTransactions WHERE DocID = :d"), {"d": doc_id}
+        # SELECT *, not a column list: older temples lack the newer switches (they read as N / 0)
+        text("SELECT * FROM UtlTransactions WHERE DocID = :d"), {"d": doc_id}
     ).mappings().first()
     row = row or {}
     return {
@@ -133,7 +134,17 @@ def rules(conn: Connection, doc_id: int) -> dict:
         {"d": doc_id},
     ).mappings().first() or {}
     yes = lambda k: str(row.get(k) or "N").strip().upper() == "Y"  # noqa: E731
+    extra: dict = {}
+    from app.core import capabilities
+
+    if capabilities.has_col("UtlTransactions", "BalanceColReq") and capabilities.has_col("UtlTransactions", "DefFirstRowAmtType"):
+        e = conn.execute(text("SELECT BalanceColReq, DefFirstRowAmtType FROM UtlTransactions WHERE DocID = :d"), {"d": doc_id}).mappings().first() or {}
+        extra = {
+            "balance_col": str(e.get("BalanceColReq") or "N").strip().upper() == "Y",  # voucher grid shows each head's balance
+            "first_row_type": (str(e.get("DefFirstRowAmtType") or "DR").strip().upper() or "DR")[:2],  # DR / CR for the first line
+        }
     return {
+        **extra,
         "auth_req": yes("AuthReq"),
         "freeze": yes("blnFreezeDoc"),
         "edit_days": int(row.get("AllowEditDeleteForDays") or 0),

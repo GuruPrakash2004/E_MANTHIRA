@@ -1,4 +1,5 @@
 import { historyParams } from '../../lib/history'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { useState } from 'react'
 import { Group, Stack, Text, Title } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
@@ -111,7 +112,7 @@ export default function AssetEntryPage() {
             </Text>
           </div>
         </Group>
-        <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={Boolean(viewId)} w={150} />
+        <DocNoDate docId={DOC_ID} viewNo={viewId ? viewNo : ''} date={docDate} onDate={setDocDate} dateDisabled={Boolean(viewId)} />
       </Group>
 
       <EntryLayout
@@ -145,6 +146,7 @@ export default function AssetEntryPage() {
             />
             {lastSaved && <SavedPanel lines={[`Asset ${lastSaved.no}`]} />}
             <RecentCard
+              docId={DOC_ID}
               title="Recent assets"
               icon={Landmark}
               loading={recentLoading}

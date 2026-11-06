@@ -9,6 +9,7 @@ from jose import JWTError, jwt
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from app.core import capabilities
 from app.core.config import get_settings
 from app.core.db import get_conn
 from app.meta import menu as meta_menu
@@ -68,6 +69,8 @@ def get_current_user(
 
 
 def _check_right(conn: Connection, user: CurrentUser, doc_id: int, position: int) -> CurrentUser:
+    if not capabilities.doc_available(doc_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not available in this database")
     menu_item_id = meta_menu.resolve_menu_item_id(conn, doc_id)
     if menu_item_id is None:
         # No menu entry (e.g. an internal doc) — allow, rights are enforced
@@ -81,6 +84,11 @@ def _check_right(conn: Connection, user: CurrentUser, doc_id: int, position: int
     return user
 
 
+def check_right(conn: Connection, user: CurrentUser, doc_id: int, position: int) -> CurrentUser:
+    """Inline form of `require_right` for routes whose DocID arrives in the body or query."""
+    return _check_right(conn, user, doc_id, position)
+
+
 def require_right(doc_id: int, position: int):
     """
     Dependency factory for screens with a FIXED DocID (Seva=1263, Hall=1281,
@@ -92,6 +100,22 @@ def require_right(doc_id: int, position: int):
 
     def _dep(user: CurrentUser = Depends(get_current_user), conn: Connection = Depends(get_conn)) -> CurrentUser:
         return _check_right(conn, user, doc_id, position)
+
+    return _dep
+
+
+def require_right_for_form(form_key: str, position: int, *, by: str = "form"):
+    """Like `require_right`, for screens that have no DocID: the menu item is found by its legacy form name (MstMenu.FrmName),
+    or by caption (`by="caption"`) for the few legacy rows that carry no form name."""
+
+    def _dep(user: CurrentUser = Depends(get_current_user), conn: Connection = Depends(get_conn)) -> CurrentUser:
+        menu_item_id = meta_menu.resolve_menu_item_by_caption(conn, form_key) if by == "caption" else meta_menu.resolve_menu_item_by_form(conn, form_key)
+        if menu_item_id is None:
+            return user  # no menu entry for it in this database
+        rights = meta_menu.get_rights_string(conn, user_id=user.user_id, role_id=user.role_id, user_code=user.user_code, menu_item_id=menu_item_id)
+        if not meta_menu.has_right(rights, position):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Access Denied")
+        return user
 
     return _dep
 

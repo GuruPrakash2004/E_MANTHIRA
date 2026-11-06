@@ -9,7 +9,7 @@ from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
 from app.core.fy import FinancialYear, get_user_fy, get_history_fy
-from app.core.security import CurrentUser, get_current_user, require_right
+from app.core.security import CurrentUser, get_current_user, require_right, require_right_for_form
 from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_VIEW
 from app.services import inventory as inv
 
@@ -141,6 +141,29 @@ def create_purchase_bill(
         return inv.create_purchase_bill(conn, data=data, fy=fy, user_code=user.user_code)
 
 
+@router.get("/purchase-bills/next-no")
+def purchase_bill_next_no(conn: Connection = Depends(get_conn), fy: FinancialYear = Depends(get_user_fy), _: CurrentUser = Depends(require_right(inv.DOC_ID_PB, RIGHT_VIEW))):
+    return inv.preview_purchase_bill_no(conn, fy=fy)
+
+
+@router.get("/purchase-bills/{pb_id}")
+def get_purchase_bill(pb_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(inv.DOC_ID_PB, RIGHT_VIEW))):
+    return inv.get_purchase_bill(conn, pb_id=pb_id)
+
+
+@router.get("/qoh")
+def qoh(item_ids: str = Query(""), loc_id: int | None = Query(None), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """Quantity on hand of the given items (comma separated ids), at one location or in total."""
+    ids = [int(x) for x in item_ids.split(",") if x.strip().isdigit()]
+    return inv.qoh_for_items(conn, item_ids=ids, loc_id=loc_id)
+
+
+@router.get("/line-items")
+def line_items(q: str = Query(""), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """Item picker rows for transaction lines (code, name, UOM, standard rate)."""
+    return inv.search_line_items(conn, q=q)
+
+
 @router.delete("/purchase-bills/{pb_id}")
 def delete_purchase_bill(pb_id: int, user: CurrentUser = Depends(require_right(inv.DOC_ID_PB, RIGHT_DELETE))):
     with with_transaction() as conn:
@@ -236,7 +259,7 @@ def current_stock_balance(
     loc_id: int | None = Query(None),
     item_code: str | None = Query(None),
     conn: Connection = Depends(get_conn),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("FRMUTLCURSTK", RIGHT_VIEW)),
 ):
     return inv.current_stock_balance(conn, loc_id=loc_id, item_code_like=item_code)
 
@@ -259,7 +282,7 @@ def stock_balance_report(
     item_group_id: int | None = Query(None),
     item_code: str | None = Query(None),
     conn: Connection = Depends(get_conn),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("Stock Balance Report", RIGHT_VIEW)),
 ):
     return inv.stock_balance_report(conn, as_of_date=as_of_date, loc_id=loc_id, item_group_id=item_group_id, item_code_like=item_code)
 
@@ -271,7 +294,7 @@ def stock_ledger_report(
     to_date: date = Query(...),
     loc_id: int | None = Query(None),
     conn: Connection = Depends(get_conn),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("Stock Ledger Report", RIGHT_VIEW)),
 ):
     return inv.stock_ledger_report(conn, item_id=item_id, loc_id=loc_id, from_date=from_date, to_date=to_date)
 
@@ -335,7 +358,7 @@ def stock_ledger_multi(
     loc_id: int | None = None,
     conn: Connection = Depends(get_conn),
     fy: FinancialYear = Depends(get_user_fy),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("Stock Ledger Report", RIGHT_VIEW)),
 ):
     from app.services import stock_reports
 
@@ -343,6 +366,85 @@ def stock_ledger_multi(
     if group_ids:
         ids += stock_reports.items_in_groups(conn, _csv_ints(group_ids))
     return stock_reports.ledger(conn, fy=fy, from_date=from_date, to_date=to_date, item_ids=sorted(set(ids)), loc_id=loc_id)
+
+
+# ---- Add Items (paste a list of item codes / saved item lists) - legacy frmUtlAddItems ----
+
+
+class ValidateCodesBody(BaseModel):
+    codes: list[str]
+
+
+class SaveItemListBody(BaseModel):
+    remarks: str = ""
+    item_ids: list[int]
+
+
+@router.get("/item-lists")
+def item_lists(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    from app.services import item_lists as il
+
+    return {"available": il.available(), "names": il.list_names(conn)}
+
+
+@router.post("/item-lists/validate")
+def item_lists_validate(body: ValidateCodesBody, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    from app.services import item_lists as il
+
+    return il.validate_codes(conn, body.codes)
+
+
+@router.get("/item-lists/{name}")
+def item_list_load(name: str, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    from app.services import item_lists as il
+
+    return il.load_list(conn, name)
+
+
+@router.put("/item-lists/{name}")
+def item_list_save(name: str, body: SaveItemListBody, _: CurrentUser = Depends(get_current_user)):
+    from app.services import item_lists as il
+
+    with with_transaction() as conn:
+        n = il.save_list(conn, name, body.remarks, body.item_ids)
+    return {"message": "Item list saved", "count": n}
+
+
+@router.delete("/item-lists/{name}")
+def item_list_remove(name: str, _: CurrentUser = Depends(get_current_user)):
+    from app.services import item_lists as il
+
+    with with_transaction() as conn:
+        il.remove_list(conn, name)
+    return {"message": "Item list deleted!"}
+
+
+@router.get("/reports/stock-balance-docwise")
+def stock_balance_docwise(
+    from_date: date,
+    to_date: date,
+    item_ids: str | None = None,
+    group_ids: str | None = None,
+    loc_id: int | None = None,
+    show_value: bool = False,
+    hide_zero: bool = True,
+    conn: Connection = Depends(get_conn),
+    fy: FinancialYear = Depends(get_user_fy),
+    _: CurrentUser = Depends(require_right_for_form("Stock Balance Report", RIGHT_VIEW)),
+):
+    """Stock Balance Report, "OP << document wise >> Balance" (legacy frmRptStockBal.ViewClDetailed)."""
+    from app.services import stock_docwise
+
+    return stock_docwise.balance_docwise(
+        conn, fy=fy, from_date=from_date, to_date=to_date, loc_id=loc_id, item_ids=_csv_ints(item_ids) or None, group_ids=_csv_ints(group_ids) or None, show_value=show_value, hide_zero=hide_zero
+    )
+
+
+@router.get("/stock-rules")
+def stock_rules(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """Inventory > AllowNegative (legacy svtModule.CHKAllowNegativeStock): when 'N' a stock-out document cannot take more than the
+    quantity on hand and its QOH column is shown; when 'Y' the QOH column is hidden and stock may go negative."""
+    return {"allow_negative": inv.allow_negative_stock(conn)}
 
 
 @router.get("/reports/stock-balance")
@@ -356,7 +458,7 @@ def stock_balance_multi(
     hide_zero: bool = True,
     conn: Connection = Depends(get_conn),
     fy: FinancialYear = Depends(get_user_fy),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("Stock Balance Report", RIGHT_VIEW)),
 ):
     from app.services import stock_reports
 

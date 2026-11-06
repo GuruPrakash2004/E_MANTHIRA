@@ -21,7 +21,7 @@ router = APIRouter(prefix="/masters", tags=["masters"])
 def list_master(
     doc_id: int,
     search: str = "",
-    top: int = Query(200, le=1000),
+    top: int = Query(200, le=5000),
     conn: Connection = Depends(get_conn),
     _: CurrentUser = Depends(require_right_from_path(RIGHT_VIEW)),
 ):

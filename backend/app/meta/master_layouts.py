@@ -42,7 +42,7 @@ LAYOUTS: dict[int, dict[str, Any]] = {
     # Item Master (frmMstITEM)
     1114: {
         "fields": [
-            _f("TallyAlias", "Tally Alias", width=100),
+            _f("TallyAlias", "Tally Alias", width=100, fill_from_code=True),
             _f("ITEMDesc", "Description", "textarea", width=250),
             _f("HSNCode", "HSN Code", width=15),
             _f("ITEMGroupID", "ITEMGroup Mst", "lookup", required=True, lookup=_ITEM_GROUP),
@@ -72,13 +72,13 @@ LAYOUTS: dict[int, dict[str, Any]] = {
     # Supplier Master (frmMstSUPP)
     1121: {
         "fields": [
-            _f("SUPPAliasName", "Tally Alias", width=100),
+            _f("SUPPAliasName", "Tally Alias", width=100, fill_from_code=True),
             _f("LedGroupID", "Group Ledger", "lookup", lookup=_LED_GROUP),
             _f("SUPPGROUPID", "Supp Group", "lookup", lookup=_SUPP_GROUP),
-            _f("BAdd1", "Address", required=True, width=100),
-            _f("BAdd2", "", width=100),
-            _f("BAdd3", "", width=100),
-            _f("BAdd4", "", width=100),
+            _f("BAdd1", "Address", placeholder="Address line 1 - building / street", required=True, width=100),
+            _f("BAdd2", "", placeholder="Address line 2 - area / locality", width=100),
+            _f("BAdd3", "", placeholder="Address line 3 - city / district", width=100),
+            _f("BAdd4", "", placeholder="Address line 4 - state / PIN code", width=100),
             _f("City", "City", "lookup", required=True, lookup=_SCC_CITY, fills={"State": "State", "Country": "Country"}),
             _f("PinCode", "Pincode", width=6),
             _f("State", "State", required=True, readonly=True),
@@ -99,6 +99,26 @@ LAYOUTS: dict[int, dict[str, Any]] = {
         "copy_from": True,
         "defaults_lookup": {"LedGroupID": ("MstLedgroup", "LEDGROUPID", "LEDGROUPCODE", "Sundry Creditors")},
         "defaults_value": {"Country": "INDIA", "State": "KARNATAKA"},
+    },
+    # Customer Master (MstCUST): same layout idea as the Supplier master (code fills the name and alias when they are blank)
+    1112: {
+        "fields": [
+            _f("CUSTAliasName", "Tally Alias", width=100, fill_from_code=True),
+            _f("LedGroupID", "Group Ledger", "lookup", lookup=_LED_GROUP),
+            _f("BAdd1", "Address", placeholder="Address line 1 - building / street", width=50),
+            _f("BAdd2", "", placeholder="Address line 2 - area / locality", width=50),
+            _f("BAdd3", "", placeholder="Address line 3 - city / district", width=50),
+            _f("BAdd4", "", placeholder="Address line 4 - state / PIN code", width=50),
+            _f("City", "City", "lookup", lookup=_SCC_CITY, fills={"State": "State", "Country": "Country"}),
+            _f("PinCode", "Pincode", width=6),
+            _f("State", "State", readonly=True),
+            _f("Country", "Country", readonly=True),
+            _f("MOBNO", "Mobile No", width=50),
+            _f("GSTNO", "GST No", width=15),
+            _f("BillWiseTrack", "Bill Wise Tracking Required", "flag"),
+            _f("AccBillToBillClearance", "Bill To Bill Clearance", "flag"),
+        ],
+        "copy_from": True,
     },
     # State City Country (frmMstSCC): City / State / Country only, no code/name pair, no Inactive flag.
     1106: {

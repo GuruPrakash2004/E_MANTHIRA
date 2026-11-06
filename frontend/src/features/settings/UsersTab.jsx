@@ -1,3 +1,4 @@
+import DataGrid from '../../components/ui/DataGrid'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import dayjs from 'dayjs'
 import { useEffect, useState } from 'react'
@@ -272,32 +273,20 @@ export default function UsersTab() {
         ) : shown.length === 0 ? (
           <EmptyState icon={Search} title="No matching users" hint="Try a different search or status filter." />
         ) : (
-          <Table.ScrollContainer minWidth={640}>
-            <Table highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>User Code</Table.Th>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Role</Table.Th>
-                  <Table.Th>Mobile</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th w={140} aria-label="Actions" />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {shown.map((row) => (
-                  <Table.Tr key={row.UserID}>
-                    <Table.Td fw={600}>{row.UserCode}</Table.Td>
-                    <Table.Td>{row.UserName}</Table.Td>
-                    <Table.Td>{roleName(row.RoleID)}</Table.Td>
-                    <Table.Td className="vt-num">{row.Mobileno}</Table.Td>
-                    <Table.Td>{statusBadge(row)}</Table.Td>
-                    <Table.Td>{rowActions(row)}</Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+          <DataGrid
+            name="users"
+            idKey="UserID"
+            rows={shown}
+            maxHeight="65vh"
+            columns={[
+              { key: 'UserCode', label: 'User Code', render: (row) => <Text fw={600} size="sm">{row.UserCode}</Text>, value: (row) => row.UserCode },
+              { key: 'UserName', label: 'Name' },
+              { key: 'RoleID', label: 'Role', value: (row) => roleName(row.RoleID) },
+              { key: 'Mobileno', label: 'Mobile' },
+              { key: 'status', label: 'Status', render: (row) => statusBadge(row), value: (row) => (isInactive(row) ? 'Inactive' : 'Active') },
+              { key: 'actions', label: 'Actions', render: (row) => rowActions(row), value: () => '' },
+            ]}
+          />
         )}
       </Card>
 

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Button, Group, Menu, Modal, Select, Stack, Text, TextInput, Textarea } from '@mantine/core'
+import { Button, Group, Menu, Modal, Select, Stack, Text, TextInput, Textarea, Tooltip } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronUp, Mail, MessageSquare, Send, X } from 'lucide-react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import * as docActions from '../../api/endpoints/docActions'
+import useRights from '../../hooks/useRights'
 import { AmendmentDialog, AttachmentsDialog, LabelPrintDialog } from './DocExtraDialogs'
 
 /**
@@ -14,7 +15,10 @@ import { AmendmentDialog, AttachmentsDialog, LabelPrintDialog } from './DocExtra
  * (Hall Booking: Receipt Info, Donation for NMM / SLV): [{ name, label, onClick(recordId) }], listed first.
  */
 export default function DocOptionsMenu({ docId, recordId, extra = [] }) {
-  const { data: options = [] } = useQuery({ queryKey: ['doc-options', docId], queryFn: () => docActions.getOptions(docId), staleTime: 5 * 60_000 })
+  const { data: allOptions = [] } = useQuery({ queryKey: ['doc-options', docId], queryFn: () => docActions.getOptions(docId), staleTime: 5 * 60_000 })
+  const rights = useRights(docId)
+  // mail, SMS and labels are printing-type actions; amendments change the record
+  const options = allOptions.filter((o) => (['Send EMAIL', 'Send SMS', 'Label Print'].includes(o.name) ? rights.print : o.name === 'Amendment' ? rights.edit : true))
   const [open, setOpen] = useState(null)
   const has = (name) => options.some((o) => o.name === name && o.supported)
   // legacy toolbar shortcuts: Attachment Ctrl+Shift+A, Ammend Ctrl+Shift+J
@@ -25,9 +29,13 @@ export default function DocOptionsMenu({ docId, recordId, extra = [] }) {
     <>
       <Menu position="top-end" withinPortal>
         <Menu.Target>
-          <Button variant="light" color="gold" c="var(--vt-badge-ink)" rightSection={<ChevronUp size={14} />} disabled={!recordId}>
-            Options
-          </Button>
+          <Tooltip label="Open a saved record first (List, Find or the arrows) - Options act on one record" withArrow disabled={Boolean(recordId)}>
+            <span>
+              <Button variant="light" color="gold" c="var(--vt-badge-ink)" rightSection={<ChevronUp size={14} />} disabled={!recordId}>
+                Options
+              </Button>
+            </span>
+          </Tooltip>
         </Menu.Target>
         <Menu.Dropdown>
           {extra.map((o) => (

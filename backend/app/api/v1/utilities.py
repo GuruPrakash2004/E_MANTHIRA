@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
-from app.core.security import CurrentUser, get_current_user
+from app.core.security import CurrentUser, get_current_user, require_right_for_form
+from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
 from app.services import authorisation, notifications, screen_docs, shared_docs
 
 router = APIRouter(prefix="/utilities", tags=["utilities"])
@@ -128,7 +129,7 @@ def nt_delete(note_id: int, user: CurrentUser = Depends(get_current_user)):
 
 # ---- Shared Documents ----------------------------------------------------------------------------------------------
 @router.get("/shared-docs")
-def shd_list(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+def shd_list(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_for_form("Shared Documents", RIGHT_VIEW, by="caption"))):
     return {"rows": shared_docs.list_docs(conn), "groups": shared_docs.groups(conn)}
 
 
@@ -137,7 +138,7 @@ async def shd_add(
     group: str = Form(...),
     remarks: str = Form(""),
     file: UploadFile = File(...),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("Shared Documents", RIGHT_ADD, by="caption")),
 ):
     data = await file.read()
     with with_transaction() as conn:
@@ -151,21 +152,21 @@ class SharedDocBody(BaseModel):
 
 
 @router.put("/shared-docs/{doc_id}")
-def shd_update(doc_id: int, body: SharedDocBody, _: CurrentUser = Depends(get_current_user)):
+def shd_update(doc_id: int, body: SharedDocBody, _: CurrentUser = Depends(require_right_for_form("Shared Documents", RIGHT_EDIT, by="caption"))):
     with with_transaction() as conn:
         shared_docs.update_doc(conn, doc_id=doc_id, group=body.group, remarks=body.remarks)
     return {"message": "Details Updated Successfully!!!"}
 
 
 @router.delete("/shared-docs/{doc_id}")
-def shd_delete(doc_id: int, _: CurrentUser = Depends(get_current_user)):
+def shd_delete(doc_id: int, _: CurrentUser = Depends(require_right_for_form("Shared Documents", RIGHT_DELETE, by="caption"))):
     with with_transaction() as conn:
         shared_docs.delete_doc(conn, doc_id)
     return {"message": "Deleted"}
 
 
 @router.get("/shared-docs/{doc_id}/download")
-def shd_download(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+def shd_download(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_for_form("Shared Documents", RIGHT_VIEW, by="caption"))):
     name = shared_docs.get_file_name(conn, doc_id)
     path = shared_docs.file_path(name)
     if not path.is_file():

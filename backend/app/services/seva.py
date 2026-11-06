@@ -19,15 +19,16 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Connection
 
-from app.core import audit
+from app.core import audit, capabilities
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, table, update_row
 from app.utils.text_norm import normalise_name
 from app.meta import doc_rules, edit_rules, numbering
 from app.services import receipt as receipt_service
+from app.services import split_payment
 from app.utils.amount_in_words import amount_in_words
 
 DOC_ID = 1263
@@ -52,6 +53,9 @@ class SevaInput:
     group_id: int = 0  # TrnHdrGRPSEVA id when this seva is generated from a Group Seva
     regular: bool = False  # "Regular Devotee" tick (TrnHdrSEVA.RegularD): the devotee shows up in Select Sevakartharu
     days_text: str = ""  # the Date Text of the Dates Selection dialog (printed on the receipt, TrnHdrSEVA.DaysPrintText)
+    rate: float | None = None  # the Rate box (TrnHdrSEVA.SevaRate): defaults to the Seva master's amount
+    split: list | None = None  # split payment: [split_payment.SplitPart, ...] - the bill is paid in parts by different modes
+    amount: float | None = None  # the Amount box, typed instead of Rate x days (open-rate sevas have a master amount of 0; the legacy then stores SevaRate 0 and the typed TotalAmt)
 
 
 # Codes this service owns: whatever the browser sends for them is ignored.
@@ -96,13 +100,18 @@ def lookup_devotee(conn: Connection, *, mobile: str, name: str | None = None) ->
     """Port of `SevaDetails()`: last non-cancelled seva for this mobile (+name if given)."""
     from app.core.db import limit_clause
 
-    sql = """
+    T = "TrnHdrSEVA"
+    if not capabilities.has_col(T, "MOBNUM"):  # this temple's seva form has no mobile field: nothing to look up by
+        return None
+    nk, ra, sra = (capabilities.sel(T, "h", c) for c in ("NAMEINKAN", "RASHIID", "SECRASHIID"))
+    rashi = f"(SELECT RASHICODE FROM MstRASHI k WHERE k.RASHIID = {ra})" if capabilities.has_table("MstRASHI") else "NULL"
+    sql = f"""
         SELECT h.KNAME, n1.NAKSHATRACODE AS Nak1, h.NAKSHATRAID,
                (SELECT GOTHRACODE FROM MstGOTHRA k WHERE k.GOTHRAID = h.GOTHRAID) AS Gothra, h.GOTHRAID,
                h.SECKNAME, n2.NAKSHATRACODE AS Nak2, h.SECNAKSHATRAID,
-               COALESCE(h.NAMEINKAN, '') AS NAMEINKAN,
-               (SELECT RASHICODE FROM MstRASHI k WHERE k.RASHIID = h.RASHIID) AS Rashi, h.RASHIID,
-               h.SECRASHIID
+               COALESCE({nk}, '') AS NAMEINKAN,
+               {rashi} AS Rashi, {ra} AS RASHIID,
+               {sra} AS SECRASHIID
         FROM TrnHdrSEVA h
         LEFT JOIN MstNAKSHATRA n1 ON n1.NAKSHATRAID = h.NAKSHATRAID
         LEFT JOIN MstNAKSHATRA n2 ON n2.NAKSHATRAID = h.SECNAKSHATRAID
@@ -137,12 +146,17 @@ def _prepare(conn: Connection, data: SevaInput, fy: FinancialYear) -> _Prepared:
     sannidhi_id = int(values.get("SANNIDHIID") or 0)
     seva_id_value = int(values.get("SVAID") or 0)
     prefix = _get_sannidhi_prefix(conn, sannidhi_id)
-    # The rate is the Seva master's amount (the entry screen has no rate field).
-    rate = float(conn.execute(text("SELECT AMT FROM MstSVA WHERE SVAID = :id"), {"id": seva_id_value}).scalar() or 0)
-    if rate <= 0:
+    # Legacy txtRate / txtAmt (frmTrnSeva): Rate starts as the Seva master's amount (MstSVA.AMT), Amount is Rate x days until the counter types
+    # one. The save refuses an empty amount and one below the master's price ("Amount should not be Empty!!" /
+    # "Amount cannot be less than actual price of seva !!"). Open-rate sevas (master amount 0): the legacy stores SevaRate 0 + the typed TotalAmt.
+    master_rate = float(conn.execute(text("SELECT AMT FROM MstSVA WHERE SVAID = :id"), {"id": seva_id_value}).scalar() or 0)
+    rate = float(data.rate) if data.rate is not None and float(data.rate) >= 0 else master_rate
+    typed = float(data.amount) if data.amount is not None and float(data.amount) > 0 else None
+    total_amt = round(typed if typed is not None else rate * len(data.dates), 2)
+    if total_amt <= 0:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
-
-    total_amt = round(rate * len(data.dates), 2)
+    if total_amt < master_rate:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Amount cannot be less than actual price of seva !!")
     # what the Dates Selection dialog left in Date Text; with a single date, or when it was not used, the legacy defaults
     days_print_text = (data.days_text or "").strip()[:250] or (data.dates[0].perform_date.strftime("%d/%m/%Y") if len(data.dates) == 1 else "Assorted Dates")
 
@@ -154,16 +168,27 @@ def _prepare(conn: Connection, data: SevaInput, fy: FinancialYear) -> _Prepared:
             "SevaRate": rate,
             "NoOfdays": len(data.dates),
             "TotalAmt": total_amt,
-            "AMTINWRDS": amount_in_words(total_amt, "Rupees", "Paise"),
+            "AMTINWRDS": amount_in_words(total_amt, "Rupees", "Paise", raw=True),  # uncleaned, like the EXE
             "DaysPrintText": days_print_text,
             "KNAME": normalise_name(str(values.get("KNAME") or "")),
             "SECKNAME": normalise_name(str(values.get("SECKNAME") or "")),
-            "MOBNO": str(values.get("MOBNUM") or "").strip(),
             "RegularD": "Y" if data.regular else "N",
         }
     )
     if "PRASADA" not in cols or not cols["PRASADA"]:
         cols["PRASADA"] = "No"
+    # The EXE stores a single space for a blank text column (DATALENGTH 1 on every legacy row: ADDRES, BANKNAME, CHQNO,
+    # REFNO, RMKS, MOBNUM...), except MOBNO, which it never fills (empty string; the mobile lives in MOBNUM), and
+    # CHQDATE, which it writes as NULL when there is no cheque (omitting it would give the column default 1900-01-01).
+    keep_empty = {"MOBNO", "NAMEINKAN", "CHQDATE"}  # NAMEINKAN is stored as '' by the EXE; CHQDATE is a date column
+    for k, v in list(cols.items()):
+        if isinstance(v, str) and v == "" and k.upper() not in keep_empty:
+            cols[k] = " "
+    cols["MOBNO"] = ""
+    if not str(cols.get("NAMEINKAN") or "").strip():
+        cols["NAMEINKAN"] = ""  # stored as '' by the EXE (Kannada N'' path)
+    if not str(cols.get("CHQDATE") or "").strip() or str(cols["CHQDATE"]).startswith("1900-01-01"):
+        cols["CHQDATE"] = None
     return _Prepared(values, sannidhi_id, prefix, total_amt, cols)
 
 
@@ -189,6 +214,7 @@ def _post_receipt(conn: Connection, *, p: _Prepared, data: SevaInput, fy: Financ
         cr_led_id=income,
         dr_led_id=cash_bank,
         user_code=user_code,
+        dr_parts=split_payment.dr_parts(data.split),  # one debit line per payment part (None = the usual single cash / bank line)
     )
     return r.receipt_no
 
@@ -204,7 +230,11 @@ def preview_no(conn: Connection, *, sannidhi_id: int, fy: FinancialYear) -> dict
 def create(conn: Connection, *, data: SevaInput, fy: FinancialYear, user_code: str) -> dict:
     if not edit_rules.doc_date_editable(conn, DOC_ID):
         data.doc_date = date.today()  # AllowEditDocDate = 'N': the legacy form locks the date to the system date
+    if data.split:  # the header carries the main part (largest amount) so the legacy EXE sees one ordinary payment
+        split_payment.apply_main(conn, "SEVA", data.split, data.fields)
     p = _prepare(conn, data, fy)
+    if data.split:
+        data.split = split_payment.validate(conn, "SEVA", data.split, p.total_amt, int(p.values.get("LEDGER") or 0))
 
     doc_no = numbering.next_doc_no(
         conn,
@@ -231,7 +261,7 @@ def create(conn: Connection, *, data: SevaInput, fy: FinancialYear, user_code: s
             "Add2": "",
             "Add3": "",
             "Add4": "",
-            "ISSUEDBY": user_code,
+            "ISSUEDBY": " ",  # the EXE leaves it blank (550/550 legacy rows)
             "GRPSEVAID": data.group_id or 0,
         }
     )
@@ -240,11 +270,41 @@ def create(conn: Connection, *, data: SevaInput, fy: FinancialYear, user_code: s
     for d in data.dates:
         insert_row(conn, "TrnDtlSevaDates", {"SevaID": seva_id, "PDate": d.perform_date, "PRemarks": d.remarks})
 
+    if data.split:
+        split_payment.save(conn, "SEVA", seva_id, data.split, user_code)
     receipt_no = _post_receipt(conn, p=p, data=data, fy=fy, doc_no=doc_no, user_code=user_code)
 
     audit.record(conn, entity="Seva Entry", entity_id=seva_id, action="A", user_code=user_code, details=doc_no)
 
     return {"seva_id": seva_id, "seva_no": doc_no, "print_no": print_no, "total_amt": p.total_amt, "receipt_no": receipt_no}
+
+
+def create_many(conn: Connection, *, data: SevaInput, extra_seva_ids: list[int], fy: FinancialYear, user_code: str) -> list[dict]:
+    """
+    Several sevas for the same devotee / Sannidhi in one save: the Seva on the form plus every extra one, each its own
+    ordinary Seva Entry (own bill no, receipt and GL posting) sharing the devotee, dates, payment and accounts entered
+    on the form. Same pattern as `generate_group`; the caller's transaction makes it all-or-nothing.
+    """
+    from dataclasses import replace
+
+    main_id = int(data.fields.get("SVAID") or 0)
+    ids = list(dict.fromkeys([main_id, *[int(i) for i in extra_seva_ids]]))
+    if not main_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Choose the Seva on the form first, then add the other sevas")
+    names = {
+        int(r["SVAID"]): (r["SVANAME"] or "").strip()
+        for r in conn.execute(text("SELECT SVAID, SVANAME FROM MstSVA WHERE SVAID IN :ids").bindparams(bindparam("ids", expanding=True)), {"ids": ids}).mappings()
+    }
+    missing = [i for i in ids if i not in names]
+    if missing:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Seva {missing[0]} was not found")
+    created = []
+    for sid in ids:
+        try:
+            created.append({**create(conn, data=replace(data, fields={**data.fields, "SVAID": sid}, rate=data.rate if sid == main_id else None, amount=data.amount if sid == main_id else None), fy=fy, user_code=user_code), "seva_name": names[sid]})
+        except HTTPException as exc:
+            raise HTTPException(exc.status_code, f"{names[sid]}: {exc.detail}")
+    return created
 
 
 def update(conn: Connection, *, seva_id: int, data: SevaInput, fy: FinancialYear, user_code: str) -> dict:
@@ -263,7 +323,11 @@ def update(conn: Connection, *, seva_id: int, data: SevaInput, fy: FinancialYear
     if not edit_rules.doc_date_editable(conn, DOC_ID):
         data.doc_date = old["SEVADate"].date() if isinstance(old["SEVADate"], datetime) else old["SEVADate"]  # date stays as saved
 
+    if data.split:
+        split_payment.apply_main(conn, "SEVA", data.split, data.fields)
     p = _prepare(conn, data, fy)
+    if data.split:
+        data.split = split_payment.validate(conn, "SEVA", data.split, p.total_amt, int(p.values.get("LEDGER") or 0))
     if p.sannidhi_id != int(old["SANNIDHIID"] or 0):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The Sannidhi cannot be changed after the bill number is issued")
     doc_no = old["SEVANO"]
@@ -278,6 +342,10 @@ def update(conn: Connection, *, seva_id: int, data: SevaInput, fy: FinancialYear
     for d in data.dates:
         insert_row(conn, "TrnDtlSevaDates", {"SevaID": seva_id, "PDate": d.perform_date, "PRemarks": d.remarks})
 
+    if data.split:
+        split_payment.save(conn, "SEVA", seva_id, data.split, user_code)
+    else:
+        split_payment.delete(conn, "SEVA", seva_id)  # the clerk turned the split off
     receipt_no = None
     if _auto_receipt_enabled(conn):
         receipt_service.delete_receipt_by_narr(conn, doc_no)  # reverses the old GL posting; the new one is posted below
@@ -296,6 +364,7 @@ def get(conn: Connection, seva_id: int) -> dict:
     ).mappings().all()
     result = dict(row)
     result["dates"] = [dict(d) for d in dates]
+    result["split_payments"] = split_payment.load(conn, "SEVA", seva_id)
     result["auth_req"] = edit_rules.auth_required(conn, DOC_ID)  # the screen shows AUTHORISED / NOT AUTHORISED only when the document needs it
     return result
 
@@ -303,14 +372,15 @@ def get(conn: Connection, seva_id: int) -> dict:
 def list_recent(conn: Connection, *, fy: FinancialYear, search: str = "", top: int = 50) -> list[dict]:
     from app.core.db import limit_clause
 
-    sql = """
-        SELECT h.SEVAID, h.SEVANO, h.PrintSEVANO, h.SEVADate, h.KNAME, h.MOBNUM, h.TotalAmt, h.Cancelled
+    mob = capabilities.sel("TrnHdrSEVA", "h", "MOBNUM", "' '")  # older temples have no mobile field
+    sql = f"""
+        SELECT h.SEVAID, h.SEVANO, h.PrintSEVANO, h.SEVADate, h.KNAME, {mob} AS MOBNUM, h.TotalAmt, h.Cancelled
         FROM TrnHdrSEVA h
         WHERE h.SEVADate BETWEEN :fs AND :fe
     """
     params: dict = {"fs": fy.start_date, "fe": fy.end_date}
     if search:
-        sql += " AND (h.SEVANO LIKE :q OR h.KNAME LIKE :q OR h.MOBNUM LIKE :q)"
+        sql += f" AND (h.SEVANO LIKE :q OR h.KNAME LIKE :q{' OR h.MOBNUM LIKE :q' if capabilities.has_col('TrnHdrSEVA', 'MOBNUM') else ''})"
         params["q"] = f"%{search}%"
     sql += f" ORDER BY h.SEVAID DESC {limit_clause(top)}"
     rows = conn.execute(text(sql), params).mappings().all()
@@ -337,6 +407,7 @@ def delete(conn: Connection, *, seva_id: int, user_code: str) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Seva not found")
     edit_rules.assert_editable(conn, DOC_ID, doc_date=row["SEVADate"], authorised=row["Authorised"])
     receipt_service.delete_receipt_by_narr(conn, row["SEVANO"])
+    split_payment.delete(conn, "SEVA", seva_id)
     conn.execute(text("DELETE FROM TrnDtlSevaDates WHERE SevaID = :id"), {"id": seva_id})
     conn.execute(text("DELETE FROM TrnHdrSEVA WHERE SEVAID = :id"), {"id": seva_id})
     audit.record(conn, entity="Seva Entry", entity_id=seva_id, action="D", user_code=user_code)
@@ -349,19 +420,26 @@ def regular_devotees(conn: Connection, *, name: str = "", top: int = 0) -> list[
     """
     from app.core.db import limit_clause
 
-    sql = """
-        SELECT h.SEVAID, h.SEVANO, h.PrintSEVANO, h.SVAID, h.KNAME, h.MOBNO, h.NAMEINKAN,
+    T = "TrnHdrSEVA"
+    nk, ra, sra = (capabilities.sel(T, "h", c) for c in ("NAMEINKAN", "RASHIID", "SECRASHIID"))
+    mob = capabilities.sel(T, "h", "MOBNUM", capabilities.sel(T, "h", "MOBNO"))  # the mobile lives in MOBNUM (MOBNO stays blank)
+    has_rashi = capabilities.has_table("MstRASHI")
+    r1c, r2c = ("r1.RASHICODE", "r2.RASHICODE") if has_rashi else ("NULL", "NULL")
+    r1j = f"LEFT JOIN MstRASHI r1 ON {ra} = r1.RASHIID" if has_rashi else ""
+    r2j = f"LEFT JOIN MstRASHI r2 ON {sra} = r2.RASHIID" if has_rashi else ""
+    sql = f"""
+        SELECT h.SEVAID, h.SEVANO, h.PrintSEVANO, h.SVAID, h.KNAME, {mob} AS MOBNO, {nk} AS NAMEINKAN,
                g.GOTHRACODE AS GothraName, h.GOTHRAID, n1.NAKSHATRACODE AS NakshatraName, h.NAKSHATRAID,
                h.SECKNAME, n2.NAKSHATRACODE AS NakshatraName2, h.SECNAKSHATRAID,
-               r1.RASHICODE AS Rashi1, h.RASHIID, r2.RASHICODE AS Rashi2, h.SECRASHIID,
+               {r1c} AS Rashi1, {ra} AS RASHIID, {r2c} AS Rashi2, {sra} AS SECRASHIID,
                h.Add1, h.Add2, h.Add3, h.Add4
         FROM TrnHdrSEVA h
         JOIN MstSVA e ON h.SVAID = e.SVAID
         LEFT JOIN MstNAKSHATRA n1 ON h.NAKSHATRAID = n1.NAKSHATRAID
         LEFT JOIN MstNAKSHATRA n2 ON h.SECNAKSHATRAID = n2.NAKSHATRAID
         LEFT JOIN MstGOTHRA g ON h.GOTHRAID = g.GOTHRAID
-        LEFT JOIN MstRASHI r1 ON h.RASHIID = r1.RASHIID
-        LEFT JOIN MstRASHI r2 ON h.SECRASHIID = r2.RASHIID
+        {r1j}
+        {r2j}
         WHERE h.Cancelled = 'N' AND h.RegularD = 'Y'
     """
     params: dict = {}
@@ -383,16 +461,20 @@ def last_entry(conn: Connection) -> dict | None:
 
 def group_sevas(conn: Connection) -> list[dict]:
     """The saved groups (TrnHdrGRPSEVA) with the Sevas their members are booked for - what the legacy 'Load' dialog lists."""
+    disp = capabilities.sel("TrnHdrGRPSEVA", "h", "GRPSEVADISPNAME", "h.NAME")
+    mob = capabilities.sel("TrnHdrGRPSEVA", "h", "MOBNO", "' '")
+    # a literal cannot be grouped, so only the real columns go into GROUP BY
+    grp = "".join(f", {x}" for x in (disp, mob) if x.startswith("h.") and x != "h.NAME")
     rows = conn.execute(
         text(
-            """
-            SELECT h.GRPSEVAID, h.NAME, h.GRPSEVADISPNAME, h.MOBNO, d.SVAID, i.SVANAME,
+            f"""
+            SELECT h.GRPSEVAID, h.NAME, {disp} AS GRPSEVADISPNAME, {mob} AS MOBNO, d.SVAID, i.SVANAME,
                    COUNT(*) AS members
             FROM TrnHdrGRPSEVA h
             JOIN TrnDtlGrpSeva d ON h.GRPSEVAID = d.GRPSEVAID
             JOIN MstSVA i ON d.SVAID = i.SVAID
             WHERE h.Cancelled = 'N'
-            GROUP BY h.GRPSEVAID, h.NAME, h.GRPSEVADISPNAME, h.MOBNO, d.SVAID, i.SVANAME
+            GROUP BY h.GRPSEVAID, h.NAME{grp}, d.SVAID, i.SVANAME
             ORDER BY h.NAME, i.SVANAME
             """
         )

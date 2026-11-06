@@ -10,6 +10,8 @@
                        opens the firewall port, starts the service and CHECKS that it really answers.
     Update           : after copying a new version over the old one - stops the service, refreshes the Python packages, starts
                        it again and checks it.
+    Restart          : stops the service, the print bridge and every process using the application folder, waits while
+                       you replace files (nothing is locked), then starts the service again and checks it.
     Status           : shows the service, the NSSM settings, the port owner, the latest log lines and a live health check.
     Uninstall        : removes the service and the firewall rule (your files, .env and logs stay).
 
@@ -17,7 +19,7 @@
     No secret is ever written to the log. Nothing outside the application folder, the chosen NSSM folder, the service
     registration, the firewall rule and the prerequisites listed above is touched.
 
-.PARAMETER Mode        Menu (default), Install, Update, Status or Uninstall.
+.PARAMETER Mode        Menu (default), Install, Update, Restart, Status or Uninstall.
 .PARAMETER AppPath     The application folder (the one that holds backend\ and frontend\). Asked for when not given.
 .PARAMETER ServiceName Windows service name (default eMandiraPranali).
 .PARAMETER Port        Port the site listens on (default 8030).
@@ -27,7 +29,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('Menu', 'Install', 'Update', 'Status', 'Uninstall')]
+    [ValidateSet('Menu', 'Install', 'Update', 'Restart', 'Status', 'Uninstall')]
     [string]$Mode = 'Menu',
     [string]$AppPath = '',
     [string]$ServiceName = '',
@@ -1129,6 +1131,52 @@ function Invoke-Update {
     Show-Summary $a.ServiceName $a.Port $a.Backend $ok
 }
 
+# Stop the app service AND everything that runs from its folders (the print bridge, a hand-started uvicorn, tool services),
+# so every file can be replaced; wait for the person; then start it again and check it.
+function Invoke-Restart {
+    Write-Title 'STOP EVERYTHING, REPLACE FILES, START AGAIN'
+    if ($DryRun) { Write-Warn2 'DRY RUN - nothing will be changed.' }
+    $rem = Get-Remembered
+    $name = $script:DefaultService
+    if ($ServiceName) { $name = $ServiceName } else { $name = Get-Setting $rem 'ServiceName' $name }
+    $portNo = [int](Get-Setting $rem 'Port' $script:DefaultPort)
+    if ($Port -gt 0) { $portNo = $Port }
+    $appRoot = Get-Setting $rem 'AppPath' (Split-Path -Parent $PSScriptRoot)
+    if ($AppPath) { $appRoot = Clean-Path $AppPath }
+    $backend = Join-Path $appRoot 'backend'
+    if (-not (Test-Path -LiteralPath $backend)) { throw "The folder '$backend' does not exist. Run Install first." }
+    $nssm = Ensure-Nssm (Get-Setting $rem 'NssmPath' $script:DefaultNssm)
+    $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
+    if (-not $svc -and -not $DryRun) { throw "The service '$name' does not exist. Choose Install first." }
+
+    Write-Step 'Stopping the service'
+    if ($DryRun) { Write-Dry "stop $name" } else { Stop-AppService $nssm $name; Write-Ok "$name stopped" }
+
+    Write-Step 'Stopping the print bridge and every other process using the application files'
+    foreach ($other in @(Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne $name -and $_.State -eq 'Running' -and $_.PathName -match 'RptBridge|PrintAgent|emandira' })) {
+        if ($DryRun) { Write-Dry "stop service $($other.Name)" } else { Stop-Service -Name $other.Name -Force -ErrorAction SilentlyContinue; Write-Ok "service $($other.Name) stopped" }
+    }
+    foreach ($exe in 'RptBridge', 'PrintAgent') {
+        foreach ($proc in @(Get-Process -Name $exe -ErrorAction SilentlyContinue)) {
+            if ($DryRun) { Write-Dry "stop process $exe ($($proc.Id))" } else { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue; Write-Ok "$exe stopped" }
+        }
+    }
+    Stop-AppProcesses $backend
+    Write-Ok 'nothing from the application folder is running now'
+
+    if (-not $Unattended) {
+        Write-Host ''
+        Write-Host "   Replace the files now (copy over $appRoot). Nothing is locked." -ForegroundColor Cyan
+        [void](Read-Host '   Press Enter when you have finished copying, to start the service again')
+    }
+
+    Write-Step 'Starting again'
+    $venvPy = Get-VenvPython $backend
+    $ok = Start-AndVerify $nssm $name $venvPy $backend $portNo $null ''
+    if (-not $ok) { $script:Failed = $true }
+    Show-Summary $name $portNo $backend $ok
+}
+
 function Invoke-Status {
     Write-Title 'STATUS AND DIAGNOSIS'
     $rem = Get-Remembered
@@ -1215,6 +1263,7 @@ function Show-Menu {
         Write-Host '   1  Install / Repair   (first time on a PC, or when something is wrong)'
         Write-Host '   2  Update             (after copying a new version of the application)'
         Write-Host '   3  Status and diagnosis'
+        Write-Host '   5  Stop everything, replace files, start again  (print bridge too)'
         Write-Host '   4  Uninstall the service'
         Write-Host '   0  Exit'
         $c = (Read-Host 'Choose').Trim()
@@ -1223,6 +1272,7 @@ function Show-Menu {
             '2' { Invoke-Guarded { Invoke-Update } }
             '3' { Invoke-Guarded { Invoke-Status } }
             '4' { Invoke-Guarded { Invoke-Uninstall } }
+            '5' { Invoke-Guarded { Invoke-Restart } }
             '0' { return }
             default { }
         }
@@ -1260,6 +1310,7 @@ try {
         switch ($Mode) {
             'Install'   { Invoke-Guarded { Invoke-Install } }
             'Update'    { Invoke-Guarded { Invoke-Update } }
+            'Restart'   { Invoke-Guarded { Invoke-Restart } }
             'Status'    { Invoke-Guarded { Invoke-Status } }
             'Uninstall' { Invoke-Guarded { Invoke-Uninstall } }
             default     { Show-Menu }

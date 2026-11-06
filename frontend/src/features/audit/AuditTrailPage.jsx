@@ -1,6 +1,7 @@
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
-import { Badge, Button, Card, Grid, Group, Select, Stack, Table, Text, Title } from '@mantine/core'
+import { Badge, Button, Card, Grid, Group, Select, Stack, Text, Title } from '@mantine/core'
+import DataGrid from '../../components/ui/DataGrid'
 import { DateInput } from '../../components/ui/AppDates'
 import { Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -106,56 +107,24 @@ export default function AuditTrailPage() {
         </Grid>
       </Card>
 
-      <Card withBorder radius="lg" p={0} style={{ overflow: 'hidden' }}>
-        <Table.ScrollContainer minWidth={700}>
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Date / Time</Table.Th>
-                <Table.Th>Entity</Table.Th>
-                <Table.Th>Action</Table.Th>
-                <Table.Th>Entity ID</Table.Th>
-                <Table.Th>User</Table.Th>
-                <Table.Th>Details</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {isLoading && (
-                <Table.Tr>
-                  <Table.Td colSpan={6}>
-                    <Text c="dimmed" ta="center" py="md">
-                      Loading…
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              )}
-              {!isLoading && (rows || []).length === 0 && (
-                <Table.Tr>
-                  <Table.Td colSpan={6}>
-                    <Text c="dimmed" ta="center" py="md">
-                      No activity in this range
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              )}
-              {(rows || []).map((r) => (
-                <Table.Tr key={r.id}>
-                  <Table.Td>{dayjs(r.at).format('DD-MMM-YYYY HH:mm:ss')}</Table.Td>
-                  <Table.Td>{r.entity}</Table.Td>
-                  <Table.Td>
-                    <Badge size="sm" color={ACTION_COLORS[r.action] || 'gray'} variant="light">
-                      {r.action_label}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>{r.entity_id}</Table.Td>
-                  <Table.Td>{r.user_code}</Table.Td>
-                  <Table.Td>{r.details}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      </Card>
+      <>
+        <DataGrid
+          name="audit-trail"
+          idKey="id"
+          loading={isLoading}
+          rows={rows || []}
+          emptyTitle="No activity in this range"
+          maxHeight="65vh"
+          columns={[
+            { key: 'at', label: 'Date / Time', value: (r) => dayjs(r.at).format('DD-MMM-YYYY HH:mm:ss') },
+            { key: 'entity', label: 'Entity' },
+            { key: 'action_label', label: 'Action', render: (r) => <Badge size="sm" color={ACTION_COLORS[r.action] || 'gray'} variant="light">{r.action_label}</Badge> },
+            { key: 'entity_id', label: 'Entity ID' },
+            { key: 'user_code', label: 'User' },
+            { key: 'details', label: 'Details' },
+          ]}
+        />
+      </>
     </Stack>
   )
 }

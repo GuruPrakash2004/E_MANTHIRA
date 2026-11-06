@@ -71,3 +71,14 @@ def create_setting(conn: Connection, *, group: str, name: str, caption: str, val
         "UtlGSettings",
         {"SetGroup": (group or "").strip(), "SetName": name, "SetValue": (value or "").strip(), "SetCaption": caption, "Remarks": (remarks or "").strip(), "HideSetting": "Y" if hide else "N"},
     )
+
+
+def get_setting(conn: Connection, group: str, name: str) -> dict | None:
+    """One UtlGSettings row (value + the caption the admin gave it), or None when this database has no such row.
+    Code only knows the KEY (group, name); every value it acts on comes from here."""
+    r = conn.execute(
+        text("SELECT SetValue, SetCaption, Remarks FROM UtlGSettings WHERE SetGroup = :g AND SetName = :n"), {"g": group, "n": name}
+    ).mappings().first()
+    if r is None or not (r["SetValue"] or "").strip():
+        return None
+    return {"value": r["SetValue"].strip(), "caption": (r["SetCaption"] or "").strip(), "remarks": (r["Remarks"] or "").strip()}

@@ -18,6 +18,8 @@ from datetime import date
 from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Connection
 
+from app.core import capabilities
+
 
 def _in_clause(sql: str, params: dict, column: str, name: str, values: list[int] | None) -> str:
     if not values:
@@ -37,10 +39,12 @@ def seva_collection(
     time_from: str | None = None,
     time_to: str | None = None,
 ) -> dict:
-    sql = """
+    # some temples' view has no REFNO column: the report then simply leaves it blank
+    refno = capabilities.sel("vwSevaRptSMut", "v", "REFNO", "NULL")
+    sql = f"""
         SELECT SEVAID, SEVANO, Printsevano AS PrintSevaNo, SEVADate, Name1, Name2, Sannadhi, Seva, Gothra,
-               Nakshatra1, Nakshatra2, AddedBy, AddedOn, Payment, SevaRate, NoOfdays, Totalamt, Cancelled, issuedby AS IssuedBy, REFNO
-        FROM vwSevaRptSMut
+               Nakshatra1, Nakshatra2, AddedBy, AddedOn, Payment, SevaRate, NoOfdays, Totalamt, Cancelled, issuedby AS IssuedBy, {refno} AS REFNO
+        FROM vwSevaRptSMut v
         WHERE SEVADate >= :from_date AND SEVADate < :to_date_excl
           AND (Cancelled IS NULL OR Cancelled <> 'Y')
     """
@@ -94,9 +98,17 @@ def seva_issue(
     seva_ids: list[int] | None = None,
     users: list[str] | None = None,
 ) -> dict:
-    sql = """
-        SELECT SEVAID, SEVANO, PRINTSEVANO AS PrintSevaNo, SEVADATE, PDATE, NAME1, NAME2, SANNADHI, SEVA, MOBNUM,
-               NAKSHATRA1, NAKSHATRA2, GOTHRA, RASHI1, RASHI2, ADDEDBY, ADDEDON
+    # each temple's view has its own column set (e.g. one has RASHI, another RASHI1 / RASHI2, some no mobile no): what is missing stays blank
+    have = capabilities.cols("vwSevaIssueRpt")
+    pick = lambda name, alt=None: name if name.lower() in have else (alt if alt and alt.lower() in have else "NULL")  # noqa: E731
+    wanted = [
+        ("SEVAID", None), ("SEVANO", None), ("PRINTSEVANO", None), ("SEVADATE", None), ("PDATE", None), ("NAME1", None), ("NAME2", None),
+        ("SANNADHI", None), ("SEVA", None), ("MOBNUM", None), ("NAKSHATRA1", None), ("NAKSHATRA2", None), ("GOTHRA", None),
+        ("RASHI1", "RASHI"), ("RASHI2", None), ("ADDEDBY", None), ("ADDEDON", None),
+    ]
+    select = ", ".join(f"{pick(n, a)} AS {'PrintSevaNo' if n == 'PRINTSEVANO' else n}" for n, a in wanted)
+    sql = f"""
+        SELECT {select}
         FROM vwSevaIssueRpt
         WHERE PDATE >= :from_date AND PDATE < :to_date_excl
     """

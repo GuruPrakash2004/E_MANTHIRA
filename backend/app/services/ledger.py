@@ -37,6 +37,14 @@ def acled_id_for_ledger(conn: Connection, led_id: int) -> int:
     return int(row)
 
 
+def acled_id_for_line(conn: Connection, line_ac_led_id: int) -> int:
+    """A voucher line's account head IS a `MstAcLed.AcLedID` (what the EXE's grid stores in TrnDtl<voucher>.AcLedID and in the GL
+    rows). It equals the ledger master's LEDID only in some temple editions, so it is never run through the LEDID -> AcLedID mapping."""
+    if conn.execute(text("SELECT 1 FROM MstAcLed WHERE AcLedID = :i"), {"i": line_ac_led_id}).first() is None:
+        raise ValueError(f"No MstAcLed row for account head {line_ac_led_id}")
+    return int(line_ac_led_id)
+
+
 def post(
     conn: Connection,
     *,

@@ -1,4 +1,5 @@
 import { useHotkeys } from 'react-hotkeys-hook'
+import useRights from './useRights'
 
 /**
  * The legacy vTemple7.exe hot-key set (CLAUDE.md §9) — counter staff only
@@ -31,6 +32,16 @@ export default function useDocShortcuts({
   onLast,
   onFind,
 } = {}) {
+  // a key only does what the user's rights on this screen allow (the server enforces the same rights)
+  const r = useRights()
+  const when = (ok, fn) => (ok ? fn : undefined)
+  onNew = when(r.add, onNew)
+  onEdit = when(r.edit, onEdit)
+  onSave = when(r.add || r.edit, onSave)
+  onDelete = when(r.del, onDelete)
+  onCancel = when(r.edit, onCancel)
+  onPrint = when(r.print, onPrint)
+  onDirectPrint = when(r.print, onDirectPrint)
   const altOpts = { enableOnFormTags: true, preventDefault: true }
   const navOpts = { enableOnFormTags: false, preventDefault: true }
 

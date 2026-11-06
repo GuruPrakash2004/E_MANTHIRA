@@ -20,9 +20,9 @@ from sqlalchemy.engine import Connection
 
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
-from app.legacy.tables import insert_row, table, update_row
+from app.legacy.tables import insert_row, table, update_row, pad_blanks
 from app.meta import doc_rules
-from app.meta.numbering import next_doc_no
+from app.meta.numbering import next_doc_no, print_doc_no
 
 DOC_ID = 1260
 TABLE = "TrnHdrEXP"
@@ -78,15 +78,22 @@ def create(conn: Connection, *, data: ExpenseInput, fy: FinancialYear, user_code
     cols = doc_rules.column_values(head, values, table(TABLE))
     cols.update(
         {
-            NO_COLUMN: doc_no, "Prefix": data.prefix, "PrintEXPNO": doc_no, "EXPDate": data.expense_date,
+            NO_COLUMN: doc_no, "Prefix": data.prefix, "PrintEXPNO": print_doc_no(conn, doc_id=DOC_ID, doc_no=doc_no, prefix=data.prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "EXPDate": data.expense_date,
             "AddedBy": user_code, "AddedOn": datetime.now(), "Authorised": "Y", "Cancelled": "N", "TOTAMT": total,
         }
     )
+    # What the EXE writes for blanks (checked on 29 legacy rows in two temples): ' ' for text, NULL for no cheque date, 0 for no amount.
+    pad_blanks(cols, keep=("CHEQUEDT", "RMKS_XML", "Prefix"))
+    if not str(cols.get("CHEQUEDT") or "").strip() or str(cols["CHEQUEDT"]).startswith("1900-01-01"):
+        cols["CHEQUEDT"] = None
+    if cols.get("CHEQUEAMT") in (None, "", " "):
+        cols["CHEQUEAMT"] = 0
     exp_id = insert_row(conn, TABLE, cols, returning="EXPID")
     for i, l in enumerate(data.lines, start=1):
         lv = doc_rules.effective_values(detail, l)
         dcols = doc_rules.column_values(detail, lv, table("TrnDtlEXP"))
         dcols.update({"EXPID": exp_id, "SlNo": i, "ItemSlNO": i, "ShortClosed": "N", "ShortClosedBy": 0, "AMOUNT": _amount(l)})
+        pad_blanks(dcols, keep=("ITEMDESC_XML", "DRMKS_XML"))
         insert_row(conn, "TrnDtlEXP", dcols)
     audit.record(conn, entity="Expense Entry", entity_id=exp_id, action="A", user_code=user_code, details=doc_no)
     return {"exp_id": exp_id, "exp_no": doc_no, "total_amt": total}

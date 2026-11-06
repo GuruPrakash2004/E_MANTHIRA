@@ -9,7 +9,7 @@ never drifts between screens.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import text as sql_text
@@ -18,7 +18,7 @@ from sqlalchemy.engine import Connection
 from app.core.fy import FinancialYear
 from app.legacy.tables import insert_row, update_row
 from app.meta import edit_rules
-from app.meta.numbering import next_receipt_no
+from app.meta.numbering import next_receipt_no, print_doc_no
 from app.services import ledger, voucher_fields, voucher_rules
 from app.utils.amount_in_words import amount_in_words
 
@@ -91,7 +91,7 @@ def create_receipt_voucher(
         {
             "RCPTVCHNO": receipt_no,
             "Prefix": prefix,
-            "PrintRCPTVCHNO": receipt_no,
+            "PrintRCPTVCHNO": print_doc_no(conn, doc_id=1248, doc_no=receipt_no, prefix=prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year),
             "RCPTVCHDate": receipt_date,
             "AddedBy": user_code,
             "AddedOn": _datetime.now(),
@@ -131,7 +131,7 @@ def create_receipt_voucher(
         due_date=receipt_date,
         narration=narration,
         lines=[
-            ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
+            ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
             for l in lines
         ],
     )
@@ -152,8 +152,10 @@ def create_receipt(
     hb_id: int | None = None,
     rcpt_type: str | None = None,  # 'ADV' | 'Partial' | 'Final' (hall booking payments)
     user_code: str = "",
+    dr_parts: list[tuple[int, float]] | None = None,  # split payment: [(cash/bank ledger, amount), ...] instead of dr_led_id; one Dr line each
 ) -> ReceiptResult:
-    if int(cr_led_id) == int(dr_led_id):
+    parts = [(int(l), float(a)) for l, a in dr_parts] if dr_parts else [(int(dr_led_id), float(amount))]
+    if any(int(cr_led_id) == l for l, _a in parts):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             "The Ledger Name (income) and the Cash or Bank Account are the same ledger - choose a different Cash or Bank Account.",
@@ -162,6 +164,9 @@ def create_receipt(
         conn, prefix=prefix, fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat()
     )
     amount = round(float(amount), 2)
+    parts = [(l, round(a, 2)) for l, a in parts]
+    if abs(sum(a for _l, a in parts) - amount) > 0.005:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The split amounts must add up to the receipt amount")
     from app.core.config import get_settings
 
     now_fn = "NOW(6)" if get_settings().is_mysql else "SYSDATETIME()"
@@ -180,13 +185,13 @@ def create_receipt(
             "Authorised": "Y",
             "Cancelled": "N",
             "CHQDDNO": " ",
-            "CHQDT": None,
+            "CHQDT": datetime(1900, 1, 1),  # legacy: 1900-01-01 for "no cheque"
             "CHQAMT": " ",
             "CARDNO": "0",
             "CRDAMT": 0,
             "CHQNO": " ",
             "BANK": 0,
-            "AMTINWORDS": amount_in_words(amount, "Rupees", "Paise"),
+            "AMTINWORDS": amount_in_words(amount, "Rupees", "Paise", raw=True),  # the EXE writes this one uncleaned
             "NARR": narration,
             "VCHTYP": vch_type,
             "TOTDR": amount,
@@ -202,11 +207,12 @@ def create_receipt(
         "TrnDtlRCPTVCH",
         {"RCPTVCHID": receipt_id, "SlNo": 1, "AcLedID": cr_led_id, "RCPTVCHAmt": amount, "CrAmt": amount, "DrAmt": 0, "AmtType": "CR", "AgRefAmt": 0, "NewRefAmt": 0},
     )
-    insert_row(
-        conn,
-        "TrnDtlRCPTVCH",
-        {"RCPTVCHID": receipt_id, "SlNo": 2, "AcLedID": dr_led_id, "RCPTVCHAmt": amount, "CrAmt": 0, "DrAmt": amount, "AmtType": "DR", "AgRefAmt": 0, "NewRefAmt": 0},
-    )
+    for n, (dr_led, dr_amt) in enumerate(parts, start=2):  # one debit line per cash / bank ledger (a single one unless the payment is split)
+        insert_row(
+            conn,
+            "TrnDtlRCPTVCH",
+            {"RCPTVCHID": receipt_id, "SlNo": n, "AcLedID": dr_led, "RCPTVCHAmt": dr_amt, "CrAmt": 0, "DrAmt": dr_amt, "AmtType": "DR", "AgRefAmt": 0, "NewRefAmt": 0},
+        )
 
     ledger.post(
         conn,
@@ -217,7 +223,7 @@ def create_receipt(
         due_date=receipt_date,
         narration=narration,
         lines=[
-            ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, dr_led_id), dr_amt=amount, cr_amt=0),
+            *[ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, dr_led), dr_amt=dr_amt, cr_amt=0) for dr_led, dr_amt in parts],
             ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, cr_led_id), dr_amt=0, cr_amt=amount),
         ],
     )
@@ -342,6 +348,6 @@ def update_receipt_voucher(
         )
     ledger.post(
         conn, doc_type="RCPTVCH", trn_id=receipt_id, trn_no=old["RCPTVCHNO"], trn_date=receipt_date, due_date=receipt_date, narration=narration,
-        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in lines],
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in lines],
     )
     return ReceiptResult(receipt_id=receipt_id, receipt_no=old["RCPTVCHNO"])

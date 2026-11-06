@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { ActionIcon, Button, Card, Chip, Group, Modal, Select, Skeleton, Stack, Text, Title, UnstyledButton } from '@mantine/core'
 import { DatePickerInput } from '../../components/ui/AppDates'
 import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, FileSpreadsheet, FileUp, Flag, MoonStar, Plus, X } from 'lucide-react'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
 import { downloadXls } from '../../utils/xls'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -14,12 +15,14 @@ import { WEEKDAY_LABELS, datesInRange } from '../../utils/dateRange'
 import { SectionCard } from '../../components/ui/EntryParts'
 import { PanchangaSymbol, symbolFor } from './symbols'
 import { PanchangaImportDialog, RathothsavaDialog } from './PanchangaTools'
+import useRights from '../../hooks/useRights'
 
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
 const KOLAM_PATTERN = '/illustrations/kolam.svg'
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function PanchangaPage() {
+  const rights = useRights()
   const confirm = useConfirm()
   const queryClient = useQueryClient()
   const [month, setMonth] = useState(dayjs().startOf('month'))
@@ -125,18 +128,25 @@ export default function PanchangaPage() {
           <ActionIcon variant="light" color="kumkum" size={40} aria-label="Next month" onClick={() => setMonth((m) => m.add(1, 'month'))}>
             <ChevronRight size={18} />
           </ActionIcon>
+          {rights.edit && (
           <Button variant="default" size="sm" leftSection={<FileUp size={16} />} onClick={() => setImportOpen(true)}>
             Import from Excel
           </Button>
+          )}
+          {rights.edit && (
           <Button variant="default" size="sm" leftSection={<Flag size={16} />} onClick={() => setRathOpen(true)}>
             Rathothsava Date
           </Button>
+          )}
+          <ReportPrintButtons title="Panchanga" period={month.format('MMMM YYYY')} columns={[{ key: 'd', label: 'Date', value: (e) => dayjs(e.date).format('DD-MMM-YYYY') }, { key: 'w', label: 'Day', value: (e) => dayjs(e.date).format('dddd') }, { key: 'name', label: 'Event Name' }]} rows={events} />
           <Button variant="default" size="sm" leftSection={<FileSpreadsheet size={16} />} disabled={events.length === 0} onClick={() => downloadXls(`Panchanga ${month.format('MMM YYYY')}.xls`, events, [{ label: 'Date', value: (e) => dayjs(e.date).format('DD-MMM-YYYY') }, { label: 'Day', value: (e) => dayjs(e.date).format('dddd') }, { label: 'Event Name', key: 'name' }])}>
             Export to Excel
           </Button>
+          {rights.edit && (
           <Button variant="default" size="sm" leftSection={<CalendarRange size={16} />} onClick={() => setBulkOpen(true)}>
             Set many days
           </Button>
+          )}
           <Button variant="default" size="sm" disabled={isThisMonth} onClick={() => setMonth(dayjs().startOf('month'))}>
             This month
           </Button>
@@ -293,9 +303,11 @@ export default function PanchangaPage() {
             <Button variant="default" onClick={() => setEditDay(null)}>
               Cancel
             </Button>
+            {rights.edit && (
             <Button color="kumkum" loading={saving} onClick={onSaveDay}>
               {editNames.some(Boolean) ? 'Save' : 'Clear'}
             </Button>
+            )}
           </Group>
         </Stack>
       </Modal>

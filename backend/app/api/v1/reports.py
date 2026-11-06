@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
@@ -207,6 +207,19 @@ def run_complete_day(
     body: CollectionFilters, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)
 ):
     return reports_service.seva_collection(conn, **body.model_dump())
+
+
+@router.post("/complete-day/pdf")
+def complete_day_pdf(body: CollectionFilters, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """The Complete Day report as the original RptDtlCompDayDtl.rpt prints it (Crystal, through the print service)."""
+    from app.print import page_fit, report_job, rpt_bridge
+
+    job = report_job.complete_day_job(
+        conn, from_date=body.from_date, to_date=body.to_date, sannidhi_ids=body.sannidhi_ids, seva_ids=body.seva_ids, users=body.users
+    )
+    r = rpt_bridge.render(job)
+    pdf, page = page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt, widened_right_pt=r.widened_right_pt)
+    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": 'inline; filename="complete-day.pdf"'})
 
 
 @router.post("/collection")

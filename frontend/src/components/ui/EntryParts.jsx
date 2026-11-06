@@ -2,8 +2,12 @@ import ExportExcelButton from './ExportExcelButton'
 import { getFyShort } from '../../api/api'
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ActionIcon, Button, Card, Divider, Group, Menu, NumberInput, Skeleton, Text, Title, Stack, Tooltip } from '@mantine/core'
-import { Check, History, Printer, Save } from 'lucide-react'
+import dayjs from 'dayjs'
+import { ActionIcon, Badge, Button, Card, Collapse, Divider, Group, Menu, NumberInput, Skeleton, Text, TextInput, Title, Stack, Tooltip } from '@mantine/core'
+import useRowPrint from '../../hooks/useRowPrint'
+import useRights from '../../hooks/useRights'
+import { Check, ChevronDown, ChevronUp, Eye, History, List as ListIcon, Printer, Save, Search, SlidersHorizontal, X } from 'lucide-react'
+import ListingGrid from './ListingGrid'
 import { HISTORY_TOP, getHistory, historyLabel, setHistory } from '../../lib/history'
 import useEnterAsTab from '../../hooks/useEnterAsTab'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -52,14 +56,14 @@ export function EntryLayout({ main, side, viewing = false }) {
         .vt-entry-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--mantine-spacing-lg); align-items: start; }
         .vt-entry-main { min-width: 0; }
         .vt-entry-side { display: flex; flex-direction: column; gap: var(--mantine-spacing-sm); min-width: 0; }
-        .vt-entry-side .vt-recent-list { max-height: 360px; }
+        .vt-entry-side .vt-recent-list { max-height: calc(15 * 56px + 8px); } /* at least 15 bills are visible, the rest scrolls */
         @media (min-width: 1200px) {
           .vt-entry-layout { grid-template-columns: minmax(0, 1fr) 380px; }
           /* header is 80px: pin 10px below it, and use all the remaining height so the recent list shows more rows */
           .vt-entry-side { position: sticky; top: 90px; height: calc(100dvh - 102px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--vt-accent) transparent; padding-right: 2px; }
           .vt-entry-side > * { flex: 0 0 auto; }
-          .vt-entry-side > .vt-recent-card { flex: 1 1 0; min-height: 220px; }
-          .vt-entry-side .vt-recent-list { max-height: none; }
+          .vt-entry-side > .vt-recent-card { flex: 0 0 auto; }
+          .vt-entry-side .vt-recent-list { max-height: calc(15 * 56px + 8px); }
         }
 
         /* Recent list: thin themed scrollbar, soft fade at the edges, roomy hover rows */
@@ -83,6 +87,12 @@ export function EntryLayout({ main, side, viewing = false }) {
 }
 
 export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, saveDisabled = false, onSave, onSavePrint, compact = false }) {
+  const rights = useRights() // Save needs the Add right, printing the Print right
+  saveDisabled = saveDisabled || !rights.add
+  if (!rights.print) {
+    onSavePrint = null
+    saveLabel = saveLabel.replace(/\s*&\s*Print/i, '')
+  }
   return (
     <Card p={compact ? 'xs' : 'md'} style={{ background: 'linear-gradient(160deg, var(--vt-g1) 0%, var(--vt-g3) 100%)', border: '1px solid rgba(244,225,166,0.3)', color: '#FBF6EC' }}>
       <Text size="xs" fw={700} tt="uppercase" c="#F4E1A6" style={{ letterSpacing: 1 }}>
@@ -136,7 +146,9 @@ export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, war
   )
 }
 
-export function SavedPanel({ lines, onPrint, printLabel = 'Print receipt' }) {
+export function SavedPanel({ lines, onPrint, printLabel = 'Print receipt', extra = null }) {
+  const rights = useRights()
+  if (!rights.print) onPrint = null
   return (
     <Card withBorder p="md" style={{ borderColor: 'var(--mantine-color-gold-4)', background: 'var(--vt-gold-chip)' }} role="status">
       <Group gap={8} wrap="nowrap" align="flex-start">
@@ -152,6 +164,7 @@ export function SavedPanel({ lines, onPrint, printLabel = 'Print receipt' }) {
           ))}
         </div>
       </Group>
+      {extra}
       {onPrint && (
         <Button fullWidth mt="sm" variant="light" color="kumkum" leftSection={<Printer size={16} />} onClick={onPrint}>
           {printLabel}
@@ -209,20 +222,63 @@ function HistoryMenu() {
   )
 }
 
-export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyTitle, emptyHint }) {
+/** Everything searchable about a bill: its title / subtitle and every plain value of the row (dates also as DD/MM/YYYY and DD-MMM-YYYY). */
+function rowText(row, r) {
+  const parts = [r.title, r.subtitle]
+  for (const v of Object.values(row || {})) {
+    if (v == null || typeof v === 'object') continue
+    const t = String(v)
+    parts.push(t)
+    if (/^\d{4}-\d{2}-\d{2}/.test(t)) {
+      const d = dayjs(t)
+      if (d.isValid()) parts.push(d.format('DD/MM/YYYY'), d.format('DD-MMM-YYYY'))
+    }
+  }
+  return parts.join(' ').toLowerCase()
+}
+
+export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyTitle, emptyHint, docId }) {
+  const [listOpen, setListOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const rights = useRights()
+  const rp = useRowPrint(docId, title) // Preview / Print on every bill, for any document that has a print format
+  const needle = q.trim().toLowerCase()
+  const shown = needle ? rows.filter((row) => rowText(row, renderRow(row)).includes(needle)) : rows
   return (
     <Card withBorder p="md" className="vt-recent-card" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <Group gap={8} mb="xs" style={{ flex: '0 0 auto' }} wrap="nowrap">
         <Icon size={18} color="var(--vt-accent)" aria-hidden />
         <div style={{ flex: 1, minWidth: 0 }}>
           <Title order={5}>{title}</Title>
-          <Text size="xs" c="dimmed">{historyLabel()}{!loading ? ` - ${rows.length >= HISTORY_TOP ? `newest ${rows.length}` : rows.length} bill${rows.length === 1 ? '' : 's'}` : ''}</Text>
+          <Text size="xs" c="dimmed">{historyLabel()}{!loading ? ` - ${needle ? `${shown.length} of ${rows.length}` : rows.length >= HISTORY_TOP ? `newest ${rows.length}` : rows.length} bill${(needle ? shown.length : rows.length) === 1 ? '' : 's'}` : ''}</Text>
         </div>
         <HistoryMenu />
+        {docId && (
+          <Tooltip label="List all records" withArrow>
+            <ActionIcon variant="light" color="kumkum" size={32} aria-label="List all records" onClick={() => setListOpen(true)}>
+              <ListIcon size={16} />
+            </ActionIcon>
+          </Tooltip>
+        )}
         {!loading && rows.length > 0 && (
           <ExportExcelButton iconOnly filename={String(title)} rows={rows} columns={exportColumns(rows)} label={`Export ${title} to Excel`} />
         )}
       </Group>
+      {!loading && rows.length > 0 && (
+        <TextInput
+          size="xs"
+          mb="xs"
+          style={{ flex: '0 0 auto' }}
+          leftSection={<Search size={14} />}
+          placeholder="Search bills: number, name, mobile, amount, date"
+          aria-label={`Search ${title}`}
+          value={q}
+          onChange={(e) => setQ(e.currentTarget.value)}
+          rightSection={q ? <ActionIcon variant="subtle" color="gray" size={24} aria-label="Clear search" onClick={() => setQ('')}><X size={13} /></ActionIcon> : null}
+        />
+      )}
+      {listOpen && <ListingGrid docId={docId} opened onClose={() => setListOpen(false)} initialSearch={q} />}
+      {rp.dialog}
       {loading ? (
         <Stack gap="xs">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -231,13 +287,18 @@ export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyT
         </Stack>
       ) : rows.length === 0 ? (
         <EmptyState icon={Icon} title={emptyTitle} hint={`${emptyHint} ${historyLabel()}${getHistory().mode === 'fy' && getFyShort() ? ` (${getFyShort()})` : ''} - use the clock button to look further back.`} />
+      ) : shown.length === 0 ? (
+        <Stack gap="xs" align="center" py="md">
+          <Text size="sm" c="dimmed" ta="center">No bill matches "{q.trim()}" in this list.</Text>
+          {docId && <Button size="xs" variant="light" color="kumkum" leftSection={<Search size={14} />} onClick={() => setListOpen(true)}>Search all records</Button>}
+        </Stack>
       ) : (
         <Stack gap={2} className="vt-recent-list" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
           <AnimatePresence initial={false}>
-          {rows.map((row) => {
+          {shown.map((row) => {
             const r = renderRow(row)
             return (
-              <motion.div key={r.key} layout={rows.length <= 60 ? 'position' : false} initial={rows.length <= 60 ? { opacity: 0, y: -10 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
+              <motion.div key={r.key} layout={shown.length <= 60 ? 'position' : false} initial={shown.length <= 60 ? { opacity: 0, y: -10 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
                 <Group justify="space-between" wrap="nowrap" gap="xs" className="vt-recent-row">
                   <div style={{ minWidth: 0 }}>
                     <Text size="sm" fw={600} className="vt-num">
@@ -247,12 +308,27 @@ export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyT
                       {r.subtitle}
                     </Text>
                   </div>
-                  <Group gap={4} wrap="nowrap">
+                  <Group gap={2} wrap="nowrap">
                     {r.extra}
-                    {r.onPrint && (
-                      <ActionIcon variant="light" color="kumkum" size={36} aria-label={r.printLabel} onClick={r.onPrint}>
-                        <Printer size={16} />
-                      </ActionIcon>
+                    {rp.can ? (
+                      <>
+                        <Tooltip label="Preview" withArrow>
+                          <ActionIcon variant="subtle" color="kumkum" size={32} aria-label={`Preview ${r.title}`} onClick={() => rp.preview(r.key)}>
+                            <Eye size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Print" withArrow>
+                          <ActionIcon variant="light" color="kumkum" size={32} aria-label={`Print ${r.title}`} onClick={() => rp.print(r.key)}>
+                            <Printer size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </>
+                    ) : (
+                      r.onPrint && rights.print && (
+                        <ActionIcon variant="light" color="kumkum" size={36} aria-label={r.printLabel} onClick={r.onPrint}>
+                          <Printer size={16} />
+                        </ActionIcon>
+                      )
                     )}
                   </Group>
                 </Group>
@@ -289,18 +365,69 @@ function Diya() {
 }
 
 /** Page title row used by entry screens: gopuram mark, title and subtitle. (Keyboard shortcuts still work; the hint chips were removed.) */
-export function PageHeader({ title, subtitle }) {
+/** Title row of an entry screen. `right` = something for the right of the same row (e.g. the bill no and date), kept clear of the summary column. */
+export function PageHeader({ title, subtitle, right }) {
   return (
-    <Group gap="sm" wrap="nowrap">
-      <img src="/illustrations/gopuram-mark.svg" alt="" aria-hidden style={{ height: 40, width: 40 }} />
-      <div>
-        <Title order={2}>{title}</Title>
-        {subtitle && (
-          <Text size="sm" c="dimmed">
-            {subtitle}
-          </Text>
-        )}
-      </div>
+    <Group gap="sm" wrap="wrap" justify="space-between" align="flex-end">
+      <Group gap="sm" wrap="nowrap">
+        <img src="/illustrations/gopuram-mark.svg" alt="" aria-hidden style={{ height: 40, width: 40 }} />
+        <div>
+          <Title order={2}>{title}</Title>
+          {subtitle && (
+            <Text size="sm" c="dimmed">
+              {subtitle}
+            </Text>
+          )}
+        </div>
+      </Group>
+      {right && <div className="vt-header-right">{right}</div>}
     </Group>
+  )
+}
+
+const stripStyle = { border: '1px solid var(--vt-line)', background: 'var(--vt-surface)', borderRadius: 16, overflow: 'hidden' }
+
+/**
+ * A card of the entry screens like the Purchase Bill's top strip: a header row (title, optional key content, a "Doc Details" button)
+ * and a collapsible body for the document's detail fields.
+ */
+export function DetailsStrip({ title, hint, top, children, defaultOpen = true, toggleLabel = 'Doc Details' }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={stripStyle}>
+      <Group justify="space-between" align="center" p="sm" wrap="wrap" gap="xs" style={{ borderBottom: open ? '1px solid var(--vt-line)' : undefined }}>
+        <div>
+          <Text fw={700}>{title}</Text>
+          {hint && <Text size="xs" c="dimmed">{hint}</Text>}
+        </div>
+        <Group gap="sm" wrap="wrap">
+          {top}
+          <Button variant="default" leftSection={<SlidersHorizontal size={15} />} rightSection={open ? <ChevronUp size={15} /> : <ChevronDown size={15} />} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            {toggleLabel}
+          </Button>
+        </Group>
+      </Group>
+      <Collapse in={open}>
+        <div style={{ padding: 16, background: 'var(--vt-sandal)' }}>{children}</div>
+      </Collapse>
+    </div>
+  )
+}
+
+/** The line-items card of the entry screens: title, count chips and an action (Add item ...) on top, the grid below. */
+export function LineItemsCard({ title, chips = [], action, children }) {
+  return (
+    <div style={stripStyle}>
+      <Group justify="space-between" align="center" p="sm" wrap="wrap" gap="xs" style={{ borderBottom: '1px solid var(--vt-line)' }}>
+        <Group gap={8} wrap="wrap">
+          <Text fw={700}>{title}</Text>
+          {chips.map((c) => (
+            <Badge key={c.label} variant="light" color={c.color || 'kumkum'} tt="none">{c.label}: {c.value}</Badge>
+          ))}
+        </Group>
+        {action}
+      </Group>
+      <div style={{ padding: 12, overflow: 'auto' }}>{children}</div>
+    </div>
   )
 }

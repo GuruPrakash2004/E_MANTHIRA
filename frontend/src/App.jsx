@@ -36,6 +36,7 @@ const StockLedgerReportPage = lazy(() => import('./features/inventory/StockLedge
 const PdfGeneratorPage = lazy(() => import('./features/reports/PdfGeneratorPage'))
 const AuditTrailPage = lazy(() => import('./features/audit/AuditTrailPage'))
 const AuditLogPage = lazy(() => import('./features/audit/AuditLogPage'))
+const AskDataPage = lazy(() => import('./features/askdata/AskDataPage'))
 const DailySalesPage = lazy(() => import('./features/tradeReports/SalesReports').then((m) => ({ default: m.DailySalesPage })))
 const ProductSalesPage = lazy(() => import('./features/tradeReports/SalesReports').then((m) => ({ default: m.ProductSalesPage })))
 const ImportFromExcelPage = lazy(() => import('./features/settings/ImportFromExcelPage'))
@@ -49,6 +50,21 @@ const ScreenDocsPage = lazy(() => import('./features/utilities/ScreenDocsPage'))
 const SharedDocumentsPage = lazy(() => import('./features/utilities/SharedDocumentsPage'))
 const ReminderAlertPage = lazy(() => import('./features/utilities/ReminderAlertPage'))
 const LabelPrintingPage = lazy(() => import('./features/utilities/LabelPrintingPage'))
+const PartyWiseOutstandingPage = lazy(() => import('./features/reports/PartyReportPages').then((m) => ({ default: m.PartyWiseOutstandingPage })))
+const SqlQueryPage = lazy(() => import('./features/adminTools/SqlQueryPage'))
+const SavedQueryPage = lazy(() => import('./features/adminTools/SavedQueryPage'))
+const BulkUpdatePage = lazy(() => import('./features/adminTools/BulkUpdatePage'))
+const MultiPaymentPage = lazy(() => import('./features/reports/PartyReportPages').then((m) => ({ default: m.MultiPaymentPage })))
+const AgeingPage = lazy(() => import('./features/reports/PartyReportPages').then((m) => ({ default: m.AgeingPage })))
+const ReminderPage = lazy(() => import('./features/reports/PartyReportPages').then((m) => ({ default: m.ReminderPage })))
+const ProfitMarginPage = lazy(() => import('./features/reports/ProfitMarginPage'))
+const VoucherListingPage = lazy(() => import('./features/reports/VoucherListingPage'))
+const DayBookPage = lazy(() => import('./features/reports/DayBookPage'))
+const HolidayMasterPage = lazy(() => import('./features/masters/HolidayMasterPage'))
+const AccountingLedgerPage = lazy(() => import('./features/masters/AccountingLedgerPage'))
+const SannidhiSevaPage = lazy(() => import('./features/masters/SannidhiSevaPage'))
+const AttendancePage = lazy(() => import('./features/utilities/AttendancePage'))
+const AttendanceMonthlyPage = lazy(() => import('./features/utilities/AttendanceMonthlyPage'))
 const NotInWebPage = lazy(() => import('./features/tradeReports/NotInWebPage'))
 
 const ExpenseEntryPage = lazy(() => import('./features/expense/ExpenseEntryPage'))
@@ -101,8 +117,24 @@ export default function App() {
           <Route path="/utilities/shared-docs" element={<SharedDocumentsPage />} />
           <Route path="/utilities/reminder-alert" element={<ReminderAlertPage />} />
           <Route path="/utilities/label-printing" element={<LabelPrintingPage />} />
+          <Route path="/utilities/attendance" element={<AttendancePage />} />
+          <Route path="/masters/holidays" element={<HolidayMasterPage />} />
+          <Route path="/reports/voucher-listing" element={<VoucherListingPage />} />
+          <Route path="/reports/profit-margin" element={<ProfitMarginPage />} />
+          <Route path="/reports/party-wise-outstanding" element={<PartyWiseOutstandingPage />} />
+          <Route path="/reports/ageing" element={<AgeingPage />} />
+          <Route path="/reports/multi-payment" element={<MultiPaymentPage />} />
+          <Route path="/admin-tools/sql" element={<SqlQueryPage />} />
+          <Route path="/admin-tools/saved-queries" element={<SavedQueryPage />} />
+          <Route path="/admin-tools/bulk-update" element={<BulkUpdatePage />} />
+          <Route path="/reports/reminder" element={<ReminderPage />} />
+          <Route path="/reports/day-book" element={<DayBookPage />} />
+          <Route path="/masters/accounting-ledgers" element={<AccountingLedgerPage />} />
+          <Route path="/masters/sannidhi-sevas" element={<SannidhiSevaPage />} />
+          <Route path="/utilities/attendance-monthly" element={<AttendanceMonthlyPage />} />
           <Route path="/audit-trail" element={<AuditTrailPage />} />
           <Route path="/audit-log" element={<AuditLogPage />} />
+          <Route path="/ask-data" element={<AskDataPage />} />
           <Route path="/reports/daily-sales" element={<DailySalesPage />} />
           <Route path="/reports/product-sales" element={<ProductSalesPage />} />
           <Route path="/settings/import-excel" element={<ImportFromExcelPage />} />

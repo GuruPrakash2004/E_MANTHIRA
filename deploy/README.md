@@ -26,6 +26,7 @@ the log lines and tells you what to fix; run it again afterwards - every step ca
 | 1 Install / Repair | first time on a PC, or when anything is wrong (paused service, wrong paths, broken `.venv`, busy port) |
 | 2 Update | you extracted a newer package over the old folder |
 | 3 Status and diagnosis | to see the service, NSSM settings, port owner, health check and the last log lines |
+| 5 Stop everything, replace files, start again | stops the service, the print bridge and every process using the app folder, waits while you copy the new files (nothing is locked, no "folder in use"), then starts and checks it |
 | 4 Uninstall the service | removes the service and the firewall rule (files, `.env`, logs stay) |
 
 ## Things it handles so you do not have to
@@ -40,7 +41,7 @@ Install-eMandira.cmd -Mode Install -AppPath "D:\eMandira" -Port 8030 -Unattended
     -DbServer 192.168.1.3 -DbPort 58639 -DbName vTmplSLV -DbUser sa
 ```
 The password comes from `-DbPassword` or, better, the `EMANDIRA_DB_PASSWORD` environment variable. Exit code 0 = running and healthy,
-1 = something failed. `-Mode Update | Status | Uninstall` work the same way; `-DryRun` shows what would be done without changing anything.
+1 = something failed. `-Mode Update | Restart | Status | Uninstall` work the same way; `-DryRun` shows what would be done without changing anything.
 
 ## Offline server (no internet)
 Put the files next to the installer before copying: `deploy\installers\python-3.12.10-amd64.exe`, `deploy\installers\msodbcsql.msi`,

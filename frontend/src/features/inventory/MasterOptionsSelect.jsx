@@ -1,15 +1,15 @@
-import { Select } from '@mantine/core'
+﻿import { Select } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import * as mastersApi from '../../api/endpoints/masters'
 
 /**
- * A plain master-row picker (Item/UOM/Location/Supplier) — reads straight
+ * A plain master-row picker (Item/UOM/Location/Supplier) â€” reads straight
  * off the already-working generic /masters/{docId} list, rather than
  * depending on per-field UtlDocDsgrFlds combo metadata (which isn't fully
  * configured for these low-usage inventory docs). Same data, simpler path.
  */
-export default function MasterOptionsSelect({ docId, label, ariaLabel, required, value, onChange }) {
-  const { data } = useQuery({ queryKey: ['master-options', docId], queryFn: () => mastersApi.listMaster(docId) })
+export default function MasterOptionsSelect({ docId, label, ariaLabel, required, value, onChange, disabled }) {
+  const { data } = useQuery({ queryKey: ['master-options', docId], queryFn: () => mastersApi.listMaster(docId, { top: 5000 }) })
   const meta = data?.meta
   const options = (data?.rows || [])
     .filter((r) => r[meta?.id_col] !== 0)
@@ -20,6 +20,7 @@ export default function MasterOptionsSelect({ docId, label, ariaLabel, required,
       label={label}
       aria-label={ariaLabel}
       required={required}
+      disabled={disabled}
       searchable
       clearable
       clearButtonProps={{ 'aria-label': `Clear ${label || ariaLabel || 'selection'}` }}
@@ -31,3 +32,4 @@ export default function MasterOptionsSelect({ docId, label, ariaLabel, required,
     />
   )
 }
+

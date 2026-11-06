@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ActionIcon, Tooltip } from '@mantine/core'
+import { ActionIcon, Menu, Tooltip } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
@@ -7,7 +7,7 @@ import { reloadDesigner } from '../api/endpoints/meta'
 
 // ADMIN-only "Refresh from Doc Designer": the server forgets its cached designer metadata, then every
 // cached query (doc fields, menu, lookups) is refetched so open screens redraw. Nothing else re-reads it.
-export default function DesignerRefreshButton() {
+export default function DesignerRefreshButton({ asItem = false }) {
   const qc = useQueryClient()
   const [busy, setBusy] = useState(false)
   const onClick = async () => {
@@ -21,6 +21,13 @@ export default function DesignerRefreshButton() {
     } finally {
       setBusy(false)
     }
+  }
+  if (asItem) {
+    return (
+      <Menu.Item leftSection={<RefreshCw size={16} aria-hidden />} onClick={onClick} disabled={busy}>
+        Refresh from Doc Designer
+      </Menu.Item>
+    )
   }
   return (
     <Tooltip label="Refresh from Doc Designer" withArrow>

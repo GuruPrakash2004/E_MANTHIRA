@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
 import { Button, Card, Checkbox, Group, Radio, Select, Stack, Text } from '@mantine/core'
 import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
@@ -85,6 +86,7 @@ export default function AuditLogPage() {
 
       <Group justify="space-between">
         <Group gap="sm">
+          <ReportPrintButtons title="Audit Log" columns={columns} rows={shown} size="sm" hotkey />
           <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!shown.length} onClick={() => downloadXls('Audit Log.xls', shown, columns.map((c) => ({ label: c.label, value: (r) => (c.render ? c.render(r) : r[c.key]) })))}>Excel</Button>
           <Button variant={frozen ? 'filled' : 'default'} color="kumkum" leftSection={<Pin size={16} />} onClick={() => setFrozen((f) => !f)} aria-pressed={frozen}>{frozen ? 'UnFreeze' : 'Freeze'}</Button>
         </Group>

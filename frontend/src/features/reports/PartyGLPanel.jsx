@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
 import { Button, Card, Checkbox, Group, MultiSelect, Radio, Stack } from '@mantine/core'
 import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import { Eye, FileSpreadsheet, Printer, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import dayjs from 'dayjs'
 import * as reportsApi from '../../api/endpoints/reports'
 import ScaleGrid from '../../components/ui/ScaleGrid'
 import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
-import usePrintKey from '../../hooks/usePrintKey'
 
 const n2 = (v) => (v == null || v === '' ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 const drcr = (v, kind) => {
@@ -26,12 +26,12 @@ const drcr = (v, kind) => {
  * chosen accounts ("Select Multiple Accounts"), hiding accounts with a zero balance. Rendered on the scalable grid.
  */
 export default function PartyGLPanel() {
-  usePrintKey(() => rows.length && window.print())
   const navigate = useNavigate()
   const [from, setFrom] = useState(dayjs().month() >= 3 ? dayjs().month(3).startOf('month').toDate() : dayjs().subtract(1, 'year').month(3).startOf('month').toDate())
   const [to, setTo] = useState(new Date())
   const [mode, setMode] = useState('detail')
-  const [kind, setKind] = useState('supplier')
+  const [searchParams] = useSearchParams()
+  const [kind, setKind] = useState(['customer', 'supplier', 'ledger'].includes(searchParams.get('kind')) ? searchParams.get('kind') : 'supplier')
   const [multi, setMulti] = useState(false)
   const [picked, setPicked] = useState([])
   const [hideZero, setHideZero] = useState(true)
@@ -114,7 +114,7 @@ export default function PartyGLPanel() {
 
       <Group justify="space-between" wrap="wrap">
         <Group gap="sm">
-          <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!rows.length} onClick={() => window.print()}>Print (F10)</Button>
+          <ReportPrintButtons title="General Ledger" period={`Period From ${dayjs(from).format('DD/MM/YYYY')} To ${dayjs(to).format('DD/MM/YYYY')}`} columns={columns} rows={rows} hotkey />
           <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls('General Ledger.xls', rows, columns.map((c) => ({ label: c.label, value: (r) => (c.render ? c.render(r) : r[c.key]) })))}>Excel</Button>
           <Checkbox color="kumkum" label="Do Not Show the Party having Zero value" checked={hideZero} onChange={(e) => setHideZero(e.currentTarget.checked)} />
         </Group>

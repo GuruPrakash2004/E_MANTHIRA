@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { ActionIcon, Badge, Button, Group, Modal, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core'
-import { Ban, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react'
+import { Ban, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, FolderOpen, List, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useQuery } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
 import * as metaApi from '../../api/endpoints/meta'
 import EmptyState from './EmptyState'
 import DocOptionsMenu from './DocOptionsMenu'
+import ListingGrid from './ListingGrid'
+import useRights from '../../hooks/useRights'
+import { AlertifyMark } from '../../features/alertify/AlertifyLogo'
 
 /**
  * Record navigation for a transaction document (legacy toolbar: New / First / Previous / Find / Next / Last, with
@@ -18,9 +21,11 @@ import DocOptionsMenu from './DocOptionsMenu'
  *   onNew()    - go back to a blank entry
  *   search     - async (text) => [{ id, label, sub }] used by Find
  */
-export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, onEdit, onCancelEdit, onSave, saving = false, editing = false, showNew = true, search, prefix = '', extraOptions = [], onCancelDoc, onDelete }) {
+export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, onEdit, onCancelEdit, onSave, saving = false, editing = false, showNew = true, search, prefix = '', extraOptions = [], onCancelDoc, onDelete, lastSaved = null, alertify = null }) {
   const [findOpen, setFindOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
   const [q, setQ] = useState('')
+  const rights = useRights(docId) // what this user may do on the screen; buttons they have no right to are not offered
 
   async function go(direction) {
     try {
@@ -49,15 +54,15 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
 
   return (
     <>
-      <div style={{ position: 'sticky', bottom: 12, zIndex: 5, marginTop: 'var(--mantine-spacing-md)' }}>
-        <Group justify="space-between" gap="xs" p="sm" style={{ borderRadius: 16, border: '1px solid var(--vt-line)', background: 'var(--vt-surface)', boxShadow: '0 6px 20px rgba(43,9,9,0.12)' }}>
+      <div className="vt-action-bar">
+        <Group justify="space-between" gap="xs" p="sm" className="vt-action-bar-card">
           <Group gap="xs">
-            {showNew && (
+            {showNew && rights.add && (
               <Button color="kumkum" leftSection={<Plus size={16} />} onClick={onNew}>
                 New
               </Button>
             )}
-            {editing && onSave && (
+            {editing && onSave && rights.edit && (
               <Button color="kumkum" leftSection={<Save size={16} />} loading={saving} onClick={onSave}>
                 Save changes
               </Button>
@@ -67,19 +72,41 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
                 Cancel edit
               </Button>
             )}
-            {currentId && onEdit && !editing && (
+            {currentId && onEdit && !editing && rights.edit && (
               <Button variant="light" color="kumkum" leftSection={<Pencil size={16} />} onClick={onEdit}>
                 Edit
               </Button>
             )}
-            {currentId && !editing && onCancelDoc && (
+            {currentId && !editing && onCancelDoc && rights.edit && (
               <Button variant="light" color="orange" leftSection={<Ban size={16} />} onClick={onCancelDoc}>
                 Cancel
               </Button>
             )}
-            {currentId && !editing && onDelete && (
+            {currentId && !editing && onDelete && rights.del && (
               <Button variant="light" color="red" leftSection={<Trash2 size={16} />} onClick={onDelete}>
                 Delete
+              </Button>
+            )}
+            <Button variant="default" leftSection={<List size={16} />} onClick={() => setListOpen(true)}>
+              List
+            </Button>
+            {alertify?.enabled && (
+              <Tooltip label={alertify.ready ? 'Create an Alertify reminder from this bill' : (alertify.hint || 'Fill the bill details first')} withArrow>
+                <Button
+                  variant="default"
+                  aria-label="Alertify"
+                  data-disabled-look={alertify.ready ? undefined : 'true'}
+                  style={alertify.ready ? undefined : { opacity: 0.6 }}
+                  leftSection={<AlertifyMark size={18} />}
+                  onClick={alertify.onClick}
+                >
+                  <span style={{ fontWeight: 800 }}><span>Alert</span><span style={{ color: '#14B8A6' }}>ify</span></span>
+                </Button>
+              </Tooltip>
+            )}
+            {!currentId && lastSaved?.id && (
+              <Button variant="light" color="kumkum" leftSection={<FolderOpen size={16} />} onClick={() => onLoad(lastSaved.id)}>
+                Open last saved{lastSaved.label ? `: ${lastSaved.label}` : ''}
               </Button>
             )}
             {currentId ? (
@@ -102,6 +129,8 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
           </Group>
         </Group>
       </div>
+
+      {listOpen && <ListingGrid docId={docId} opened onClose={() => setListOpen(false)} onOpen={(_, id) => onLoad(id)} />}
 
       <Modal opened={findOpen} onClose={() => setFindOpen(false)} size="lg" radius="lg" title={<Text fw={700} size="lg" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>Find</Text>}>
         <Stack gap="sm">

@@ -3,6 +3,7 @@ import { Button, Checkbox, Group, Modal, ScrollArea, Stack, Text, TextInput, Uns
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Search, X } from 'lucide-react'
 import * as inventoryApi from '../../api/endpoints/inventory'
+import AddItemsDialog from './AddItemsDialog'
 
 /**
  * "Select Item" box of the legacy stock reports: type to find an item and press Enter / "+" to add it, or use "..." to
@@ -12,6 +13,7 @@ import * as inventoryApi from '../../api/endpoints/inventory'
 export default function ItemListPicker({ value, onChange }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false) // the legacy "Add Items" window: paste codes / saved lists
   const { data: found = [] } = useQuery({ queryKey: ['ref-items', q], queryFn: () => inventoryApi.referencerItems(q), enabled: q.trim().length > 0 })
 
   const add = (items) => {
@@ -42,7 +44,7 @@ export default function ItemListPicker({ value, onChange }) {
           onKeyDown={(e) => e.key === 'Enter' && addTyped()}
         />
         <Button variant="default" px={10} aria-label="Add item" onClick={addTyped}><Plus size={16} /></Button>
-        <Button variant="default" px={10} aria-label="Pick several items" onClick={() => setOpen(true)}>...</Button>
+        <Button variant="default" px={10} aria-label="Add items: paste a list of item codes" title="Add items: paste a list of item codes, or use a saved list" onClick={() => setAddOpen(true)}>...</Button>
       </Group>
       <div style={{ border: '1px solid var(--vt-line)', borderRadius: 10, background: 'var(--vt-surface)' }}>
         <div style={{ padding: '6px 10px', fontWeight: 700, fontSize: 13, background: 'var(--vt-sandal)', borderRadius: '10px 10px 0 0', textAlign: 'center' }}>Selected Item</div>
@@ -62,12 +64,13 @@ export default function ItemListPicker({ value, onChange }) {
       <UnstyledButton onClick={() => onChange([])} style={{ alignSelf: 'flex-end', color: 'var(--vt-accent)', fontWeight: 700, fontSize: 13, textDecoration: 'underline' }}>
         Clear List
       </UnstyledButton>
+      {addOpen && <AddItemsDialog onClose={() => setAddOpen(false)} onLoad={(items) => { add(items); setAddOpen(false) }} />}
       {open && <ItemsDialog already={value} onClose={() => setOpen(false)} onApply={(items) => { add(items); setOpen(false) }} initial={q} />}
     </Stack>
   )
 }
 
-function ItemsDialog({ already, initial, onClose, onApply }) {
+export function ItemsDialog({ already, initial, onClose, onApply }) {
   const [q, setQ] = useState(initial || '')
   const { data: items = [] } = useQuery({ queryKey: ['ref-items-dlg', q], queryFn: () => inventoryApi.referencerItems(q) })
   const [sel, setSel] = useState(new Map())

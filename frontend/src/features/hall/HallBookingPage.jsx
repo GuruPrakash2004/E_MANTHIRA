@@ -1,4 +1,5 @@
 import { historyParams } from '../../lib/history'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { useState } from 'react'
 import { Badge, Button, Group, Menu, Stack, Text, Title } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
@@ -18,8 +19,11 @@ import { useNavigate } from 'react-router-dom'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import useDocRules from '../../hooks/useDocRules'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
-import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
+import { SectionCard, DetailsStrip, LineItemsCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
+import dayjs from 'dayjs'
 import { formatINR, isoDate } from '../../utils/format'
+import useBillAlertify from '../alertify/useBillAlertify'
+import { useAuth } from '../../hooks/useAuth'
 
 const DOC_ID = 1281
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
@@ -94,6 +98,13 @@ export default function HallBookingPage() {
 
   const errors = docFieldErrors(fields, values, COMPUTED_CODES)
   const firstError = Object.values(errors)[0] || (!(gross > 0) ? 'Enter the amount' : null)
+  const { user } = useAuth()
+  const startIso = values.HBSTARTDT ? isoDate(values.HBSTARTDT) : ''
+  const alertify = useBillAlertify({
+    docId: DOC_ID, label: 'Hall Booking', user: user?.user_code, fields, values, savedNo: viewId ? viewNo : '',
+    totals: [{ caption: 'Doc Date', value: dayjs(docDate).format('DD/MM/YYYY') }, { caption: 'Gross Amount', value: formatINR(gross) }, { caption: 'Net Amount', value: formatINR(net) }],
+    anchors: startIso ? [startIso] : [], timingCaption: /start.*time|time.*from|^time$/i, defaultDir: 'before', valid: !firstError && Boolean(startIso), hint: firstError || (startIso ? '' : 'Choose the booking start date first'),
+  })
 
   async function onSave(mode) {
     setAttempted(true)
@@ -120,6 +131,7 @@ export default function HallBookingPage() {
       }
       const result = await hallApi.createBooking({ fields: fieldsPayload, doc_date: isoDate(docDate) })
       setLastSaved(result)
+      alertify.afterSave({ 'Doc No': result.print_no || result.hb_no }) // the Alertify reminder asked for before saving; it never blocks the bill
       // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
       if (mode === 'print') directPrint(result.hb_id)
       else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.hb_id, openDialog: setPrintFor })
@@ -243,7 +255,7 @@ export default function HallBookingPage() {
             </Text>
           </div>
         </Group>
-        <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={readOnly || !rules.edit_doc_date} w={150} />
+        <DocNoDate docId={DOC_ID} type={values.TYPE || undefined} viewNo={viewId ? viewNo : ''} date={docDate} onDate={setDocDate} dateDisabled={readOnly || !rules.edit_doc_date} />
       </Group>
 
       <EntryLayout
@@ -257,7 +269,7 @@ export default function HallBookingPage() {
                 </Text>
               </SectionCard>
             ) : (
-              <SectionCard title="Booking" hint="Drawn from this temple's Doc Designer.">
+              <DetailsStrip title="Booking" hint="Drawn from this temple's Doc Designer.">
                 <DocFieldsForm
                   docId={DOC_ID}
                   section="Header"
@@ -269,7 +281,7 @@ export default function HallBookingPage() {
                   skip={COMPUTED_CODES}
                   readOnly={readOnly}
                 />
-              </SectionCard>
+              </DetailsStrip>
             )}
           </Stack>
         }
@@ -313,6 +325,7 @@ export default function HallBookingPage() {
             </Button>
             {sideOpen && (
             <RecentCard
+              docId={DOC_ID}
               title="Recent bookings"
               icon={Building}
               loading={recentLoading}
@@ -357,7 +370,8 @@ export default function HallBookingPage() {
         }
       />
 
-      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('save')} saving={saving} editing={editing} onCancelDoc={cancelDocument} onDelete={deleteDocument} search={findBookings} extraOptions={navOptions} />
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.hb_id, label: lastSaved.print_no || lastSaved.hb_no } : null} onLoad={viewRecord} onNew={startNew} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('save')} saving={saving} editing={editing} onCancelDoc={cancelDocument} onDelete={deleteDocument} search={findBookings} extraOptions={navOptions} alertify={alertify.nav} />
+      {alertify.modal}
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Hall Booking Receipt" />
       <HallPaymentPanel hbId={paymentFor} onClose={() => setPaymentFor(null)} />
     </Stack>

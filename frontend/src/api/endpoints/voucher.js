@@ -26,3 +26,7 @@ export const createGenVoucher = (kind, body) => post(`/vouchers/${kind}`, body)
 export const updateGenVoucher = (kind, id, body) => put(`/vouchers/${kind}/${id}`, body)
 export const cancelGenVoucher = (kind, id, reason) => post(`/vouchers/${kind}/${id}/cancel`, { reason })
 export const deleteGenVoucher = (kind, id) => del(`/vouchers/${kind}/${id}`)
+
+// Account heads for a voucher line (legacy frmTrnVch): the groups the document allows for that side, + one head's balance / checks
+export const getAccountHeads = (docId, side, search) => get('/vouchers/account-heads', { params: { doc_id: docId, side, search: search || '' } })
+export const getAccountHead = (id) => get(`/vouchers/account-heads/${id}`)

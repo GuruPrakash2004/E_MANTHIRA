@@ -11,6 +11,7 @@ from app.core.db import get_conn, with_transaction
 from app.core.fy import FinancialYear, get_user_fy, get_history_fy
 from app.core.security import CurrentUser, require_right
 from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
+from app.api.v1.split_payments import SplitPartIn, to_parts
 from app.services import donation as donation_service
 
 router = APIRouter(prefix="/donations", tags=["donations"])
@@ -21,6 +22,7 @@ class DonationCreateRequest(BaseModel):
     doc_date: date
     fields: dict  # Header / Footer Designer fields keyed by FldCode
     lines: list[dict]  # Detail Designer fields keyed by FldCode, one dict per line
+    split_payments: list[SplitPartIn] | None = None  # the receipt paid in parts by different modes (new table WebSplitPayment)
 
 
 class CancelRequest(BaseModel):
@@ -61,7 +63,7 @@ def create_donation(
     fy: FinancialYear = Depends(get_user_fy),
     user: CurrentUser = Depends(require_right(donation_service.DOC_ID, RIGHT_ADD)),
 ):
-    data = donation_service.DonationInput(prefix=body.prefix, doc_date=body.doc_date, fields=body.fields, lines=body.lines)
+    data = donation_service.DonationInput(prefix=body.prefix, doc_date=body.doc_date, fields=body.fields, lines=body.lines, split=to_parts(body.split_payments))
     with with_transaction() as conn:
         return donation_service.create(conn, data=data, fy=fy, user_code=user.user_code)
 

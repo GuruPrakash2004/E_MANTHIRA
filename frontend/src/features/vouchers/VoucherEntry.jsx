@@ -1,3 +1,5 @@
+import VoucherLinesTable, { appendLine, linesFromSaved, newVoucherLines } from '../../components/ui/VoucherLinesTable'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { historyParams } from '../../lib/history'
 import { useEffect, useState } from 'react'
 import { ActionIcon, Badge, Button, Group, NumberInput, Select, Stack, Table, Text, Title } from '@mantine/core'
@@ -28,10 +30,6 @@ import { columnsFromLines, computeFormulas } from '../../utils/docCompute'
 
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
 const COMPUTED_CODES = ['TOTDR', 'TOTCR', 'AMTINWORDS']
-const newLines = () => [
-  { ac_led_id: '', dr_amt: 0, cr_amt: 0 },
-  { ac_led_id: '', dr_amt: 0, cr_amt: 0 },
-]
 
 /**
  * One screen for the Payment (1224), Receipt (1248) and Journal (1254) vouchers. Their Header / Footer fields come
@@ -45,7 +43,7 @@ export default function VoucherEntry({ cfg }) {
   const queryClient = useQueryClient()
   const [values, setValues] = useState({})
   const [resetKey, setResetKey] = useState(0)
-  const [lines, setLines] = useState(newLines())
+  const [lines, setLines] = useState(newVoucherLines())
   const [prefix, setPrefix] = useState(null) // null = not loaded yet; '' is a valid (blank) prefix
   const [docDate, setDocDate] = useState(new Date())
   const [attempted, setAttempted] = useState(false)
@@ -140,7 +138,7 @@ export default function VoucherEntry({ cfg }) {
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
       setValues({})
       setResetKey((k) => k + 1)
-      setLines(newLines())
+      setLines(newVoucherLines(rules.first_row_type))
       setAttempted(false)
       queryClient.invalidateQueries({ queryKey: [cfg.queryKey] })
       refetch()
@@ -169,7 +167,7 @@ export default function VoucherEntry({ cfg }) {
       if (h.Prefix !== undefined) setPrefix(h.Prefix)
       const d = h[`${cfg.headerPrefix}Date`]
       if (d) setDocDate(new Date(d))
-      setLines(r.lines.map((l) => ({ ac_led_id: String(l.ac_led_id), dr_amt: l.dr_amt, cr_amt: l.cr_amt })))
+      setLines(linesFromSaved(r.lines))
       const yes = (v) => String(v || 'N').trim().toUpperCase() === 'Y'
       setStamp(yes(h.Cancelled) ? { text: 'CANCELLED', color: 'red' } : rules.auth_req ? (yes(h.Authorised) ? { text: 'AUTHORISED', color: 'green' } : { text: 'NOT AUTHORISED', color: 'orange' }) : null)
       setViewId(id)
@@ -252,7 +250,7 @@ export default function VoucherEntry({ cfg }) {
     setStamp(null)
     setViewId(null)
     setViewNo('')
-    setLines(newLines())
+    setLines(newVoucherLines(rules.first_row_type))
     setValues({})
     setResetKey((k) => k + 1) // re-applies the Designer defaults
     setDocDate(new Date())
@@ -297,7 +295,7 @@ export default function VoucherEntry({ cfg }) {
           {(prefixes || []).filter(Boolean).length > 1 && (
             <Select aria-label="Prefix" w={110} data={prefixes.filter(Boolean)} value={prefix || null} onChange={(v) => setPrefix(v || '')} allowDeselect={false} disabled={Boolean(viewId)} />
           )}
-          <DateInput aria-label={cfg.dateLabel} valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={readOnly || !rules.edit_doc_date} w={150} />
+          <DocNoDate docId={cfg.docId} prefix={prefix ?? undefined} viewNo={viewId ? viewNo : ''} date={docDate} onDate={setDocDate} dateDisabled={readOnly || !rules.edit_doc_date} dateLabel={cfg.dateLabel} dateAria={cfg.dateLabel} />
         </Group>
       </Group>
 
@@ -316,66 +314,23 @@ export default function VoucherEntry({ cfg }) {
                 !readOnly && (
                   <Group gap="xs">
                     {rules.allow_imp_exp && <DocXlMenu docId={cfg.docId} name={cfg.title} rows={lines} setRows={setLines} />}
-                    <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={() => setLines((ls) => [...ls, { ac_led_id: '', dr_amt: 0, cr_amt: 0 }])}>
+                    <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={() => setLines((ls) => appendLine(ls, rules.first_row_type))}>
                       Add line
                     </Button>
                   </Group>
                 )
               }
             >
-              <Table.ScrollContainer minWidth={560}>
-                <Table>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Account Head</Table.Th>
-                      <Table.Th w={160}>Debit</Table.Th>
-                      <Table.Th w={160}>Credit</Table.Th>
-                      <Table.Th w={48} aria-label="Remove" />
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {lines.map((l, i) => (
-                      <Table.Tr key={i}>
-                        <Table.Td>
-                          <LookupSelect ledgerPicker ariaLabel={`Account head, line ${i + 1}`} label="" disabled={readOnly} value={l.ac_led_id} onChange={(v) => updateLine(i, { ac_led_id: v })} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label={`Debit, line ${i + 1}`} disabled={readOnly} value={l.dr_amt} onChange={(v) => updateLine(i, { dr_amt: v, cr_amt: v ? 0 : l.cr_amt })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label={`Credit, line ${i + 1}`} disabled={readOnly} value={l.cr_amt} onChange={(v) => updateLine(i, { cr_amt: v, dr_amt: v ? 0 : l.dr_amt })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <ActionIcon
-                            color="red"
-                            variant="subtle"
-                            size={36}
-                            aria-label={`Remove line ${i + 1}`}
-                            disabled={lines.length <= 2 || readOnly}
-                            onClick={async () => {
-                              if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) {
-                                setLines((ls) => ls.filter((_, ri) => ri !== i))
-                              }
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </ActionIcon>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                  <Table.Tfoot>
-                    <Table.Tr>
-                      <Table.Th>
-                        {caption('TOTDR', 'Total Dr')} / {caption('TOTCR', 'Total Cr')}
-                      </Table.Th>
-                      <Table.Th className="vt-num">{formatINR(totalDr)}</Table.Th>
-                      <Table.Th className="vt-num">{formatINR(totalCr)}</Table.Th>
-                      <Table.Th />
-                    </Table.Tr>
-                  </Table.Tfoot>
-                </Table>
-              </Table.ScrollContainer>
+              <VoucherLinesTable
+                docId={cfg.docId}
+                lines={lines}
+                setLines={setLines}
+                readOnly={readOnly}
+                balanceCol={rules.balance_col}
+                firstType={rules.first_row_type}
+                attempted={attempted}
+                totalsLabel={`${caption('TOTDR', 'Total Dr')} / ${caption('TOTCR', 'Total Cr')}`}
+              />
               {!balanced && (totalDr > 0 || totalCr > 0) && (
                 <Text size="sm" c="red" mt="xs" role="alert">
                   Debit and Credit totals are NOT matching!
@@ -408,6 +363,7 @@ export default function VoucherEntry({ cfg }) {
             />
             {lastSaved && <SavedPanel lines={[`Voucher ${lastSaved[cfg.noKey]}`]} onPrint={() => setPrintFor(lastSaved[cfg.idKey])} />}
             <RecentCard
+              docId={cfg.docId}
               title={cfg.recentTitle}
               icon={Icon}
               loading={recentLoading}

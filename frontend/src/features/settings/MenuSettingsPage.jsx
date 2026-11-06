@@ -4,13 +4,17 @@ import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as metaApi from '../../api/endpoints/meta'
 
-const TYPE_ORDER = ['Transactions', 'Vouchers', 'Masters', 'Reports', 'Ac-Reports', 'Utilities']
-
 export default function MenuSettingsPage() {
   const queryClient = useQueryClient()
   const { data: items, refetch } = useQuery({ queryKey: ['menu-settings'], queryFn: metaApi.getMenuSettings })
 
-  const grouped = TYPE_ORDER.map((type) => ({ type, items: (items || []).filter((m) => m.type === type) })).filter((g) => g.items.length)
+  // Groups come straight from the rows the backend serves (already ordered by MenuItemType), so no menu type can go missing.
+  const grouped = (items || []).reduce((acc, m) => {
+    let g = acc.find((x) => x.type === m.type)
+    if (!g) acc.push((g = { type: m.type, items: [] }))
+    g.items.push(m)
+    return acc
+  }, [])
 
   async function toggle(item, show) {
     try {

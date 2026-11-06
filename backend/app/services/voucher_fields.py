@@ -27,5 +27,8 @@ def header_columns(conn: Connection, doc_id: int, table_name: str, fields: dict)
     doc_rules.validate(head, values, skip=COMPUTED)
     cols = doc_rules.column_values(head, values, table(table_name))
     out = dict(PLACEHOLDERS)
-    out.update({k: v for k, v in cols.items() if v not in ("", None)})
+    # a blank Designer field comes back as ' ' (the EXE's blank): it must not overwrite a placeholder (CARDNO '0') or
+    # a value computed from the lines (AMTINWORDS, totals)
+    out.update({k: v for k, v in cols.items() if v not in ("", None) and not (isinstance(v, str) and not v.strip() and k in PLACEHOLDERS)
+                and k.upper() not in COMPUTED})
     return out, values

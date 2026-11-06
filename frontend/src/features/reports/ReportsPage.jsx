@@ -1,18 +1,24 @@
 import { useState } from 'react'
+import DataGrid from '../../components/ui/DataGrid'
 import HallVoucherPanel from './HallVoucherPanel'
 import PartyGLPanel from './PartyGLPanel'
 import CustomReportsPanel from './CustomReportsPanel'
 import SubsidiaryCatalogPanel from './SubsidiaryCatalogPanel'
+import { CATALOG_FORM_TAB } from './catalogTabs'
 import { useSearchParams } from 'react-router-dom'
 import { Badge, Button, Card, Checkbox, Grid, Group, Select, SimpleGrid, Skeleton, Stack, Table, Tabs, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
-import { BookOpen, Building, Coins, CalendarCheck, ClipboardList, Download, FileSearch, HandCoins, LayoutList, Play, SlidersHorizontal, X } from 'lucide-react'
+import { BookOpen, Coins, ClipboardList, Download, FileSearch, LayoutList, Play } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import dayjs from 'dayjs'
 import { useQuery } from '@tanstack/react-query'
 import * as metaApi from '../../api/endpoints/meta'
 import * as reportsApi from '../../api/endpoints/reports'
 import LookupSelect from '../../components/LookupSelect'
+import MultiPickField from './MultiPickField'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
+import RptPdfButtons from '../../components/ui/RptPdfButtons'
+import * as mastersApi from '../../api/endpoints/masters'
 import StatCard from '../../components/ui/StatCard'
 import EmptyState from '../../components/ui/EmptyState'
 import { formatINR } from '../../utils/format'
@@ -20,17 +26,6 @@ import { downloadXls } from '../../utils/xls'
 
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
 const SEVA_DOC_ID = 1263
-
-// Legacy frmRptReport ("Subsidiary Reports") RptFrmName -> the tab here
-// that covers the same report. Any catalog row whose form isn't in this
-// map gets shown but disabled — same "metadata lists it, we haven't built
-// it" convention as AppShellLayout's sidebar (CAPTION_ROUTE / routeFor).
-const CATALOG_FORM_TAB = {
-  frmRptCompDaySmry: 'complete-day',
-  frmRptDtlColn: 'collection',
-  frmRptDonation: 'donations',
-  frmRptSevaIssue: 'seva-issue',
-}
 
 function SubsidiaryReportsCatalog({ onOpenTab }) {
   return <SubsidiaryCatalogPanel onOpenTab={onOpenTab} tabFor={(form) => CATALOG_FORM_TAB[form]} />
@@ -103,42 +98,11 @@ function ResultSkeleton() {
   )
 }
 
-function ResultTable({ columns, rows, emptyHint = 'No records for this range.' }) {
-  return (
-    <Card withBorder p={0} style={{ overflow: 'hidden' }}>
-      {rows.length === 0 ? (
-        <EmptyState icon={FileSearch} title="No records found" hint={emptyHint} />
-      ) : (
-        <Table.ScrollContainer minWidth={640} mah={560} type="native">
-          <Table striped highlightOnHover stickyHeader>
-            <Table.Thead>
-              <Table.Tr>
-                {columns.map((c) => (
-                  <Table.Th key={c.key} ta={c.num ? 'right' : undefined}>
-                    {c.label}
-                  </Table.Th>
-                ))}
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {rows.map((r, i) => (
-                <Table.Tr key={i}>
-                  {columns.map((c) => (
-                    <Table.Td key={c.key} ta={c.num ? 'right' : undefined} className={c.num ? 'vt-num' : undefined}>
-                      {c.value ? c.value(r) : r[c.key]}
-                    </Table.Td>
-                  ))}
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      )}
-    </Card>
-  )
+function ResultTable({ columns, rows, name, emptyHint = 'No records for this range.' }) {
+  return <DataGrid columns={columns} rows={rows} name={name} emptyTitle="No records found" emptyHint={emptyHint} maxHeight={560} />
 }
 
-function RunButtons({ loading, onRun, canExport, onExport, runDisabled }) {
+function RunButtons({ loading, onRun, canExport, onExport, runDisabled, extra }) {
   return (
     <>
       <Button leftSection={<Play size={16} />} color="kumkum" loading={loading} disabled={runDisabled} onClick={onRun}>
@@ -149,30 +113,38 @@ function RunButtons({ loading, onRun, canExport, onExport, runDisabled }) {
           Export CSV
         </Button>
       )}
+      {extra}
     </>
   )
 }
 
 /** Shared shell: date range + optional Sannidhi/Seva filters, Run + Export, summary tiles, result table. */
-function ReportPanel({ runFn, columns, filename, withSevaFilters = true, extraSummary }) {
+function ReportPanel({ runFn, columns, filename, title, withSevaFilters = true, extraSummary, pdfFn }) {
   const [fromDate, setFromDate] = useState(dayjs().startOf('month').toDate())
   const [toDate, setToDate] = useState(new Date())
-  const [sannidhiId, setSannidhiId] = useState('')
-  const [sevaId, setSevaId] = useState('')
+  const [sannidhis, setSannidhis] = useState([]) // "Selected Sannidhi / Selected Seva / Selected User": ticked from a checklist window
+  const [sevas, setSevas] = useState([])
+  const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+
+  const buildFilters = () => {
+    const filters = {
+      from_date: dayjs(fromDate).format('YYYY-MM-DD'),
+      to_date: dayjs(toDate).format('YYYY-MM-DD'),
+    }
+    if (withSevaFilters) {
+      if (sannidhis.length) filters.sannidhi_ids = sannidhis.map(Number)
+      if (sevas.length) filters.seva_ids = sevas.map(Number)
+      if (users.length) filters.users = users
+    }
+    return filters
+  }
 
   async function onRun() {
     setLoading(true)
     try {
-      const filters = {
-        from_date: dayjs(fromDate).format('YYYY-MM-DD'),
-        to_date: dayjs(toDate).format('YYYY-MM-DD'),
-      }
-      if (withSevaFilters) {
-        if (sannidhiId) filters.sannidhi_ids = [Number(sannidhiId)]
-        if (sevaId) filters.seva_ids = [Number(sevaId)]
-      }
+      const filters = buildFilters()
       const data = await runFn(filters)
       setResult(data)
     } catch (err) {
@@ -184,17 +156,61 @@ function ReportPanel({ runFn, columns, filename, withSevaFilters = true, extraSu
 
   return (
     <Stack gap="lg">
-      <FilterCard actions={<RunButtons loading={loading} onRun={onRun} canExport={Boolean(result?.rows?.length)} onExport={() => downloadXls(filename, result.rows, columns)} />}>
+      <FilterCard actions={<RunButtons
+            loading={loading}
+            onRun={onRun}
+            canExport={Boolean(result?.rows?.length)}
+            onExport={() => downloadXls(filename, result.rows, columns)}
+            extra={pdfFn ? (
+              // reports that have their own .rpt print from it, with the filters as set on the screen
+              <RptPdfButtons title={title || filename} load={() => pdfFn(buildFilters())} hotkey />
+            ) : (
+              <ReportPrintButtons
+                title={title || filename.replace(/\.xls$/, '')}
+                period={`Period From ${dayjs(fromDate).format('DD/MM/YYYY')} To ${dayjs(toDate).format('DD/MM/YYYY')}`}
+                filters={[sannidhis.length && `${sannidhis.length} sannidhi(s)`, sevas.length && `${sevas.length} seva(s)`, users.length && `Users: ${users.join(', ')}`].filter(Boolean).join('  |  ')}
+                columns={columns}
+                rows={result?.rows || []}
+                hotkey
+              />
+            )}
+          />}>
         <DateRange from={fromDate} to={toDate} onFrom={setFromDate} onTo={setToDate} />
         {withSevaFilters && (
-          <>
-            <Grid.Col span={{ base: 12, sm: 6 }}>
-              <LookupSelect docId={SEVA_DOC_ID} field="SANNIDHIID" label="Sannidhi (optional)" value={sannidhiId} onChange={setSannidhiId} />
-            </Grid.Col>
-            <Grid.Col span={{ base: 12, sm: 6 }}>
-              <LookupSelect docId={SEVA_DOC_ID} field="SVAID" label="Seva (optional)" value={sevaId} onChange={setSevaId} />
-            </Grid.Col>
-          </>
+          <Grid.Col span={12}>
+            <Group gap="xl" wrap="wrap">
+              <MultiPickField
+                label="Selected Sannidhi"
+                title="Select [Multiple] Sannidhi Name"
+                codeCaption="SANNIDHICODE"
+                nameCaption="SANNIDHINAME"
+                queryKey={['pick', 'sannidhi']}
+                load={() => metaApi.getLookup(SEVA_DOC_ID, 'SANNIDHIID', '').then((r) => r.map((o) => ({ value: o.value, label: o.label })))}
+                value={sannidhis}
+                onChange={setSannidhis}
+              />
+              <MultiPickField
+                label="Selected Seva"
+                title="Select [Multiple] Seva Name"
+                codeCaption="SEVACODE"
+                nameCaption="SEVANAME"
+                queryKey={['pick', 'seva']}
+                load={() => metaApi.getLookup(SEVA_DOC_ID, 'SVAID', '').then((r) => r.map((o) => ({ value: o.value, label: o.label })))}
+                value={sevas}
+                onChange={setSevas}
+              />
+              <MultiPickField
+                label="Selected User"
+                title="Select [Multiple] User Name"
+                codeCaption="USERCODE"
+                nameCaption="USERNAME"
+                queryKey={['pick', 'users']}
+                load={() => mastersApi.listMaster(18, { top: 5000 }).then((d) => (d.rows || []).filter((u) => u.UserID > 0).map((u) => ({ value: String(u.UserCode), code: u.UserCode, label: u.UserName || u.UserCode })))}
+                value={users}
+                onChange={setUsers}
+              />
+            </Group>
+          </Grid.Col>
         )}
       </FilterCard>
 
@@ -211,7 +227,7 @@ function ReportPanel({ runFn, columns, filename, withSevaFilters = true, extraSu
             {result.total_amount != null && <StatCard label="Total amount" value={money(result.total_amount)} icon={Coins} tone="dark" footer="For the records shown" />}
           </SimpleGrid>
           {extraSummary?.(result)}
-          <ResultTable columns={columns} rows={result.rows} />
+          <ResultTable columns={columns} rows={result.rows} name={filename} />
         </>
       )}
     </Stack>
@@ -499,79 +515,71 @@ function GeneralLedgerPanel() {
 // /reports?tab=<value> so those legacy MstMenu entries land on the right
 // tab instead of being dead (disabled) sidebar links.
 const VALID_TABS = ['complete-day', 'collection', 'seva-issue', 'donations', 'general-ledger', 'custom', 'hall-voucher', 'catalog']
+// heading of each report (the tab strip is gone: the sidebar menu and Subsidiary Reports open them)
+const TAB_TITLE = {
+  'complete-day': 'Complete Day',
+  collection: 'Detailed Collection',
+  'seva-issue': 'Seva Issue / Schedule',
+  donations: 'Kanike / Donation',
+  'general-ledger': 'General Ledger',
+  custom: 'Customised Reports',
+  'hall-voucher': 'Hall Booking with Voucher Detail',
+  catalog: 'Subsidiary Reports',
+}
+const FROM_SUBSIDIARY = ['complete-day', 'collection', 'seva-issue', 'donations'] // listed under Subsidiary Reports in the menu
 
 export default function ReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const [activeTab, setActiveTab] = useState(VALID_TABS.includes(requestedTab) ? requestedTab : 'complete-day')
+  // read from the address on every render, so a sidebar click between two reports switches the panel
+  const activeTab = VALID_TABS.includes(requestedTab) ? requestedTab : 'complete-day'
 
   function changeTab(value) {
-    setActiveTab(value)
     setSearchParams(value === 'complete-day' ? {} : { tab: value }, { replace: true })
   }
 
   return (
     <Stack gap="lg" className="vt-rise">
-      <Group gap="sm" wrap="nowrap">
-        <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 40, width: 40 }} />
-        <div>
-          <Title order={2}>Reports</Title>
-          <Text size="sm" c="dimmed">
-            Daily collection, sevas, donations, ledgers and customised reports
-          </Text>
-        </div>
+      <Group gap="sm" wrap="nowrap" justify="space-between">
+        <Group gap="sm" wrap="nowrap">
+          <img src={GOPURAM_MARK} alt="" aria-hidden style={{ height: 40, width: 40 }} />
+          <div>
+            <Title order={2}>{TAB_TITLE[activeTab]}</Title>
+            <Text size="sm" c="dimmed">
+              Daily collection, sevas, donations, ledgers and customised reports
+            </Text>
+          </div>
+        </Group>
+        {FROM_SUBSIDIARY.includes(activeTab) && (
+          <Button variant="subtle" color="kumkum" leftSection={<LayoutList size={16} />} onClick={() => changeTab('catalog')}>
+            Back to Subsidiary Reports
+          </Button>
+        )}
       </Group>
 
-      <Tabs value={activeTab} onChange={changeTab} color="kumkum" keepMounted={false}>
-        <Tabs.List style={{ flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden' }}>
-          <Tabs.Tab value="complete-day" leftSection={<CalendarCheck size={16} />}>
-            Complete Day
-          </Tabs.Tab>
-          <Tabs.Tab value="collection" leftSection={<Coins size={16} />}>
-            Detailed Collection
-          </Tabs.Tab>
-          <Tabs.Tab value="seva-issue" leftSection={<ClipboardList size={16} />}>
-            Seva Issue / Schedule
-          </Tabs.Tab>
-          <Tabs.Tab value="donations" leftSection={<HandCoins size={16} />}>
-            Kanike / Donation
-          </Tabs.Tab>
-          <Tabs.Tab value="general-ledger" leftSection={<BookOpen size={16} />}>
-            General Ledger
-          </Tabs.Tab>
-          <Tabs.Tab value="custom" leftSection={<SlidersHorizontal size={16} />}>
-            Customised Reports
-          </Tabs.Tab>
-          <Tabs.Tab value="hall-voucher" leftSection={<Building size={16} />}>
-            Hall Booking with Voucher Detail
-          </Tabs.Tab>
-          <Tabs.Tab value="catalog" leftSection={<LayoutList size={16} />}>
-            Subsidiary Reports
-          </Tabs.Tab>
-        </Tabs.List>
-
-        <Tabs.Panel value="complete-day" pt="md">
-          <ReportPanel runFn={reportsApi.runCompleteDay} columns={collectionColumns} filename="complete-day.xls" extraSummary={(r) => <CollectionSummary result={r} />} />
+      <Tabs value={activeTab} color="kumkum" keepMounted={false}>
+        <Tabs.Panel value="complete-day">
+          <ReportPanel runFn={reportsApi.runCompleteDay} columns={collectionColumns} filename="complete-day.xls" title="Complete Day Report" pdfFn={reportsApi.completeDayPdf} extraSummary={(r) => <CollectionSummary result={r} />} />
         </Tabs.Panel>
-        <Tabs.Panel value="collection" pt="md">
-          <ReportPanel runFn={reportsApi.runCollection} columns={collectionColumns} filename="detailed-collection.xls" extraSummary={(r) => <CollectionSummary result={r} />} />
+        <Tabs.Panel value="collection">
+          <ReportPanel runFn={reportsApi.runCollection} columns={collectionColumns} filename="detailed-collection.xls" title="Detailed Collection Report" extraSummary={(r) => <CollectionSummary result={r} />} />
         </Tabs.Panel>
-        <Tabs.Panel value="seva-issue" pt="md">
-          <ReportPanel runFn={reportsApi.runSevaIssue} columns={sevaIssueColumns} filename="seva-issue.xls" />
+        <Tabs.Panel value="seva-issue">
+          <ReportPanel runFn={reportsApi.runSevaIssue} columns={sevaIssueColumns} filename="seva-issue.xls" title="Seva Issue / Schedule Report" />
         </Tabs.Panel>
-        <Tabs.Panel value="donations" pt="md">
-          <ReportPanel runFn={reportsApi.runDonations} columns={donationColumns} filename="donations.xls" withSevaFilters={false} />
+        <Tabs.Panel value="donations">
+          <ReportPanel runFn={reportsApi.runDonations} columns={donationColumns} filename="donations.xls" title="Kanike / Donation Report" withSevaFilters={false} />
         </Tabs.Panel>
-        <Tabs.Panel value="general-ledger" pt="md">
+        <Tabs.Panel value="general-ledger">
           <PartyGLPanel />
         </Tabs.Panel>
-        <Tabs.Panel value="custom" pt="md">
+        <Tabs.Panel value="custom">
           <CustomReportsPanel />
         </Tabs.Panel>
-        <Tabs.Panel value="hall-voucher" pt="md">
+        <Tabs.Panel value="hall-voucher">
           <HallVoucherPanel />
         </Tabs.Panel>
-        <Tabs.Panel value="catalog" pt="md">
+        <Tabs.Panel value="catalog">
           <SubsidiaryReportsCatalog onOpenTab={changeTab} />
         </Tabs.Panel>
       </Tabs>

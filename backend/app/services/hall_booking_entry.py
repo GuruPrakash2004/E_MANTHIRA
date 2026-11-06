@@ -29,7 +29,7 @@ from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, table
 from app.meta import doc_rules
-from app.meta.numbering import next_doc_no, resolve_prefix
+from app.meta.numbering import next_doc_no, print_doc_no, resolve_prefix
 from app.utils.amount_in_words import amount_in_words
 
 DOC_ID = 1280
@@ -110,7 +110,7 @@ def create_hbe(conn: Connection, *, data: HbeInput, fy: FinancialYear, user_code
     cols = doc_rules.column_values(head, values, table(TABLE), ALIASES)
     cols.update(
         {
-            NO_COLUMN: doc_no, "Prefix": prefix, "PrintHBENO": doc_no, "HBEDate": datetime.now(),
+            NO_COLUMN: doc_no, "Prefix": prefix, "PrintHBENO": print_doc_no(conn, doc_id=DOC_ID, doc_no=doc_no, prefix=prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "HBEDate": datetime.now(),
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
             "TOTAMT": total_amt, "TOTGSTAMT": tot_gst_amt, "AMTAFTTAX": amt_after_tax, "NETPAY": net_pay,
             "RCPDT": data.receipt_date or (doc_rules._to_date(start) if start else date.today()),

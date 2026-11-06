@@ -25,11 +25,12 @@ from fastapi import HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.core import audit
+from app.core import audit, capabilities
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, table, update_row
 from app.meta import doc_rules, edit_rules, numbering
 from app.services import receipt as receipt_service
+from app.services import split_payment
 from app.utils.amount_in_words import amount_in_words
 
 DOC_ID = 1261
@@ -46,6 +47,7 @@ class DonationInput:
     doc_date: date
     fields: dict
     lines: list[dict]
+    split: list | None = None  # split payment: [split_payment.SplitPart, ...]
 
 
 SYSTEM_CODES = ("ISSUEDBY", "AMTINWORDS", "TOTAMT")  # computed here, never taken from the browser
@@ -88,8 +90,12 @@ def create(conn: Connection, *, data: DonationInput, fy: FinancialYear, user_cod
     rows = doc_rules.load_fields(conn, DOC_ID)
     if not rows:
         raise HTTPException(status.HTTP_409_CONFLICT, "Donation Receipt has no fields configured in the Doc Designer")
+    if data.split:  # the header carries the main part (largest amount) so the legacy EXE sees one ordinary payment
+        split_payment.apply_main(conn, "DONREC", data.split, data.fields)
     values = doc_rules.effective_values(rows, {k: v for k, v in data.fields.items() if k not in SYSTEM_CODES})
     amount = validate(data, fy, rows, values)
+    if data.split:
+        data.split = split_payment.validate(conn, "DONREC", data.split, amount, int(values.get("LEDGER") or 0))
 
     doc_no = numbering.next_doc_no(
         conn,
@@ -120,7 +126,15 @@ def create(conn: Connection, *, data: DonationInput, fy: FinancialYear, user_cod
             "ShowRec": "Y",
         }
     )
+    # The EXE stores a single space for a blank text column (DATALENGTH 1 on every legacy row) and NULL for "no cheque date".
+    for k, v in list(cols.items()):
+        if isinstance(v, str) and v == "" and k.upper() != "CHEQUEDATE":
+            cols[k] = " "
+    if not str(cols.get("CHEQUEDATE") or "").strip() or str(cols["CHEQUEDATE"]).startswith("1900-01-01"):
+        cols["CHEQUEDATE"] = None
     donrec_id = insert_row(conn, TABLE, cols, returning="DONRECID")
+    if data.split:
+        split_payment.save(conn, "DONREC", donrec_id, data.split, user_code)
 
     detail = [r for r in rows if r.get("FldSection") == "Detail"]
     for i, line in enumerate(data.lines, start=1):
@@ -146,11 +160,12 @@ def create(conn: Connection, *, data: DonationInput, fy: FinancialYear, user_cod
             prefix=data.prefix,
             receipt_date=data.doc_date,
             amount=amount,
-            vch_type="Cash" if str(values.get("PAYMNTMODE") or "").upper() == "CASH" else "Bank",
-            narration=doc_no,
+            vch_type=str(values.get("PAYMNTMODE") or "").strip() or "Cash",  # the EXE copies the payment mode verbatim (CASH / UPI / CARD / CHEQUE), 22/22 legacy rows
+            narration=print_no,  # the EXE puts the PRINT number (26/NMM/DR/00010) in the receipt's NARR, not DONRECNO
             cr_led_id=income,
             dr_led_id=cash_bank,
             user_code=user_code,
+            dr_parts=split_payment.dr_parts(data.split),  # one debit line per payment part (None = the usual single cash / bank line)
         )
         receipt_no = r.receipt_no
 
@@ -162,10 +177,11 @@ def lookup_donor(conn: Connection, *, contact_no: str) -> dict | None:
     """Port of the legacy 'Show Donor' recurring-donor auto-fill — last non-cancelled donation for this contact number."""
     from app.core.db import limit_clause
 
+    pan = capabilities.sel("TrnHdrDONREC", "TrnHdrDONREC", "PANNO")
     row = conn.execute(
         text(
             f"""
-            SELECT DONOR, ADDRESS, PANNO
+            SELECT DONOR, ADDRESS, {pan} AS PANNO
             FROM TrnHdrDONREC
             WHERE Cancelled = 'N' AND CONTACTNO = :contact_no
             ORDER BY DONRECID DESC {limit_clause(1)}
@@ -182,6 +198,7 @@ def get(conn: Connection, donrec_id: int) -> dict:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Donation Receipt not found")
     out = dict(row)
     out["lines"] = [dict(r) for r in conn.execute(text("SELECT SEVAID, SEVANME, AMOUNT FROM TrnDtlDONREC WHERE DONRECID = :i ORDER BY SlNo"), {"i": donrec_id}).mappings().all()]
+    out["split_payments"] = split_payment.load(conn, "DONREC", donrec_id)
     return out
 
 
@@ -202,24 +219,36 @@ def list_recent(conn: Connection, *, fy: FinancialYear, search: str = "", top: i
     return [dict(r) for r in rows]
 
 
+def _receipt_narr(conn: Connection, row) -> str:
+    """The NARR of this donation's receipt: the print number (legacy and current writes). Receipts written by earlier
+    web builds used DONRECNO, which can equal a Seva number, so that form is only used when it is not a Seva's."""
+    pn = row.get("PrintDONRECNO")
+    if pn and conn.execute(text("SELECT TOP 1 1 FROM TrnHdrRCPTVCH WHERE NARR = :n"), {"n": pn}).first():
+        return pn
+    if conn.execute(text("SELECT TOP 1 1 FROM TrnHdrSEVA WHERE SEVANO = :n"), {"n": row["DONRECNO"]}).first():
+        return pn or row["DONRECNO"]
+    return row["DONRECNO"]
+
+
 def cancel(conn: Connection, *, donrec_id: int, reason: str, user_code: str) -> None:
-    row = conn.execute(text("SELECT DONRECNO, Cancelled FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id}).mappings().first()
+    row = conn.execute(text("SELECT DONRECNO, PrintDONRECNO, Cancelled FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Donation Receipt not found")
     if (row["Cancelled"] or "N").upper() == "Y":
         raise HTTPException(status.HTTP_409_CONFLICT, "Document is already cancelled")
 
     update_row(conn, "TrnHdrDONREC", "DONRECID", donrec_id, {"Cancelled": "Y"})
-    receipt_service.void_receipt_by_narr(conn, row["DONRECNO"], reverse_ledger=True)
+    receipt_service.void_receipt_by_narr(conn, _receipt_narr(conn, row), reverse_ledger=True)
     audit.record(conn, entity="Donation Receipt Entry", entity_id=donrec_id, action="C", user_code=user_code, details=reason)
 
 
 def delete(conn: Connection, *, donrec_id: int, user_code: str) -> None:
-    row = conn.execute(text("SELECT DONRECNO, DONRECDate, Authorised FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id}).mappings().first()
+    row = conn.execute(text("SELECT DONRECNO, PrintDONRECNO, DONRECDate, Authorised FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Donation Receipt not found")
     edit_rules.assert_editable(conn, DOC_ID, doc_date=row["DONRECDate"], authorised=row["Authorised"])
-    receipt_service.delete_receipt_by_narr(conn, row["DONRECNO"])
+    receipt_service.delete_receipt_by_narr(conn, _receipt_narr(conn, row))
+    split_payment.delete(conn, "DONREC", donrec_id)
     conn.execute(text("DELETE FROM TrnDtlDONREC WHERE DONRECID = :id"), {"id": donrec_id})
     conn.execute(text("DELETE FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id})
     audit.record(conn, entity="Donation Receipt Entry", entity_id=donrec_id, action="D", user_code=user_code)
@@ -232,10 +261,12 @@ def donor_history(conn: Connection, *, name: str = "", top: int = 0) -> list[dic
     """
     from app.core.db import limit_clause
 
-    sql = """
-        SELECT h.DONRECID, h.DONRECNO, h.PrintDONRECNO, h.DONRECDate, h.DONOR, h.CONTACTNO, h.ADDRESS, h.REFNO, h.PANNO, d.SEVANME, d.SEVAID
+    show = "AND h.ShowRec = 'Y'" if capabilities.has_col("TrnHdrDONREC", "ShowRec") else ""
+    pan = capabilities.sel("TrnHdrDONREC", "h", "PANNO")
+    sql = f"""
+        SELECT h.DONRECID, h.DONRECNO, h.PrintDONRECNO, h.DONRECDate, h.DONOR, h.CONTACTNO, h.ADDRESS, h.REFNO, {pan} AS PANNO, d.SEVANME, d.SEVAID
         FROM TrnHdrDONREC h JOIN TrnDtlDONREC d ON h.DONRECID = d.DONRECID
-        WHERE h.ShowRec = 'Y'
+        WHERE 1 = 1 {show}
     """
     params: dict = {}
     if name.strip():

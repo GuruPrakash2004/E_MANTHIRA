@@ -1,53 +1,49 @@
 import { historyParams } from '../../lib/history'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
-import { ActionIcon, Grid, NumberInput, Select, Stack, Table, TextInput, Button } from '@mantine/core'
-import { DateInput } from '../../components/ui/AppDates'
-import { ClipboardList, Plus, Save, Trash2 } from 'lucide-react'
+import { ActionIcon, Badge, Button, Group, Stack, Text, Tooltip } from '@mantine/core'
+import { ClipboardList, Pencil, Plus, Save, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as inventoryApi from '../../api/endpoints/inventory'
-import MasterOptionsSelect from './MasterOptionsSelect'
+import AddLineItemDialog from './AddLineItemDialog'
+import useQoh, { fmtQoh } from './useQoh'
 import useDocFields from '../../hooks/useDocFields'
 import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import { fieldCaption } from '../../utils/docFieldConditions'
-import dayjs from 'dayjs'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
-import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard, PageHeader } from '../../components/ui/EntryParts'
-import { formatINR, isoDate } from '../../utils/format'
+import { SectionCard, LineItemsCard, EntryLayout, SummaryCard, SavedPanel, RecentCard, PageHeader } from '../../components/ui/EntryParts'
+import { isoDate } from '../../utils/format'
 
-const ITEM_DOC_ID = 1114
-const UOM_DOC_ID = 1115
-const LOCATION_DOC_ID = 1123
 const DOC_ID = 1268
 
-// Maps this screen's own form-state keys to the legacy FldCode UtlDocDsgrFlds
-// uses — same pattern as the transaction screens (CLAUDE.md rule 5). None of
-// DocID 1268's fields have a live conditional rule today, but building real
-// codeValues (not {}) means a future Designer-added conditional rule works
-// here with zero further code changes.
 const COMPUTED_CODES = ['TOTQTY']
 
-const EMPTY_LINE = { item_id: '', uom_id: '', qty: 0, rate: 0, adj_type: 'Add', remarks: '' }
+const th = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--vt-accent)', borderBottom: '1px solid var(--vt-line)', whiteSpace: 'nowrap' }
+const td = { padding: '8px 10px', borderBottom: '1px solid var(--vt-line)' }
 
 /**
- * Stock Adjustment Entry (DocID 1268) — confirmed zero real usage in this
- * client's data (0 historical rows, hidden from the menu), built per
- * explicit request. Adds or reduces stock directly (no supplier/GL side).
+ * Stock Adjustment Entry (DocID 1268): adds or reduces stock directly (no supplier / GL side). Items are added one at a time in the
+ * Add Line Item dialog (the same one as the Purchase Bill); the lines saved are exactly what the legacy form writes: item, UOM,
+ * quantity, rate, Add / Reduce and the line remarks.
  */
 export default function StockAdjustmentPage() {
   const confirm = useConfirm()
   const queryClient = useQueryClient()
   const [form, setForm] = useState({ doc_date: new Date() })
-  const [lines, setLines] = useState([{ ...EMPTY_LINE }])
+  const [lines, setLines] = useState([])
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
+  const [dialog, setDialog] = useState({ open: false, index: null })
+  const { data: rules } = useQuery({ queryKey: ['stock-rules'], queryFn: inventoryApi.stockRules, staleTime: 5 * 60_000 }) // Inventory > AllowNegative
 
   const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['stock-adjustments', 'recent'], queryFn: () => inventoryApi.listStockAdjustments(historyParams()) })
   const { fields, byCode: fieldMeta } = useDocFields(DOC_ID)
   const caption = (code, fallback) => fieldCaption(fieldMeta[code], fallback)
   // Header / Footer fields come from this temple's Doc Designer (DocFieldsForm); values are keyed by FldCode.
   const [values, setValues] = useState({})
+  const qohMap = useQoh(lines, values.LOCID) // quantity on hand of each line's item at the chosen location
   const [resetKey, setResetKey] = useState(0)
   const [attempted, setAttempted] = useState(false)
   const setValue = (code, v) => setValues((cur) => ({ ...cur, [code]: v }))
@@ -60,22 +56,20 @@ export default function StockAdjustmentPage() {
         .map(([k, v]) => [k, dateCodes.has(k) ? isoDate(v) : v])
     )
 
-  function set(field, value) {
-    setForm((f) => ({ ...f, [field]: value }))
+  const set = (field, value) => setForm((f) => ({ ...f, [field]: value }))
+  const locChosen = Number(values.LOCID) > 0 // the QOH shown in the dialog is that location's, so the location comes first
+
+  function onLineSaved(line) {
+    setLines((ls) => (dialog.index == null ? [...ls, line] : ls.map((l, i) => (i === dialog.index ? line : l))))
+    if (dialog.index != null) setDialog({ open: false, index: null })
   }
-  function updateLine(i, patch) {
-    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
-  }
-  function addLine() {
-    setLines((ls) => [...ls, { ...EMPTY_LINE }])
-  }
-  function removeLine(i) {
-    setLines((ls) => (ls.length > 1 ? ls.filter((_, idx) => idx !== i) : ls))
+  async function removeLine(i) {
+    if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) setLines((ls) => ls.filter((_, idx) => idx !== i))
   }
 
   async function onSave() {
     setAttempted(true)
-    const firstErr = Object.values(headErrors)[0]
+    const firstErr = Object.values(headErrors)[0] || (!lines.length ? 'Please add at least one item line' : null)
     if (firstErr) {
       notifications.show({ message: firstErr, color: 'red' })
       return
@@ -85,12 +79,12 @@ export default function StockAdjustmentPage() {
       const body = {
         fields: fieldsPayload(),
         doc_date: isoDate(form.doc_date),
-        lines: lines.map((l) => ({ item_id: Number(l.item_id), uom_id: Number(l.uom_id), qty: Number(l.qty), rate: Number(l.rate) || 0, adj_type: l.adj_type, remarks: l.remarks })),
+        lines: lines.map((l) => ({ item_id: Number(l.item_id), uom_id: Number(l.uom_id), qty: Number(l.qty), rate: Number(l.rate) || 0, adj_type: l.adj_type || 'Add', remarks: l.remarks || '' })),
       }
       const result = await inventoryApi.createStockAdjustment(body)
       setLastSaved(result)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setLines([{ ...EMPTY_LINE }])
+      setLines([])
       setValues({})
       setResetKey((k) => k + 1)
       setAttempted(false)
@@ -103,7 +97,7 @@ export default function StockAdjustmentPage() {
     }
   }
 
-  const addQty = lines.reduce((s, l) => s + (l.adj_type === 'Add' ? Number(l.qty) || 0 : 0), 0)
+  const addQty = lines.reduce((s, l) => s + ((l.adj_type || 'Add') === 'Add' ? Number(l.qty) || 0 : 0), 0)
   const reduceQty = lines.reduce((s, l) => s + (l.adj_type === 'Reduce' ? Number(l.qty) || 0 : 0), 0)
   const fmtQty = (n) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 })
 
@@ -111,13 +105,12 @@ export default function StockAdjustmentPage() {
 
   return (
     <Stack gap="lg" className="vt-rise">
-      <PageHeader title="Stock Adjustment Entry" subtitle="Add or reduce item stock directly" />
+      <PageHeader title="Stock Adjustment Entry" subtitle="Add or reduce item stock directly" right={<DocNoDate docId={DOC_ID} date={form.doc_date} onDate={(v) => set('doc_date', v)} />} />
 
       <EntryLayout
         main={
           <Stack gap="lg">
             <SectionCard title="Adjustment details" hint="Where the stock sits and who is adjusting it.">
-              <DateInput label="Document Date" valueFormat="DD-MMM-YYYY" value={form.doc_date} onChange={(v) => set('doc_date', v)} w={200} mb="sm" />
               <DocFieldsForm
                 docId={DOC_ID}
                 section="Header"
@@ -131,6 +124,7 @@ export default function StockAdjustmentPage() {
               <DocFieldsForm
                 docId={DOC_ID}
                 section="Footer"
+                inlineLabels={false}
                 values={values}
                 setValue={setValue}
                 setValues={setValues}
@@ -140,65 +134,68 @@ export default function StockAdjustmentPage() {
               />
             </SectionCard>
 
-            <SectionCard
-              title="Items"
-              hint="One line per item. Choose Add to increase stock or Reduce to take it out."
+            <LineItemsCard
+              title="Stock Adjustment Line Items"
+              chips={[
+                { label: 'Items', value: lines.length },
+                { label: 'Added', value: fmtQty(addQty), color: 'teal' },
+                { label: 'Reduced', value: fmtQty(reduceQty), color: 'red' },
+              ]}
               action={
-                <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
-                  Add line
-                </Button>
+                <Tooltip label="Select the location first" disabled={locChosen} withArrow>
+                  <Button color="kumkum" leftSection={<Plus size={16} />} disabled={!locChosen} onClick={() => locChosen && setDialog({ open: true, index: null })}>
+                    Add Item
+                  </Button>
+                </Tooltip>
               }
             >
-              <Table.ScrollContainer minWidth={720}>
-                <Table>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Item</Table.Th>
-                      <Table.Th w={130}>UOM</Table.Th>
-                      <Table.Th w={110}>{caption('SAQTY', 'Qty')}</Table.Th>
-                      <Table.Th w={110}>Rate</Table.Th>
-                      <Table.Th w={140}>{caption('ADJTYPE', 'Adjust Type')}</Table.Th>
-                      <Table.Th w={48} aria-label="Remove" />
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {lines.map((l, i) => (
-                      <Table.Tr key={i}>
-                        <Table.Td>
-                          <MasterOptionsSelect ariaLabel={`Item, line ${i + 1}`} docId={ITEM_DOC_ID} value={l.item_id} onChange={(v) => updateLine(i, { item_id: v })} />
-                        </Table.Td>
-                        <Table.Td>
-                          <MasterOptionsSelect ariaLabel={`UOM, line ${i + 1}`} docId={UOM_DOC_ID} value={l.uom_id} onChange={(v) => updateLine(i, { uom_id: v })} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label={`Quantity, line ${i + 1}`} value={l.qty} onChange={(v) => updateLine(i, { qty: v })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label={`Rate, line ${i + 1}`} value={l.rate} onChange={(v) => updateLine(i, { rate: v })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <Select aria-label={`Adjust type, line ${i + 1}`} data={['Add', 'Reduce']} value={l.adj_type} onChange={(v) => updateLine(i, { adj_type: v })} />
-                        </Table.Td>
-                        <Table.Td>
-                          <ActionIcon
-                            color="red"
-                            variant="subtle"
-                            size={36}
-                            aria-label={`Remove line ${i + 1}`}
-                            disabled={lines.length <= 1}
-                            onClick={async () => {
-                              if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeLine(i)
-                            }}
-                          >
-                            <Trash2 size={16} />
+              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13, minWidth: 700 }}>
+                <thead style={{ background: 'var(--vt-sandal)' }}>
+                  <tr>
+                    <th style={{ ...th, width: 40 }}>#</th>
+                    <th style={th}>Item code</th>
+                    <th style={th}>Item name</th>
+                    <th style={th}>UOM</th>
+                    <th style={{ ...th, textAlign: 'right' }}>QOH</th>
+                    <th style={{ ...th, textAlign: 'right' }}>{caption('SAQTY', 'Qty')}</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Rate</th>
+                    <th style={th}>{caption('ADJTYPE', 'Adjust Type')}</th>
+                    <th style={{ ...th, width: 84 }} aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((l, i) => (
+                    <tr key={i} style={{ background: i % 2 ? 'var(--vt-sandal)' : undefined }}>
+                      <td style={td}>{i + 1}</td>
+                      <td style={{ ...td, color: 'var(--vt-accent)', fontWeight: 600 }}>{l.item_code}</td>
+                      <td style={td}>{l.item_name}</td>
+                      <td style={td}>{l.uom_code}</td>
+                      <td style={{ ...td, textAlign: 'right', fontWeight: 600 }} className="vt-num" aria-label={`Quantity on hand, line ${i + 1}`}>{fmtQoh(qohMap, l.item_id)}</td>
+                      <td style={{ ...td, textAlign: 'right', fontWeight: 700 }} className="vt-num">{fmtQty(Number(l.qty) || 0)}</td>
+                      <td style={{ ...td, textAlign: 'right' }} className="vt-num">{(Number(l.rate) || 0).toFixed(2)}</td>
+                      <td style={td}>
+                        <Badge variant="light" color={l.adj_type === 'Reduce' ? 'red' : 'teal'} tt="none">{l.adj_type || 'Add'}</Badge>
+                      </td>
+                      <td style={td}>
+                        <Group gap={2} wrap="nowrap">
+                          <ActionIcon variant="subtle" color="kumkum" aria-label={`Edit line ${i + 1}`} onClick={() => setDialog({ open: true, index: i })}>
+                            <Pencil size={15} />
                           </ActionIcon>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-              </Table.ScrollContainer>
-            </SectionCard>
+                          <ActionIcon variant="subtle" color="red" aria-label={`Remove line ${i + 1}`} onClick={() => removeLine(i)}>
+                            <Trash2 size={15} />
+                          </ActionIcon>
+                        </Group>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {lines.length === 0 && (
+                <Text size="sm" c="dimmed" ta="center" py="xl">
+                  No line items added yet. Click <b>Add Item</b> to start.
+                </Text>
+              )}
+            </LineItemsCard>
           </Stack>
         }
         side={
@@ -218,16 +215,31 @@ export default function StockAdjustmentPage() {
             />
             {lastSaved && <SavedPanel lines={[`Adjustment ${lastSaved.sa_no}`]} />}
             <RecentCard
+              docId={DOC_ID}
               title="Recent adjustments"
               icon={ClipboardList}
               loading={recentLoading}
               rows={recent || []}
               emptyTitle="No adjustments yet"
               emptyHint="Saved documents will be listed here."
-              renderRow={(r) => ({ key: r.SAID, title: r.PrintSANO, subtitle: `${r.RMKS} \u00b7 Qty ${r.TOTQTY}` })}
+              renderRow={(r) => ({ key: r.SAID, title: r.PrintSANO, subtitle: `${r.RMKS} · Qty ${r.TOTQTY}` })}
             />
           </>
         }
+      />
+
+      <AddLineItemDialog
+        opened={dialog.open}
+        onClose={() => setDialog({ open: false, index: null })}
+        onAdd={onLineSaved}
+        initial={dialog.index == null ? null : lines[dialog.index]}
+        rateRequired={false}
+        withAdjType
+        adjTypeCaption={caption('ADJTYPE', 'Adjust Type')}
+        qtyCaption={caption('SAQTY', 'Quantity')}
+        locId={values.LOCID}
+        warnOver={(t) => t === 'Reduce'}
+        blockOver={!rules?.allow_negative}
       />
     </Stack>
   )

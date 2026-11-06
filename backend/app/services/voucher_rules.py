@@ -10,13 +10,13 @@ from sqlalchemy.engine import Connection
 
 
 def check_heads(conn: Connection, lines) -> None:
-    """Each line's account head (MstLed) must exist ("A/c Head does not exist!!") and not be InActive."""
+    """Each line's account head (MstAcLed.AcLedID: ledgers, suppliers, customers; legacy frmTrnVch looks it up there, not in MstLed)
+    must exist ("A/c Head does not exist!!"), not be InActive, and - for a supplier / customer - be an Authorised party
+    ("Selected Party [name] Not Approved....")."""
+    from app.services import account_heads
+
     for l in lines:
-        row = conn.execute(text("SELECT InActive FROM MstLed WHERE LEDID = :i"), {"i": l.ac_led_id}).first()
-        if row is None:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A/c Head does not exist!!")
-        if str(row[0] or "N").strip().upper() == "Y":
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "This Account Head is InActive! Please select an Active one from the list.")
+        account_heads.check_head(conn, l.ac_led_id)
 
 
 def assert_not_hall_receipt(conn: Connection, receipt_id: int) -> None:

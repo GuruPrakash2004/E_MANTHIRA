@@ -1,4 +1,4 @@
-import { get, post, del } from '../api'
+import { get, post, put, del } from '../api'
 
 export const listStockAdjustments = (params) => get('/inventory/stock-adjustments', { params })
 export const createStockAdjustment = (body) => post('/inventory/stock-adjustments', body)
@@ -9,6 +9,10 @@ export const createStoreIssue = (body) => post('/inventory/store-issues', body)
 export const deleteStoreIssue = (id) => del(`/inventory/store-issues/${id}`)
 
 export const listPurchaseBills = (params) => get('/inventory/purchase-bills', { params })
+export const purchaseBillNextNo = () => get('/inventory/purchase-bills/next-no')
+export const getPurchaseBill = (id) => get(`/inventory/purchase-bills/${id}`)
+export const getQoh = (itemIds, locId) => get('/inventory/qoh', { params: { item_ids: itemIds.join(','), ...(locId ? { loc_id: locId } : {}) } })
+export const searchLineItems = (q) => get('/inventory/line-items', { params: q ? { q } : undefined })
 export const createPurchaseBill = (body) => post('/inventory/purchase-bills', body)
 export const deletePurchaseBill = (id) => del(`/inventory/purchase-bills/${id}`)
 
@@ -39,3 +43,11 @@ export const referencerTransactions = (id, params) => get(`/inventory/item-refer
 export const stockReportLookups = () => get('/inventory/reports/lookups')
 export const stockLedger = (params) => get('/inventory/reports/stock-ledger', { params })
 export const stockBalance = (params) => get('/inventory/reports/stock-balance', { params })
+export const stockBalanceDocwise = (params) => get('/inventory/reports/stock-balance-docwise', { params })
+export const stockRules = () => get('/inventory/stock-rules')
+// Add Items (paste item codes / saved item lists)
+export const itemLists = () => get('/inventory/item-lists')
+export const validateItemCodes = (codes) => post('/inventory/item-lists/validate', { codes })
+export const loadItemList = (name) => get(`/inventory/item-lists/${encodeURIComponent(name)}`)
+export const saveItemList = (name, remarks, itemIds) => put(`/inventory/item-lists/${encodeURIComponent(name)}`, { remarks, item_ids: itemIds })
+export const removeItemList = (name) => del(`/inventory/item-lists/${encodeURIComponent(name)}`)

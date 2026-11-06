@@ -5,6 +5,7 @@ CLAUDE.md rule 5 ("metadata is the source of truth, like the old app").
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlalchemy import text
@@ -56,6 +57,11 @@ DEFAULT_RIGHTS = "000000000000"  # deny-by-default, same fallback as legacy
 WEB_HIDDEN_CAPTIONS = {"DOWNLOAD LATEST EXE", "DISPLAY IN BROWSER"}
 
 
+def is_separator(caption: str | None) -> bool:
+    """The legacy menu keeps separator rows (caption "-") and blanks; they mean nothing on the web."""
+    return re.fullmatch(r"[\s\-\u2013\u2014_=.]*", caption or "") is not None
+
+
 def get_menu_tree(conn: Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         text(
@@ -82,7 +88,7 @@ def get_menu_tree(conn: Connection) -> list[dict[str, Any]]:
             "shortcut": (r["SCKeys"] or "").strip(),
         }
         for r in rows
-        if (r["MenuItemCaption"] or "").strip().upper() not in WEB_HIDDEN_CAPTIONS
+        if (r["MenuItemCaption"] or "").strip().upper() not in WEB_HIDDEN_CAPTIONS and not is_separator(r["MenuItemCaption"])
     ]
 
 
@@ -131,6 +137,38 @@ def resolve_menu_item_id(conn: Connection, doc_id: int) -> int | None:
         ).scalar()
 
     return cache.get_or_set(("menu", "item", doc_id), _RIGHTS_TTL, load)
+
+
+def resolve_menu_item_by_form(conn: Connection, form_key: str) -> int | None:
+    """The menu item that opens a legacy form (MstMenu.FrmName, case-insensitive); shown items win over hidden ones."""
+    from app.core.db import limit_clause
+
+    def load() -> int | None:
+        return conn.execute(
+            text(
+                f"SELECT MenuItemID FROM MstMenu WHERE UPPER(LTRIM(RTRIM(ISNULL(FrmName, '')))) = :f "
+                f"ORDER BY CASE WHEN MenuShow = 'Y' THEN 0 ELSE 1 END, MenuItemID {limit_clause(1)}"
+            ),
+            {"f": form_key.strip().upper()},
+        ).scalar()
+
+    return cache.get_or_set(("menu", "form", form_key.strip().upper()), _RIGHTS_TTL, load)
+
+
+def resolve_menu_item_by_caption(conn: Connection, caption: str) -> int | None:
+    """The menu item with this caption (for legacy rows that carry no form name); shown items win over hidden ones."""
+    from app.core.db import limit_clause
+
+    def load() -> int | None:
+        return conn.execute(
+            text(
+                f"SELECT MenuItemID FROM MstMenu WHERE UPPER(LTRIM(RTRIM(ISNULL(MenuItemCaption, '')))) = :c "
+                f"ORDER BY CASE WHEN MenuShow = 'Y' THEN 0 ELSE 1 END, MenuItemID {limit_clause(1)}"
+            ),
+            {"c": caption.strip().upper()},
+        ).scalar()
+
+    return cache.get_or_set(("menu", "caption", caption.strip().upper()), _RIGHTS_TTL, load)
 
 
 def get_rights_string(conn: Connection, *, user_id: int, role_id: int, user_code: str, menu_item_id: int) -> str:

@@ -1,11 +1,12 @@
 import { historyParams } from '../../lib/history'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import SevakartharuModal from './SevakartharuModal'
 import GroupSevaModal from './GroupSevaModal'
 import DocNavBar from '../../components/ui/DocNavBar'
-import { Badge, Button, Card, Checkbox, Group, Stack, Table, Text, TextInput, Title, ActionIcon } from '@mantine/core'
+import { Badge, Button, Card, Checkbox, Group, NumberInput, Stack, Table, Text, TextInput, Title, ActionIcon } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
 import { Plus, Trash2, Search, Receipt, CalendarPlus, CalendarRange, Landmark, Users, Copy } from 'lucide-react'
 import dayjs from 'dayjs'
@@ -14,8 +15,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as sevaApi from '../../api/endpoints/seva'
 import * as mastersApi from '../../api/endpoints/masters'
 import useDirectPrint from '../../hooks/useDirectPrint'
+import ExtraSevas from './ExtraSevas'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
+import SplitPaymentPanel, { refRequiredModes, splitError, splitFromSaved, splitPayload } from '../../components/ui/SplitPaymentPanel'
 import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import CopyFromDialog from '../../components/ui/CopyFromDialog'
 import useDocRules from '../../hooks/useDocRules'
@@ -30,8 +33,11 @@ import SannidhiShortlistModal from './SannidhiShortlistModal'
 import SevaDatesDialog from './SevaDatesDialog'
 import useShortlist from '../../hooks/useShortlist'
 import { useAuth } from '../../hooks/useAuth'
+import useBillAlertify from '../alertify/useBillAlertify'
 
 const DOC_ID = 1263
+// the single-payment fields: with a split bill the main part supplies them, so they are not shown
+const SPLIT_PAY_CODES = ['PAYMENT', 'LEDID', 'VCHTYP', 'REFNO', 'CHQNO', 'CHQDATE', 'BANKNAME']
 // Domain cheat-sheet (CLAUDE.md §6): 1265 = Seva master. Only used to show the rate the server will charge (MstSVA.AMT).
 const SEVA_MASTER_DOC_ID = 1265
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
@@ -58,13 +64,17 @@ export default function SevaEntryPage() {
   const [values, setValues] = useState({})
   const [resetKey, setResetKey] = useState(0)
   const [docDate, setDocDate] = useState(new Date())
-  const [rate, setRate] = useState(0)
+  const [rate, setRate] = useState(0) // the Seva master's amount
+  const [amountEdit, setAmountEdit] = useState(null) // the Amount box when typed: { svaid, days, rate, value }; it stops applying as soon as the Seva, the number of dates or the Rate change (legacy recalculates)
+  const [rateEdit, setRateEdit] = useState({ svaid: 0, value: '' }) // the Rate box when the counter changed it (open-rate sevas have a master amount of 0); only valid for the Seva it was typed for
   const [attempted, setAttempted] = useState(false)
   const [dateError, setDateError] = useState('')
   const [dates, setDates] = useState(todayDates)
   const [newDate, setNewDate] = useState(new Date())
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
+  const [extraSevas, setExtraSevas] = useState([]) // more sevas for this devotee: [{ id, label, rate }], each saved as its own bill
+  const [batch, setBatch] = useState([]) // the bills of the last multi-seva save
   const [pickOpen, setPickOpen] = useState(false)
   const [groupOpen, setGroupOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
@@ -103,7 +113,8 @@ export default function SevaEntryPage() {
   // The Designer's own mandatory rules, evaluated against what is on screen.
   const errors = docFieldErrors(fields, values)
   if (has('KNAME') && !String(values.KNAME || '').trim()) errors.KNAME = errors.KNAME || 'Name should not be blank'
-  const firstError = Object.values(errors)[0] || (dates.length === 0 ? 'Add at least one seva date' : null)
+  const extraBad = extraSevas.find((s) => !(s.rate > 0))
+  const firstError = Object.values(errors)[0] || (dates.length === 0 ? 'Add at least one seva date' : null) || (extraBad ? `${extraBad.label}: ${extraBad.rate === null ? 'the rate is still loading' : 'no rate is set for this seva'}` : null)
   const canSave = !firstError
   const shownErrors = attempted ? errors : {}
 
@@ -120,7 +131,21 @@ export default function SevaEntryPage() {
     queryFn: () => sevaApi.listSevas(historyParams()),
   })
 
-  const totalAmt = (Number(rate) || 0) * dates.length
+  const extraRate = extraSevas.reduce((n, s) => n + (Number(s.rate) || 0), 0)
+  const effRate = rateEdit.svaid === Number(values.SVAID) && Number(rateEdit.value) > 0 ? Number(rateEdit.value) : Number(rate) || 0
+  const amountTyped = Boolean(amountEdit) && amountEdit.svaid === Number(values.SVAID) && amountEdit.days === dates.length && amountEdit.rate === effRate && Number(amountEdit.value) > 0
+  const mainAmount = amountTyped ? Number(amountEdit.value) : effRate * dates.length
+  const totalAmt = mainAmount + extraRate * dates.length
+  // Split payment: the bill paid in parts by different modes (WebSplitPayment). The header mirrors the main part.
+  const [splitOn, setSplitOn] = useState(false)
+  const [splitParts, setSplitParts] = useState([])
+  const refModes = refRequiredModes(fields, 'PAYMENT')
+  const splitErr = splitError(splitOn, splitParts, totalAmt, refModes)
+  const alertify = useBillAlertify({
+    docId: DOC_ID, label: 'Seva', user: user?.user_code, fields, values, savedNo: viewId ? viewNo : '',
+    totals: [{ caption: 'Doc Date', value: dayjs(docDate).format('DD/MM/YYYY') }, { caption: 'Total Amount', value: formatINR(totalAmt) }, { caption: 'Net Amount', value: formatINR(totalAmt) }, { caption: 'Seva Dates', value: dates.map((d) => dayjs(d.perform_date).format('DD/MM/YYYY')).join(', ') }, { caption: 'Number of Dates', value: String(dates.length) }],
+    anchors: dates.map((d) => d.perform_date), timingCaption: /timing/i, defaultDir: 'before', valid: canSave && !splitErr, hint: splitErr || firstError || 'Fill the bill details first',
+  })
 
   // The rate is the Seva master's amount (the server charges the same); shown in the summary only.
   useEffect(() => {
@@ -208,6 +233,8 @@ export default function SevaEntryPage() {
     }
     setValues(next)
     setRegular(String(l.RegularD || 'N').trim().toUpperCase() === 'Y')
+    setRateEdit({ svaid: Number(l.SVAID) || 0, value: l.SevaRate != null ? String(l.SevaRate) : '' })
+    setAmountEdit({ svaid: Number(l.SVAID) || 0, days: (l.dates || []).length || 1, rate: Number(l.SevaRate) || 0, value: l.TotalAmt != null ? String(l.TotalAmt) : '' })
     if (withDates) {
       const yes = (v) => String(v || 'N').trim().toUpperCase() === 'Y'
       setStamp(yes(l.Cancelled) ? { text: 'CANCELLED', color: 'red' } : l.auth_req ? (yes(l.Authorised) ? { text: 'AUTHORISED', color: 'green' } : { text: 'NOT AUTHORISED', color: 'orange' }) : null)
@@ -236,6 +263,8 @@ export default function SevaEntryPage() {
     try {
       const l = await sevaApi.getSeva(id)
       fillFromSeva(l, { withDates: true })
+      setSplitParts(splitFromSaved(l.split_payments))
+      setSplitOn((l.split_payments || []).length > 1)
       setViewId(id)
       setEditing(false)
       setViewNo(l.PrintSEVANO || l.SEVANO)
@@ -246,13 +275,19 @@ export default function SevaEntryPage() {
   function startNew() {
     setViewId(null)
     setEditing(false)
+    setSplitOn(false)
+    setSplitParts([])
     setViewNo('')
     setDates(todayDates())
     setDaysText('')
     setDaysTextFor('')
     setAttempted(false)
     setValues({})
+    setExtraSevas([])
+    setBatch([])
     setRegular(false)
+    setRateEdit({ svaid: 0, value: '' })
+    setAmountEdit(null)
     setStamp(null)
     setResetKey((k) => k + 1) // re-applies the Designer defaults
     setDocDate(new Date())
@@ -294,15 +329,15 @@ export default function SevaEntryPage() {
 
   async function onSave(mode) {
     setAttempted(true)
-    if (firstError) {
+    if (splitErr || firstError) {
       // an alert, not small print by the Save button; the cursor goes to the first field that needs attention
-      notifications.show({ title: 'Cannot save yet', message: firstError, color: 'red' })
+      notifications.show({ title: 'Cannot save yet', message: splitErr || firstError, color: 'red' })
       setTimeout(() => document.querySelector('.vt-entry-main [aria-invalid="true"]')?.focus(), 80)
       return
     }
     setSaving(true)
     try {
-      const body = { fields: fieldsPayload(), dates, doc_date: isoDate(docDate), regular, days_text: daysTextFor === JSON.stringify(dates.map((d) => d.perform_date)) ? daysText : '' }
+      const body = { fields: fieldsPayload(), dates, doc_date: isoDate(docDate), regular, ...(effRate > 0 ? { rate: effRate } : {}), ...(amountTyped ? { amount: mainAmount } : {}), days_text: daysTextFor === JSON.stringify(dates.map((d) => d.perform_date)) ? daysText : '', ...(!editing && extraSevas.length ? { extra_seva_ids: extraSevas.map((s) => s.id) } : {}), ...(splitOn ? { split_payments: splitPayload(splitParts) } : {}) }
       if (editing && viewId) {
         const done = await sevaApi.updateSeva(viewId, body)
         setLastSaved(done)
@@ -314,12 +349,22 @@ export default function SevaEntryPage() {
         if (mode === 'print') directPrint(viewId)
         return
       }
-      const result = await sevaApi.createSeva(body)
+      const res = await sevaApi.createSeva(body)
+      const bills = res.bills || null // several sevas: one bill each
+      const result = bills ? bills[bills.length - 1] : res
+      alertify.afterSave({ 'Doc No': (bills ? bills[0] : res).seva_no }) // the Alertify reminder asked for before saving; it never blocks the bill
       setLastSaved(result)
+      setBatch(bills || [])
       // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
-      if (mode === 'print') directPrint(result.seva_id)
+      if (bills) {
+        // one print dialog cannot serve several bills: print each (silently when a print agent is set up), else use the panel's Print buttons
+        if (mode === 'print') for (const b of bills) await directPrint(b.seva_id)
+      } else if (mode === 'print') directPrint(result.seva_id)
       else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.seva_id, openDialog: setPrintFor })
-      notifications.show({ message: 'Data saved successfully!', color: 'teal' })
+      notifications.show({ message: bills ? `${bills.length} sevas saved successfully!` : 'Data saved successfully!', color: 'teal' })
+      setExtraSevas([])
+      setSplitOn(false) // the next bill starts as an ordinary single payment
+      setSplitParts([])
       setDates(todayDates())
       setAttempted(false)
       setValues((cur) => {
@@ -376,9 +421,16 @@ export default function SevaEntryPage() {
           </div>
         </Group>
         {/* the cursor starts in the first form field, not on the document date (data-no-autofocus) */}
-        <div data-no-autofocus>
-          <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={readOnly || !rules.edit_doc_date} w={150} />
-        </div>
+        <DocNoDate
+          docId={DOC_ID}
+          queryExtra={String(values.SANNIDHIID || 0)}
+          enabled={Boolean(values.SANNIDHIID)}
+          fetchNo={() => sevaApi.nextSevaNo(values.SANNIDHIID).then((r) => ({ short_form: 'SEVA', prefix: String(r.seva_no).slice(2, -5), seq: parseInt(String(r.seva_no).slice(-5), 10) || 0, print_no: r.print_no || r.seva_no }))}
+          viewNo={viewId ? viewNo : ''}
+          date={docDate}
+          onDate={setDocDate}
+          dateDisabled={readOnly || !rules.edit_doc_date}
+        />
       </Group>
 
       <EntryLayout
@@ -398,6 +450,19 @@ export default function SevaEntryPage() {
                 onBlurField={onBlurField}
                 rowGroups={ROW_GROUPS}
                 fieldFilters={{ SANNIDHIID: sannidhis }}
+                skip={splitOn ? SPLIT_PAY_CODES : undefined}
+              />
+              <SplitPaymentPanel
+                docType="SEVA"
+                docId={DOC_ID}
+                enabled={splitOn}
+                setEnabled={setSplitOn}
+                parts={splitParts}
+                setParts={setSplitParts}
+                total={totalAmt}
+                readOnly={readOnly}
+                refModes={refModes}
+                onMain={(m) => setValues((cur) => ({ ...cur, PAYMENT: m.mode, LEDID: m.led_id, REFNO: m.ref_no || '', ...(String(m.mode).toUpperCase() === 'CHEQUE' ? { CHQNO: m.ref_no || '', CHQDATE: m.chq_date || '', BANKNAME: m.bank_name || '' } : {}) }))}
               />
               <Checkbox mt="md" label="Regular Devotee" color="kumkum" checked={regular} disabled={readOnly} onChange={(e) => setRegular(e.currentTarget.checked)} />
               {!viewId && (
@@ -423,6 +488,10 @@ export default function SevaEntryPage() {
               )}
             </Card>
 
+            {!viewId && values.SVAID && (
+              <ExtraSevas docId={DOC_ID} sevaMasterDocId={SEVA_MASTER_DOC_ID} mainId={values.SVAID} ctx={values} value={extraSevas} onChange={setExtraSevas} />
+            )}
+
             <Card withBorder p="lg">
               <Group justify="space-between" align="flex-end" mb="md" wrap="wrap">
                 <div>
@@ -442,6 +511,32 @@ export default function SevaEntryPage() {
                       error={dateError || undefined}
                       description={newDate && panchanga[isoDate(newDate)] ? panchanga[isoDate(newDate)].name : newDate && dayjs(newDate).isBefore(dayjs(), 'day') ? 'This date is in the past' : undefined}
                     />
+                    {values.SVAID && (
+                      <NumberInput
+                        label="Rate"
+                        w={130}
+                        min={0}
+                        decimalScale={2}
+                        hideControls
+                        value={effRate || ''}
+                        onChange={(v) => setRateEdit({ svaid: Number(values.SVAID), value: v === '' ? '' : String(v) })}
+                        description={Number(rate) > 0 ? `Seva price ${formatINR(rate)}` : 'Open rate: enter the amount'}
+                        error={effRate > 0 && effRate * Math.max(dates.length, 1) < Number(rate) ? 'Below the Seva price' : undefined}
+                      />
+                    )}
+                    {values.SVAID && (
+                      <NumberInput
+                        label="Amount"
+                        w={130}
+                        min={0}
+                        decimalScale={2}
+                        hideControls
+                        value={mainAmount || ''}
+                        onChange={(v) => setAmountEdit({ svaid: Number(values.SVAID), days: dates.length, rate: effRate, value: v === '' ? '' : String(v) })}
+                        description={`${dates.length} date${dates.length === 1 ? '' : 's'} x rate`}
+                        error={mainAmount > 0 && mainAmount < Number(rate) ? 'Below the Seva price' : undefined}
+                      />
+                    )}
                     <Button leftSection={<Plus size={16} />} onClick={addDate} variant="light" color="kumkum">
                       Add
                     </Button>
@@ -507,8 +602,9 @@ export default function SevaEntryPage() {
           <>
             <SummaryCard
               rows={[
-                { label: 'Rate', value: formatINR(rate) },
+                { label: 'Rate', value: formatINR(effRate) },
                 { label: 'Dates', value: dates.length },
+                ...(!viewId && extraSevas.length ? [{ label: 'Sevas (one bill each)', value: extraSevas.length + 1 }] : []),
                 ...(!viewId && nextNo ? [{ label: 'Bill no (on save)', value: nextNo.print_no || nextNo.seva_no }] : []),
                 ...(viewId ? [{ label: editing ? 'Editing bill no' : 'Bill no', value: viewNo }] : []),
                 ...(paymentLabel ? [{ label: 'Payment', value: paymentLabel }] : []),
@@ -520,10 +616,20 @@ export default function SevaEntryPage() {
               onSave={() => onSave('save')}
               onSavePrint={() => onSave('print')}
             />
-            {lastSaved && (
+            {lastSaved && batch.length > 1 ? (
+              <SavedPanel
+                lines={batch.flatMap((b) => [`${b.seva_name}`, `Seva ${b.seva_no}${b.receipt_no ? ` - Receipt ${b.receipt_no}` : ''}`])}
+                extra={batch.map((b) => (
+                  <Button key={b.seva_id} fullWidth mt={6} size="xs" variant="light" color="kumkum" onClick={() => setPrintFor(b.seva_id)}>
+                    Print {b.seva_no}
+                  </Button>
+                ))}
+              />
+            ) : lastSaved && (
               <SavedPanel lines={[`Seva ${lastSaved.seva_no}`, ...(lastSaved.receipt_no ? [`Receipt ${lastSaved.receipt_no}`] : [])]} onPrint={() => setPrintFor(lastSaved.seva_id)} />
             )}
             <RecentCard
+              docId={DOC_ID}
               title="Recent sevas"
               icon={Receipt}
               loading={recentLoading}
@@ -542,10 +648,11 @@ export default function SevaEntryPage() {
         }
       />
 
-      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} showNew={Boolean(viewId)} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('save')} saving={saving} editing={editing} search={findSevas} />
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.seva_id, label: lastSaved.seva_no } : null} onLoad={viewRecord} onNew={startNew} showNew={Boolean(viewId)} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('save')} saving={saving} editing={editing} search={findSevas} alertify={alertify.nav} />
       <SevaDatesDialog opened={rangeOpen} onClose={() => setRangeOpen(false)} dates={dates} dateText={daysTextFor === JSON.stringify(dates.map((d) => d.perform_date)) ? daysText : ''} onApply={applyDatesDialog} />
       <SannidhiShortlistModal opened={shortlistOpen} onClose={() => setShortlistOpen(false)} docId={DOC_ID} selected={sannidhis} onSave={setSannidhis} />
       <CopyFromDialog opened={copyOpen} onClose={() => setCopyOpen(false)} docName="Seva Entry" search={findSevas} onLoad={copyFrom} />
+      {alertify.modal}
       <GroupSevaModal opened={groupOpen} onClose={() => setGroupOpen(false)} fields={fieldsPayload()} docDate={isoDate(docDate)} dates={dates} onDone={() => { refetch(); setDates(todayDates()) }} />
       <SevakartharuModal opened={pickOpen} onClose={() => setPickOpen(false)} onPick={applyDevotee} initialName={values.KNAME || ''} />
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Seva Receipt" />

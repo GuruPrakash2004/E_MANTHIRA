@@ -16,6 +16,7 @@ work without one. Nothing else in the app reads this file directly; only
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,8 @@ OVERRIDABLE_FIELDS = {
 
 
 def load_override() -> dict[str, Any]:
+    if os.environ.get("VT_IGNORE_RUNTIME_DB") == "1":  # tests / tools that target a database through DB_* env vars
+        return {}
     if not _OVERRIDE_PATH.exists():
         return {}
     try:
@@ -95,9 +98,12 @@ def apply_and_reconnect(values: dict[str, Any]) -> tuple[bool, str]:
     save_override(values)
     get_settings.cache_clear()
     reset_engine()
+    from app.core import cache
 
-    # Best-effort: (re-)create the Web* tables on the newly-connected DB if
-    # they don't exist yet. Non-fatal — the reconnect itself already succeeded.
+    cache.clear()  # rights, menus, designer metadata and capability checks belong to the database just left
+
+    # Best-effort: check (never create) the Web* tables on the newly-connected DB;
+    # missing ones just disable audit/print-pref memory. Non-fatal.
     try:
         from app.core.db import with_transaction
 

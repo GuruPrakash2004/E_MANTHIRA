@@ -33,9 +33,14 @@ def _fingerprint() -> str | None:
 
         parts = []
         with get_engine().connect() as c:
+            # NOLOCK + a short lock timeout: this read runs on a SECOND pool connection, often while the request's own
+            # transaction has just written one of these tables (e.g. UPDATE MstMenu, then the audit row). A normal read would
+            # wait for that uncommitted write forever while the writer waits for this read: a self-deadlock that hung saves
+            # and filled the connection pool. A dirty read is harmless here: it only decides whether to drop the cache.
+            c.execute(text("SET LOCK_TIMEOUT 2000"))
             for t in _WATCHED:
                 try:
-                    r = c.execute(text(f"SELECT COUNT_BIG(*), CHECKSUM_AGG(BINARY_CHECKSUM(*)) FROM {t}")).first()
+                    r = c.execute(text(f"SELECT COUNT_BIG(*), CHECKSUM_AGG(BINARY_CHECKSUM(*)) FROM {t} WITH (NOLOCK)")).first()
                     parts.append(f"{t}:{r[0]}:{r[1]}")
                 except Exception:  # a table missing in this database is simply not watched
                     pass

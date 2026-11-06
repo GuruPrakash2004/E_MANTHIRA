@@ -21,11 +21,21 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, get_engine
-from app.core.security import CurrentUser, get_current_user
+from app.core.security import CurrentUser, check_right, get_current_user, require_right_from_path
+from app.meta.menu import RIGHT_PRINT
 from app.print import page_fit, pdf_generator, print_agent, print_prefs, render_cache, rpt_bridge, rpt_print, voucher_print
 from app.print.rpt_registry import get_option, list_options
 
 router = APIRouter(prefix="/print", tags=["print"])
+
+
+def _may_print(conn: Connection, user: CurrentUser, doc_id: int) -> bool:
+    """True when the user holds the Print right on the screen that owns `doc_id` (screens ask this to show or hide Print)."""
+    try:
+        check_right(conn, user, doc_id, RIGHT_PRINT)
+        return True
+    except HTTPException:
+        return False
 log = logging.getLogger(__name__)
 
 
@@ -79,6 +89,8 @@ def print_options_for_document(doc_id: int, conn: Connection = Depends(get_conn)
     `selected` marks the one to pre-select: this user's own last choice beats the designer default (`UtlOption.DefaultPrint`).
     `after_save_action`: PP = print straight after save, P = ask first, anything else = don't print.
     """
+    if not _may_print(conn, user, doc_id):
+        return []
     preferred = print_prefs.get_preferred_option(conn, user.user_code, doc_id)
     options = list_options(conn, doc_id)
     default_name = next((o.option_name for o in options if o.default_print), options[0].option_name if options else None)
@@ -118,8 +130,9 @@ class PreferenceRequest(BaseModel):
 
 
 @router.post("/render")
-def render_pdf(body: PrintRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+def render_pdf(body: PrintRequest, conn: Connection = Depends(get_conn), user: CurrentUser = Depends(get_current_user)):
     """The document as a PDF (rendered by the bridge from the original .rpt)."""
+    check_right(conn, user, body.doc_id, RIGHT_PRINT)
     done = _rendered(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
     return Response(
         content=done.pdf,
@@ -160,6 +173,8 @@ def prefetch_preview(body: PrefetchRequest, conn: Connection = Depends(get_conn)
     finds the finished render in the cache instead of waiting for Crystal. Same format the dialog will pre-select, same cache
     keys as /preview; failures are ignored (the dialog just renders as usual).
     """
+    if not _may_print(conn, user, body.doc_id):
+        return {"started": False}
     preferred = print_prefs.get_preferred_option(conn, user.user_code, body.doc_id)
     options = list_options(conn, body.doc_id)
     chosen = next((o for o in options if o.option_name == preferred), None) or next((o for o in options if o.default_print), None) or (options[0] if options else None)
@@ -179,11 +194,12 @@ def prefetch_preview(body: PrefetchRequest, conn: Connection = Depends(get_conn)
 
 
 @router.post("/preview")
-def render_preview(body: PrintRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+def render_preview(body: PrintRequest, conn: Connection = Depends(get_conn), user: CurrentUser = Depends(get_current_user)):
     """
     What the print dialog shows: the report's pages as PNG images at their real shape (no PDF-viewer chrome, so nothing is
     stretched or framed), plus the same PDF (base64) for the browser's Print. One render of the original .rpt.
     """
+    check_right(conn, user, body.doc_id, RIGHT_PRINT)
     t_all = time.perf_counter()
     done = _rendered(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click)
     pages = _preview_pages(body.doc_id, done)
@@ -201,8 +217,9 @@ def save_preference(body: PreferenceRequest, conn: Connection = Depends(get_conn
 
 
 @router.post("/print")
-def print_to_server_printer(body: DirectPrintRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+def print_to_server_printer(body: DirectPrintRequest, conn: Connection = Depends(get_conn), user: CurrentUser = Depends(get_current_user)):
     """Direct print on the print service's PC (legacy operation "D"): no dialog. Counter-PC printers go via the Print Agent."""
+    check_right(conn, user, body.doc_id, RIGHT_PRINT)
     with voucher_print.print_lock_for(conn, body.doc_id):
         job = _job(conn, body.doc_id, body.doc_id_value, doc_no=body.doc_no, option_name=body.option_name, ctrl_click=body.ctrl_click, copies=body.copies)
         if body.printer_name and body.printer_name.strip():
@@ -222,12 +239,12 @@ def bulk_documents(conn: Connection = Depends(get_conn), _: CurrentUser = Depend
     return pdf_generator.printable_documents(conn)
 
 
-@router.get("/bulk/{doc_id}/parties")
+@router.get("/bulk/{doc_id}/parties", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def bulk_parties(doc_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return pdf_generator.parties(conn, doc_id)
 
 
-@router.get("/bulk/{doc_id}/records")
+@router.get("/bulk/{doc_id}/records", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def bulk_records(doc_id: int, from_date: date, to_date: date, party_ids: str | None = None, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     ids = [int(x) for x in party_ids.split(",") if x.strip().isdigit()] if party_ids else None
     return pdf_generator.load_records(conn, doc_id=doc_id, from_date=from_date, to_date=to_date, party_ids=ids)
@@ -237,7 +254,7 @@ class BulkSelectedRequest(BaseModel):
     record_ids: list[int]
 
 
-@router.post("/bulk/{doc_id}/{option_name}/download")
+@router.post("/bulk/{doc_id}/{option_name}/download", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def bulk_download_selected(doc_id: int, option_name: str, body: BulkSelectedRequest, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     """Download button of the legacy form: one PDF per ticked record, zipped."""
     if not body.record_ids:
@@ -252,7 +269,7 @@ def bulk_download_selected(doc_id: int, option_name: str, body: BulkSelectedRequ
     return Response(content=buf.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{option_name}.zip"'})
 
 
-@router.get("/{doc_id}/options")
+@router.get("/{doc_id}/options", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def get_print_options(
     doc_id: int, conn: Connection = Depends(get_conn), user: CurrentUser = Depends(get_current_user)
 ):
@@ -281,7 +298,7 @@ class SetPreferenceRequest(BaseModel):
     option_name: str
 
 
-@router.put("/{doc_id}/preference")
+@router.put("/{doc_id}/preference", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def set_print_preference(
     doc_id: int,
     body: SetPreferenceRequest,
@@ -295,12 +312,12 @@ def set_print_preference(
     return {"message": "Saved"}
 
 
-@router.get("/{doc_id}/{option_name}/{record_id}/preview")
+@router.get("/{doc_id}/{option_name}/{record_id}/preview", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def preview(doc_id: int, option_name: str, record_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return Response(content=_rendered(conn, doc_id, record_id, option_name=option_name).pdf, media_type="application/pdf")
 
 
-@router.get("/{doc_id}/{option_name}/{record_id}/pages")
+@router.get("/{doc_id}/{option_name}/{record_id}/pages", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def pages_for_local_agent(
     doc_id: int, option_name: str, record_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)
 ):
@@ -341,7 +358,7 @@ def download_print_agent(origin: str):
     )
 
 
-@router.get("/{doc_id}/{option_name}/bulk-pdf")
+@router.get("/{doc_id}/{option_name}/bulk-pdf", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def bulk_pdf(
     doc_id: int,
     option_name: str,
@@ -369,7 +386,7 @@ def bulk_pdf(
     )
 
 
-@router.post("/{doc_id}/{option_name}/{record_id}/print-direct")
+@router.post("/{doc_id}/{option_name}/{record_id}/print-direct", dependencies=[Depends(require_right_from_path(RIGHT_PRINT))])
 def print_direct(doc_id: int, option_name: str, record_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     """Silent print straight to the option's configured printer (no browser dialog) — for the thermal counter."""
     with voucher_print.print_lock_for(conn, doc_id):

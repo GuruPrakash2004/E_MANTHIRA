@@ -35,14 +35,15 @@ from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row
 from app.meta import doc_rules
-from app.meta.numbering import next_doc_no
-from app.services import ledger
+from app.meta.numbering import next_doc_no, print_doc_no
+from app.services import ledger, voucher_rules
 
 
 def _post_stock(
     conn: Connection,
     *,
     doc_id: int,
+    hdr_id: int,  # the header row's id (SAID / ISSID / PBID): UtlStockList.DocID, as the legacy form writes it
     doc_name: str,
     doc_type: str,
     doc_no: str,
@@ -56,7 +57,7 @@ def _post_stock(
             "UtlStockList",
             {
                 "UTDocID": doc_id,
-                "DocID": doc_id,
+                "DocID": hdr_id,
                 "DocName": doc_name,
                 "DocType": doc_type,
                 "DocNo": doc_no,
@@ -99,6 +100,24 @@ class StockAdjustmentInput:
     lines: list[StockAdjustmentLine]
 
 
+def allow_negative_stock(conn: Connection) -> bool:
+    """Inventory > AllowNegative (legacy svtModule.gBlnAllowNegativeStock): 'Y' lets stock go below zero."""
+    v = conn.execute(text("SELECT TOP 1 SetValue FROM UtlGSettings WHERE UPPER(SetGroup) = 'INVENTORY' AND UPPER(SetName) = 'ALLOWNEGATIVE'")).scalar()
+    return str(v or "N").strip().upper() == "Y"
+
+
+def _check_stock_out(conn: Connection, *, loc_id: int, outgoing: dict[int, float]) -> None:
+    """Legacy "Qty cannot more than QOH....": a stock-out line (Store Issue; Stock Adjustment - Reduce) may not take more of an item
+    than is on hand at the location (all lines of the same item together), unless the client allows negative stock."""
+    if not outgoing or allow_negative_stock(conn):
+        return
+    for item_id, qty in outgoing.items():
+        qoh = conn.execute(text("SELECT ISNULL(SUM(CLBal), 0) FROM TrnQOH WHERE ItemID = :i AND LocID = :l"), {"i": item_id, "l": loc_id}).scalar() or 0
+        if qty > float(qoh) + 0.0001:
+            name = conn.execute(text("SELECT ITEMNAME FROM MstITEM WHERE ITEMID = :i"), {"i": item_id}).scalar() or item_id
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Qty cannot more than QOH.... {name}: {qty:g} asked, {float(qoh):g} on hand")
+
+
 def create_stock_adjustment(conn: Connection, *, data: StockAdjustmentInput, fy: FinancialYear, user_code: str) -> dict:
     assert_date_in_fy(data.doc_date, fy)
     if not data.lines:
@@ -113,6 +132,11 @@ def create_stock_adjustment(conn: Connection, *, data: StockAdjustmentInput, fy:
     loc_id = int(values.get("LOCID") or 0)
     if not loc_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Location is mandatory")
+    out: dict[int, float] = {}
+    for l in data.lines:
+        if l.adj_type == "Reduce":
+            out[l.item_id] = out.get(l.item_id, 0.0) + l.qty
+    _check_stock_out(conn, loc_id=loc_id, outgoing=out)
 
     doc_no = next_doc_no(
         conn, table_name="TrnHdrSA", no_column="SANO", prefix=PREFIX_SA,
@@ -123,7 +147,7 @@ def create_stock_adjustment(conn: Connection, *, data: StockAdjustmentInput, fy:
     sa_id = insert_row(
         conn, "TrnHdrSA",
         {
-            "SANO": doc_no, "Prefix": PREFIX_SA, "PrintSANO": doc_no, "SADate": data.doc_date,
+            "SANO": doc_no, "Prefix": PREFIX_SA, "PrintSANO": print_doc_no(conn, doc_id=DOC_ID_SA, doc_no=doc_no, prefix=PREFIX_SA, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "SADate": data.doc_date,
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
             **header, "TOTQTY": total_qty,
         },
@@ -140,7 +164,7 @@ def create_stock_adjustment(conn: Connection, *, data: StockAdjustmentInput, fy:
         )
 
     _post_stock(
-        conn, doc_id=DOC_ID_SA, doc_name="Stock Adjustment Entry", doc_type="SA", doc_no=doc_no, doc_date=data.doc_date,
+        conn, doc_id=DOC_ID_SA, hdr_id=sa_id, doc_name="Stock Adjustment Entry", doc_type="SA", doc_no=doc_no, doc_date=data.doc_date,
         loc_id=loc_id,
         lines=[{"item_id": l.item_id, "qty": l.qty, "rate": l.rate, "multiplier": 1 if l.adj_type == "Add" else -1} for l in data.lines],
     )
@@ -160,7 +184,7 @@ def delete_stock_adjustment(conn: Connection, *, sa_id: int, user_code: str) -> 
     row = conn.execute(text("SELECT SANO FROM TrnHdrSA WHERE SAID = :id"), {"id": sa_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Stock Adjustment not found")
-    conn.execute(text("DELETE FROM UtlStockList WHERE DocID = :d AND DocNo = :n"), {"d": DOC_ID_SA, "n": row["SANO"]})
+    conn.execute(text("DELETE FROM UtlStockList WHERE UTDocID = :d AND DocNo = :n"), {"d": DOC_ID_SA, "n": row["SANO"]})
     conn.execute(text("DELETE FROM TrnDtlSA WHERE SAID = :id"), {"id": sa_id})
     conn.execute(text("DELETE FROM TrnHdrSA WHERE SAID = :id"), {"id": sa_id})
     audit.record(conn, entity="Stock Adjustment Entry", entity_id=sa_id, action="D", user_code=user_code)
@@ -199,6 +223,10 @@ def create_store_issue(conn: Connection, *, data: StoreIssueInput, fy: Financial
     loc_id = int(values.get("LOCID") or 0)
     if not loc_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Location is mandatory")
+    out: dict[int, float] = {}
+    for l in data.lines:
+        out[l.item_id] = out.get(l.item_id, 0.0) + l.qty
+    _check_stock_out(conn, loc_id=loc_id, outgoing=out)
 
     doc_no = next_doc_no(
         conn, table_name="TrnHdrISS", no_column="ISSNO", prefix=PREFIX_ISS,
@@ -209,7 +237,7 @@ def create_store_issue(conn: Connection, *, data: StoreIssueInput, fy: Financial
     iss_id = insert_row(
         conn, "TrnHdrISS",
         {
-            "ISSNO": doc_no, "Prefix": PREFIX_ISS, "PrintISSNO": doc_no, "ISSDate": data.doc_date,
+            "ISSNO": doc_no, "Prefix": PREFIX_ISS, "PrintISSNO": print_doc_no(conn, doc_id=DOC_ID_ISS, doc_no=doc_no, prefix=PREFIX_ISS, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "ISSDate": data.doc_date,
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
             **header, "TOTQTY": total_qty,
         },
@@ -225,7 +253,7 @@ def create_store_issue(conn: Connection, *, data: StoreIssueInput, fy: Financial
         )
 
     _post_stock(
-        conn, doc_id=DOC_ID_ISS, doc_name="Store Issue Note", doc_type="ISS", doc_no=doc_no, doc_date=data.doc_date,
+        conn, doc_id=DOC_ID_ISS, hdr_id=iss_id, doc_name="Store Issue Note", doc_type="ISS", doc_no=doc_no, doc_date=data.doc_date,
         loc_id=loc_id, lines=[{"item_id": l.item_id, "qty": l.qty, "multiplier": -1} for l in data.lines],
     )
     audit.record(conn, entity="Store Issue Note", entity_id=iss_id, action="A", user_code=user_code, details=doc_no)
@@ -244,7 +272,7 @@ def delete_store_issue(conn: Connection, *, iss_id: int, user_code: str) -> None
     row = conn.execute(text("SELECT ISSNO FROM TrnHdrISS WHERE ISSID = :id"), {"id": iss_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Store Issue Note not found")
-    conn.execute(text("DELETE FROM UtlStockList WHERE DocID = :d AND DocNo = :n"), {"d": DOC_ID_ISS, "n": row["ISSNO"]})
+    conn.execute(text("DELETE FROM UtlStockList WHERE UTDocID = :d AND DocNo = :n"), {"d": DOC_ID_ISS, "n": row["ISSNO"]})
     conn.execute(text("DELETE FROM TrnDtlISS WHERE ISSID = :id"), {"id": iss_id})
     conn.execute(text("DELETE FROM TrnHdrISS WHERE ISSID = :id"), {"id": iss_id})
     audit.record(conn, entity="Store Issue Note", entity_id=iss_id, action="D", user_code=user_code)
@@ -302,7 +330,7 @@ def create_purchase_bill(conn: Connection, *, data: PurchaseBillInput, fy: Finan
     pb_id = insert_row(
         conn, "TrnHdrPB",
         {
-            "PBNO": doc_no, "Prefix": PREFIX_PB, "PrintPBNO": doc_no, "PBDate": data.doc_date,
+            "PBNO": doc_no, "Prefix": PREFIX_PB, "PrintPBNO": print_doc_no(conn, doc_id=DOC_ID_PB, doc_no=doc_no, prefix=PREFIX_PB, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "PBDate": data.doc_date,
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
             **header,
             "SUPPID": data.supp_id,
@@ -328,7 +356,7 @@ def create_purchase_bill(conn: Connection, *, data: PurchaseBillInput, fy: Finan
         )
 
     _post_stock(
-        conn, doc_id=DOC_ID_PB, doc_name="Purchase Bill", doc_type="PB", doc_no=doc_no, doc_date=data.doc_date,
+        conn, doc_id=DOC_ID_PB, hdr_id=pb_id, doc_name="Purchase Bill", doc_type="PB", doc_no=doc_no, doc_date=data.doc_date,
         loc_id=loc_id,
         lines=[{"item_id": l.item_id, "qty": l.qty, "rate": l.rate, "multiplier": 1} for l in data.lines],
     )
@@ -344,11 +372,51 @@ def list_purchase_bills(conn: Connection, *, fy: FinancialYear, top: int = 50) -
     return [dict(r) for r in rows]
 
 
+def preview_purchase_bill_no(conn: Connection, *, fy: FinancialYear) -> dict:
+    """The bill no the next save would get, to show while the form is filled in (nothing is reserved; the number a save really gets is the one it returns)."""
+    from app.meta import numbering
+
+    doc_no = numbering.peek_doc_no(conn, table_name="TrnHdrPB", no_column="PBNO", prefix=PREFIX_PB, fy_start_year=fy.start_year)
+    print_no = print_doc_no(conn, doc_id=DOC_ID_PB, doc_no=doc_no, prefix=PREFIX_PB, fy_start_year=fy.start_year, fy_end_year=fy.end_year)
+    digits = "".join(ch for ch in str(doc_no)[-5:] if ch.isdigit())
+    return {"prefix": PREFIX_PB, "seq": int(digits) if digits else 0, "doc_no": doc_no, "print_no": print_no}
+
+
+def get_purchase_bill(conn: Connection, *, pb_id: int) -> dict:
+    """One saved bill for viewing: the header row and its lines with the item / UOM names."""
+    head = conn.execute(text("SELECT * FROM TrnHdrPB WHERE PBID = :id"), {"id": pb_id}).mappings().first()
+    if head is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Purchase Bill not found")
+    lines = conn.execute(
+        text(
+            "SELECT d.SlNo, d.ITEMID, i.ITEMCODE, i.ITEMNAME, d.UOMID, u.UOMCODE, d.PBQty, d.PBRate, d.PBAmt "
+            "FROM TrnDtlPB d LEFT JOIN MstITEM i ON i.ITEMID = d.ITEMID LEFT JOIN MstUOM u ON u.UOMID = d.UOMID "
+            "WHERE d.PBID = :id ORDER BY d.SlNo"
+        ),
+        {"id": pb_id},
+    ).mappings().all()
+    return {"header": dict(head), "lines": [dict(r) for r in lines]}
+
+
+def search_line_items(conn: Connection, *, q: str = "", top: int = 100) -> list[dict]:
+    """Items for the Add Line Item picker: code, name, UOM and standard rate, in one call."""
+    from app.core.db import limit_clause
+
+    like = f"%{q.strip()}%"
+    sql = (
+        "SELECT i.ITEMID AS id, i.ITEMCODE AS code, i.ITEMNAME AS name, i.UOMID AS uom_id, u.UOMCODE AS uom_code, i.ITEMSTDRATE AS std_rate "
+        "FROM MstITEM i LEFT JOIN MstUOM u ON u.UOMID = i.UOMID "
+        "WHERE i.InActive <> 'Y' AND i.ITEMID > 0 AND (i.ITEMCODE LIKE :q OR i.ITEMNAME LIKE :q) "
+        f"ORDER BY i.ITEMCODE {limit_clause(top)}"
+    )
+    return [dict(r) for r in conn.execute(text(sql), {"q": like}).mappings().all()]
+
+
 def delete_purchase_bill(conn: Connection, *, pb_id: int, user_code: str) -> None:
     row = conn.execute(text("SELECT PBNO FROM TrnHdrPB WHERE PBID = :id"), {"id": pb_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Purchase Bill not found")
-    conn.execute(text("DELETE FROM UtlStockList WHERE DocID = :d AND DocNo = :n"), {"d": DOC_ID_PB, "n": row["PBNO"]})
+    conn.execute(text("DELETE FROM UtlStockList WHERE UTDocID = :d AND DocNo = :n"), {"d": DOC_ID_PB, "n": row["PBNO"]})
     conn.execute(text("DELETE FROM TrnDtlPB WHERE PBID = :id"), {"id": pb_id})
     conn.execute(text("DELETE FROM TrnHdrPB WHERE PBID = :id"), {"id": pb_id})
     audit.record(conn, entity="Purchase Bill", entity_id=pb_id, action="D", user_code=user_code)
@@ -386,6 +454,7 @@ def create_purchase_voucher(conn: Connection, *, data: PurchaseVoucherInput, fy:
     if abs(total_dr - total_cr) > 0.005:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Debit and Credit totals are NOT matching!")
 
+    voucher_rules.check_heads(conn, data.lines)  # legacy FillItemDet: head exists, active, party approved
     header, _values = doc_rules.header_columns(conn, DOC_ID_PURVCH, "TrnHdrPURVCH", data.fields, computed=("TRNTYPE", "TRNID"))
 
     doc_no = next_doc_no(
@@ -396,7 +465,7 @@ def create_purchase_voucher(conn: Connection, *, data: PurchaseVoucherInput, fy:
     purvch_id = insert_row(
         conn, "TrnHdrPURVCH",
         {
-            "PURVCHNO": doc_no, "Prefix": PREFIX_PURVCH, "PrintPURVCHNO": doc_no, "PURVCHDate": data.voucher_date,
+            "PURVCHNO": doc_no, "Prefix": PREFIX_PURVCH, "PrintPURVCHNO": print_doc_no(conn, doc_id=DOC_ID_PURVCH, doc_no=doc_no, prefix=PREFIX_PURVCH, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "PURVCHDate": data.voucher_date,
             "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
             **header, "TRNTYPE": "PB" if data.pb_id else "PURVCH", "TRNID": data.pb_id or 0,
         },
@@ -418,7 +487,7 @@ def create_purchase_voucher(conn: Connection, *, data: PurchaseVoucherInput, fy:
         conn, doc_type="PURVCH", trn_id=purvch_id, trn_no=doc_no, trn_date=data.voucher_date, due_date=data.voucher_date,
         narration=f"Purchase Voucher {doc_no}",
         lines=[
-            ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
+            ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
             for l in data.lines
         ],
     )
@@ -483,7 +552,7 @@ def create_bom(conn: Connection, *, data: BomInput, fy: FinancialYear, user_code
     bom_id = insert_row(
         conn, "MstHdrBOM",
         {
-            "BOMNO": doc_no, "Prefix": PREFIX_BOM, "PrintBOMNO": doc_no, "BOMDate": data.eff_from,
+            "BOMNO": doc_no, "Prefix": PREFIX_BOM, "PrintBOMNO": print_doc_no(conn, doc_id=DOC_ID_BOM, doc_no=doc_no, prefix=PREFIX_BOM, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "BOMDate": data.eff_from,
             "Authorised": "Y", "AuthBy": user_code, "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
             "BOMItemID": data.bom_item_id, "EffFrom": data.eff_from, "EffTo": data.eff_to,
             "LatestBOM": "Y", "HRMKS": data.remarks,
@@ -511,6 +580,26 @@ def list_boms(conn: Connection, *, top: int = 50) -> list[dict]:
 # legacy app's running closing-balance table, one row per item per
 # location. Zero real rows in this client's data (same as every table in
 # this module, see module docstring) but the join is schema-verified.
+
+
+def qoh_for_items(conn: Connection, *, item_ids: list[int], loc_id: int | None = None) -> dict[int, float]:
+    """Quantity on hand per item (the legacy QOH column): TrnQOH.CLBal, for one location or summed over all of them."""
+    ids = sorted({int(i) for i in item_ids if int(i) > 0})[:200]
+    if not ids:
+        return {}
+    marks = ", ".join(f":i{n}" for n in range(len(ids)))
+    params: dict = {f"i{n}": v for n, v in enumerate(ids)}
+    where = f"ITEMID IN ({marks})"
+    if loc_id:
+        where += " AND LOCID = :loc"
+        params["loc"] = int(loc_id)
+    try:
+        rows = conn.execute(text(f"SELECT ITEMID, SUM(CLBal) FROM TrnQOH WHERE {where} GROUP BY ITEMID"), params).all()
+    except Exception:  # noqa: BLE001 - a database without the stock-balance table shows no QOH
+        return {}
+    out = {i: 0.0 for i in ids}
+    out.update({int(r[0]): float(r[1] or 0) for r in rows})
+    return out
 
 
 def current_stock_balance(conn: Connection, *, loc_id: int | None = None, item_code_like: str | None = None) -> list[dict]:

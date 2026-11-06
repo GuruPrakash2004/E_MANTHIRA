@@ -3,7 +3,7 @@ import { Button, Card, Checkbox, Grid, Group, Modal, ScrollArea, Select, Stack, 
 import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
-import { Eraser, FileSpreadsheet, KeyRound, ListFilter, Mail, Palette, Play, Printer, Save, Search, Trash2, Upload, X } from 'lucide-react'
+import { Eraser, FileSpreadsheet, KeyRound, ListFilter, Mail, Palette, Play, Save, Search, Trash2, Upload, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import * as reportsApi from '../../api/endpoints/reports'
@@ -11,7 +11,7 @@ import { useAuth } from '../../hooks/useAuth'
 import EmptyState from '../../components/ui/EmptyState'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { isoDate } from '../../utils/format'
-import usePrintKey from '../../hooks/usePrintKey'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
 
 const fmtCell = (v) => {
   if (v == null) return ''
@@ -28,7 +28,6 @@ const keyOf = (f) => `${f.table}|${f.code}`
  * client sees its own. Design and Import are the legacy report designer and are not part of the web app.
  */
 export default function CustomReportsPanel() {
-  usePrintKey(() => print())
   const navigate = useNavigate()
   const confirm = useConfirm()
   const { user } = useAuth()
@@ -107,19 +106,9 @@ export default function CustomReportsPanel() {
       notifications.show({ message: e?.response?.data?.detail || 'Could not export', color: 'red' })
     }
   }
-  function print() {
-    if (!result) return
-    const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])
-    const head = result.columns.map((c) => `<th>${esc(c.caption)}</th>`).join('')
-    const rows = result.rows.map((r) => `<tr>${r.map((v, i) => `<td${typeof v === 'number' ? ' style="text-align:right"' : ''}>${esc(fmtCell(v))}</td>`).join('')}</tr>`).join('')
-    const tot = Object.keys(result.totals).length ? `<tr>${result.columns.map((c, i) => `<th style="text-align:right">${i === 0 ? 'Grand Total' : result.totals[c.key] != null ? esc(fmtCell(result.totals[c.key])) : ''}</th>`).join('')}</tr>` : ''
-    const w = window.open('', '_blank')
-    if (!w) return notifications.show({ message: 'Allow pop-ups to print the report', color: 'yellow' })
-    w.document.write(`<!doctype html><title>${esc(result.title)}</title><style>body{font:12px Arial,sans-serif;margin:16px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #999;padding:3px 6px}th{background:#eee}</style><h3>${esc(result.title)}</h3><p>${esc(result.period_text)} ${esc(result.filter_text)}</p><table><thead><tr>${head}</tr></thead><tbody>${rows}${tot}</tbody></table>`)
-    w.document.close()
-    w.focus()
-    w.print()
-  }
+  const printCols = (result?.columns || []).map((c, i) => ({ key: c.key, label: c.caption, value: (r) => fmtCell(r[i]), num: result.rows.some((r) => typeof r[i] === 'number') }))
+  const printRows = result?.rows || []
+  const printTotals = result && Object.keys(result.totals || {}).length ? Object.fromEntries(result.columns.map((c, i) => [c.key, i === 0 ? 'Grand Total' : result.totals[c.key] != null ? fmtCell(result.totals[c.key]) : ''])) : undefined
 
   const listFilters = (def?.filters || []).filter((f) => f.data_type !== 'DATE')
   const dateFilters = (def?.filters || []).filter((f) => f.data_type === 'DATE')
@@ -222,7 +211,7 @@ export default function CustomReportsPanel() {
       <Group justify="space-between" wrap="wrap">
         <Group gap="sm">
           <Button color="kumkum" leftSection={<Play size={16} />} loading={running} disabled={!crid} onClick={view}>View Report</Button>
-          <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!result} onClick={print}>Print Report (F10)</Button>
+          <ReportPrintButtons title={result?.title || current?.name || 'Report'} period={result?.period_text} filters={result?.filter_text} columns={printCols} rows={printRows} totals={printTotals} hotkey disabled={!result} />
           <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!result?.rows?.length} onClick={toExcel}>Excel</Button>
           <Button variant="light" color="kumkum" leftSection={<Mail size={16} />} disabled={!crid} onClick={() => setEmailOpen(true)}>Email</Button>
         </Group>

@@ -12,12 +12,12 @@ instead of a runtime SQL error or (worse) a silent wrong value.
 """
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Any, Mapping
 
 from sqlalchemy import MetaData, Table, select, text
 from sqlalchemy.engine import Connection
 
+from app.core import capabilities
 from app.core.config import get_settings
 from app.core.db import get_engine
 from app.legacy.computed_columns import computed_columns_for
@@ -25,15 +25,25 @@ from app.legacy.computed_columns import computed_columns_for
 _metadata = MetaData()
 
 
-@lru_cache(maxsize=256)
+_tables: dict[tuple[int, str], Table] = {}
+
+
 def table(name: str) -> Table:
-    """Reflect (once, cached) and return a legacy table by its real DB name."""
-    return Table(name, _metadata, autoload_with=get_engine())
+    """Reflect (once per connected engine, cached) and return a legacy table by its real DB name.
+
+    Keyed by the live engine so switching the Database Settings to another temple DB never serves the previous
+    database's column list. A table this database does not have raises NoSuchTableError (handled as 404 in main.py)."""
+    key = (id(get_engine()), name.lower())
+    t = _tables.get(key)
+    if t is None:
+        _metadata.clear()  # a different database may define the same table name differently
+        t = _tables[key] = Table(name, _metadata, autoload_with=get_engine())
+    return t
 
 
 def writable_columns(t: Table) -> set[str]:
-    computed = computed_columns_for(t.name)
-    return {c.name for c in t.columns if c.name not in computed}
+    computed = {c.lower() for c in computed_columns_for(t.name)} | capabilities.computed(t.name)
+    return {c.name for c in t.columns if c.name.lower() not in computed}
 
 
 def _filter(t: Table, values: Mapping[str, Any]) -> dict[str, Any]:
@@ -46,6 +56,16 @@ def _filter(t: Table, values: Mapping[str, Any]) -> dict[str, Any]:
         if real is not None:
             out[real] = v
     return out
+
+
+def pad_blanks(cols: dict, keep: tuple[str, ...] = ()) -> dict:
+    """The EXE stores a single space for a blank text column (DATALENGTH 1 on every legacy row), not an empty string.
+    Returns `cols` with every "" turned into " " except the names in `keep` (case-insensitive)."""
+    keep_u = {k.upper() for k in keep}
+    for k, v in list(cols.items()):
+        if isinstance(v, str) and v == "" and k.upper() not in keep_u:
+            cols[k] = " "
+    return cols
 
 
 def insert_row(conn: Connection, table_name: str, values: Mapping[str, Any], returning: str | None = None):

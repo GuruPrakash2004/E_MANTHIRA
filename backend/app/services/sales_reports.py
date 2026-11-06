@@ -2,8 +2,8 @@
 Daily Sales Report (frmRptDSR) and Product Sales Summary Report (frmRptPdtSLS) - the trading module's sales-invoice
 reports. They read the delivery-challan / sales-invoice tables (TrnHdrSINVDCT, TrnDtlSINVDCT, views vwSInvDtl /
 vwSInvDtlFree) and master tables MstCust / MstSp. A client database without that module (like the temple's) simply
-has no such tables; the screens then report the database error exactly as the legacy program does
-("Invalid object name 'TrnHdrSINVDCT'.  Error in SQL: ...").
+has no such tables; the screens then say "not available in this database" (the legacy program shows the raw
+"Invalid object name" SQL error; we gate instead, per the no-schema-change / degrade rule).
 Only Trip No, the date range and (Daily Sales) "Select Sales Person" change the legacy queries; the other check boxes on
 the legacy forms (customer / supplier / make / region / zone ...) do nothing there either.
 """
@@ -25,8 +25,9 @@ def _run(conn: Connection, sql: str, params: dict | None = None) -> list[dict]:
         msg = str(getattr(exc, "orig", exc))
         if "Invalid object name" in msg:
             name = msg.split("Invalid object name", 1)[1].split(".")[0].strip(" '\"")
+            # Standing rule: a table this temple edition lacks means "not available in this database", never a raw SQL error.
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY, f"Invalid object name '{name}'.\nError in SQL: {' '.join(sql.split())}"
+                status.HTTP_404_NOT_FOUND, f"Not available in this database (no {name} table): this edition has no sales-invoice module."
             ) from exc
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Error in SQL: {msg}") from exc
 

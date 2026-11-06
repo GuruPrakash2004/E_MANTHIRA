@@ -1,10 +1,13 @@
 import { useState } from 'react'
-import { Badge, Card, Checkbox, Group, NumberInput, Select, Skeleton, Stack, Table, Text, TextInput } from '@mantine/core'
+import { ActionIcon, Badge, Button, Card, Checkbox, Group, NumberInput, Select, Skeleton, Stack, Table, Text, TextInput } from '@mantine/core'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as printOptionsApi from '../../api/endpoints/printOptions'
 import { detectAgent } from '../../lib/localPrint'
 import { ReportFontsCard } from '../../components/ReportFonts'
+import { useConfirm } from '../../components/ui/ConfirmProvider'
+import PrintOptionDialog from './PrintOptionDialog'
 
 const AFTER_SAVE_ACTIONS = [
   { value: 'P', label: 'Print' },
@@ -22,6 +25,8 @@ export default function PrintOptionsTab() {
   const queryClient = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['print-options-admin'], queryFn: printOptionsApi.listAllPrintOptions })
   const [savingKey, setSavingKey] = useState(null)
+  const [dialog, setDialog] = useState(null) // null | 'new' | the row being edited
+  const confirm = useConfirm()
   const { data: serverPrinters } = useQuery({ queryKey: ['server-printers'], queryFn: () => printOptionsApi.listServerPrinters(true), staleTime: 15000 })
   const { data: agent } = useQuery({ queryKey: ['print-agent'], queryFn: detectAgent, staleTime: 15000 })
 
@@ -56,6 +61,18 @@ export default function PrintOptionsTab() {
     }
   }
 
+  async function remove(row) {
+    const ok = await confirm({ title: 'Delete this print option?', message: `"${row.OptionName}" of ${row.MenuItemCaption || `Doc ${row.DocID}`} will no longer be offered when printing.`, confirmLabel: 'Delete' })
+    if (!ok) return
+    try {
+      await printOptionsApi.deletePrintOption(row.DocID, row.OptionName)
+      queryClient.invalidateQueries({ queryKey: ['print-options-admin'] })
+      notifications.show({ message: 'Print option deleted', color: 'teal' })
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Delete failed', color: 'red' })
+    }
+  }
+
   if (isLoading)
     return (
       <Stack gap="xs">
@@ -65,9 +82,12 @@ export default function PrintOptionsTab() {
 
   return (
     <Stack gap="md">
-    <Text size="sm" c="dimmed">
-      Which printer each print format sends to, what happens after a save, and the default format. Each change saves as soon as you leave the field.
-    </Text>
+    <Group justify="space-between" align="center" wrap="wrap">
+      <Text size="sm" c="dimmed" style={{ flex: '1 1 320px' }}>
+        Which printer each print format sends to, what happens after a save, and the default format. Each change saves as soon as you leave the field.
+      </Text>
+      <Button color="kumkum" leftSection={<Plus size={16} />} onClick={() => setDialog('new')}>Add Print Option</Button>
+    </Group>
     <ReportFontsCard />
     <Card withBorder p={0} style={{ overflow: 'hidden' }}>
     <Table.ScrollContainer minWidth={900}>
@@ -81,6 +101,7 @@ export default function PrintOptionsTab() {
           <Table.Th w={150}>After Save</Table.Th>
           <Table.Th w={90}>Copies</Table.Th>
           <Table.Th w={80}>Default</Table.Th>
+          <Table.Th w={90}>Actions</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
@@ -156,6 +177,12 @@ export default function PrintOptionsTab() {
                   onChange={(e) => save(row, { default_print: e.currentTarget.checked ? 'Y' : 'N' })}
                 />
               </Table.Td>
+              <Table.Td>
+                <Group gap={4} wrap="nowrap">
+                  <ActionIcon variant="subtle" color="kumkum" size={32} aria-label={`Edit ${row.OptionName}`} onClick={() => setDialog(row)}><Pencil size={16} /></ActionIcon>
+                  <ActionIcon variant="subtle" color="red" size={32} aria-label={`Delete ${row.OptionName}`} onClick={() => remove(row)}><Trash2 size={16} /></ActionIcon>
+                </Group>
+              </Table.Td>
             </Table.Tr>
           )
         })}
@@ -163,6 +190,14 @@ export default function PrintOptionsTab() {
     </Table>
     </Table.ScrollContainer>
     </Card>
+    {dialog && (
+      <PrintOptionDialog
+        row={dialog === 'new' ? null : dialog}
+        printerData={printerData}
+        onClose={() => setDialog(null)}
+        onSaved={() => { setDialog(null); queryClient.invalidateQueries({ queryKey: ['print-options-admin'] }) }}
+      />
+    )}
     </Stack>
   )
 }

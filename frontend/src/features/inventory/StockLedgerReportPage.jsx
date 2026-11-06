@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
 import { Button, Card, Checkbox, Grid, Group, MultiSelect, Select, Stack } from '@mantine/core'
 import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
@@ -103,6 +104,7 @@ export default function StockLedgerReportPage() {
       )}
 
       <Group justify="space-between">
+        <ReportPrintButtons title="Stock Ledger Report" period={`Period From ${dayjs(from).format('DD/MM/YYYY')} To ${dayjs(to).format('DD/MM/YYYY')}`} columns={columns.map((c) => (c.key === 'doc_date' ? { ...c, value: (r) => (r.doc_date ? dayjs(r.doc_date).format('DD-MMM-YYYY') : '') } : c))} rows={result?.rows || []} hotkey />
         <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!result?.rows?.length} onClick={() => downloadXls('Stock Ledger.xls', result.rows, columns.map((c) => ({ label: c.label, value: (r) => (c.key === 'doc_date' ? (r.doc_date ? dayjs(r.doc_date).format('DD-MMM-YYYY') : '') : r[c.key]) })))}>
           Export to Excel
         </Button>

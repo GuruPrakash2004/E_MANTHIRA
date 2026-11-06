@@ -171,6 +171,15 @@ def party_outstanding(
     cfg = _PARTY.get(party)
     if cfg is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "party must be C (customer) or S (supplier)")
+    if not conn.execute(text("SELECT 1 FROM sys.objects WHERE name = 'vwAcLed' AND type = 'V'")).first() and receivable == (party == "C"):
+        # a database without the vwAcLed view (as a procedure-less client DB): the same figures from the view-free engine
+        from app.services import party_reports
+
+        kind = "receivable" if party == "C" else "payable"
+        res = party_reports.outstanding_summary(conn, kind, from_date, to_date, ac_ids or [], group_ids or [], min_amount, show_all_nonzero)
+        if res.get("available"):
+            rows = [{"party_code": r["code"], "party_name": r["name"], "opening": r["opening"], "debit": r["debit"], "credit": r["credit"], "balance": r["balance"]} for r in res["rows"]]
+            return {"party_name": cfg["name"], "rows": rows, "totals": res["total"]}
     params: dict = {"pt": party, "f": from_date, "t": to_date, "amt": min_amount}
     group_sql = ""
     if group_ids:
@@ -261,7 +270,18 @@ def party_outstanding_detail(conn: Connection, *, party: str, to_date: date, ac_
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "party must be C (customer) or S (supplier)")
     proc = "mSP_RptAccBillWisePend_" + ("Cust" if party == "C" else "Supp")
     if not conn.execute(text("SELECT 1 FROM sys.procedures WHERE name = :n"), {"n": proc}).first():
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"The bill-wise report is not available in this database ({proc} is not installed).")
+        # no stored procedure in this database: compute the same list from the postings (see party_reports.py for the model)
+        from app.services import party_reports
+
+        res = party_reports.outstanding_detail(conn, "receivable" if party == "C" else "payable", to_date, [int(a) for a in ac_ids or []], [])
+        if not res.get("available"):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"The bill-wise report is not available in this database ({proc} is not installed and {', '.join(res['missing'])} is missing).")
+        out = [
+            {"party_code": p["code"], "party_name": p["name"], "doc_type": b["doc_type"], "trn_no": b["ref"], "doc_ref": "", "trn_date": b["date"], "due_date": b["due"],
+             "doc_amt": b["doc_amt"], "rcvd_amt": b["adjusted"], "balance": b["balance"]}
+            for p in res["parties"] for b in p["bills"]
+        ]
+        return {"party_name": cfg["name"], "rows": out}
     res = conn.execute(text(f"SET NOCOUNT ON; EXEC {proc} @mDate = :d"), {"d": to_date})
     rows = res.mappings().all() if res.returns_rows else []
     want = set(int(a) for a in ac_ids or [])

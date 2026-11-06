@@ -1,4 +1,5 @@
 import { historyParams } from '../../lib/history'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { useEffect, useState } from 'react'
 import { Button, Group, Stack, Text, Title } from '@mantine/core'
 import { CalendarRange, Copy } from 'lucide-react'
@@ -13,7 +14,7 @@ import useDocShortcuts from '../../hooks/useDocShortcuts'
 import useDocRules from '../../hooks/useDocRules'
 import CopyFromDialog from '../../components/ui/CopyFromDialog'
 import DocXlMenu from '../../components/ui/DocXlMenu'
-import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
+import { SectionCard, DetailsStrip, LineItemsCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
 import { formatINR, isoDate } from '../../utils/format'
 import { useAuth } from '../../hooks/useAuth'
 import { columnsFromLines, computeFormulas, withComputed } from '../../utils/docCompute'
@@ -136,11 +137,14 @@ export default function HallBookingEntryPage() {
             </Text>
           </div>
         </Group>
-        {rules.allow_copy_from && (
-          <Button variant="light" color="kumkum" leftSection={<Copy size={16} />} onClick={() => setCopyOpen(true)}>
-            Copy From
-          </Button>
-        )}
+        <Group gap="sm" align="flex-end" wrap="wrap">
+          <DocNoDate docId={DOC_ID} type={values.TYPE || undefined} noDate />
+          {rules.allow_copy_from && (
+            <Button variant="light" color="kumkum" leftSection={<Copy size={16} />} onClick={() => setCopyOpen(true)}>
+              Copy From
+            </Button>
+          )}
+        </Group>
       </Group>
 
       <CopyFromDialog opened={copyOpen} onClose={() => setCopyOpen(false)} docName="Hall Booking Entry" search={findEntries} onLoad={copyFrom} />
@@ -148,25 +152,25 @@ export default function HallBookingEntryPage() {
       <EntryLayout
         main={
           <Stack gap="lg">
-            <SectionCard title="Booking" hint="Drawn from this temple's Doc Designer.">
+            <DetailsStrip title="Booking" hint="Drawn from this temple's Doc Designer.">
               <DocFieldsForm {...common} section="Header" />
-            </SectionCard>
+            </DetailsStrip>
 
-            <SectionCard
+            <LineItemsCard
               title={caption('NAMEOFHALL', 'Halls and items')}
-              hint="One line per hall or item; the line amounts make up the total."
+              chips={[{ label: 'Items', value: lines.length }, { label: 'Total', value: formatINR(totalAmt), color: 'teal' }]}
               action={rules.allow_imp_exp && <DocXlMenu docId={DOC_ID} name="Hall Booking Entry" rows={lines} setRows={setLines} />}
             >
               <DocDetailGrid docId={DOC_ID} rows={lines} setRows={setLines} values={values} errors={attempted ? lineErrors : {}} />
-            </SectionCard>
+            </LineItemsCard>
 
-            <SectionCard title="Payment details">
+            <DetailsStrip title="Payment details">
               <DocFieldsForm {...common} section="Footer" />
-            </SectionCard>
+            </DetailsStrip>
 
-            <SectionCard title="Taxes and adjustments" hint="Deposit and advance are deducted from the net.">
+            <DetailsStrip title="Taxes and adjustments" hint="Deposit and advance are deducted from the net.">
               <DocFieldsForm {...common} section="Total" />
-            </SectionCard>
+            </DetailsStrip>
           </Stack>
         }
         side={
@@ -188,6 +192,7 @@ export default function HallBookingEntryPage() {
             />
             {lastSaved && <SavedPanel lines={[`Entry ${lastSaved.hbe_no}`]} />}
             <RecentCard
+              docId={DOC_ID}
               title="Recent entries"
               icon={CalendarRange}
               loading={recentLoading}

@@ -1,4 +1,5 @@
 import { historyParams } from '../../lib/history'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { useEffect, useState } from 'react'
 import { Group, Select, Stack } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
@@ -114,7 +115,7 @@ export default function ExpenseEntryPage() {
           {(prefixes || []).filter(Boolean).length > 1 && (
             <Select aria-label="Prefix" w={110} data={prefixes.filter(Boolean)} value={prefix || null} onChange={(v) => setPrefix(v || '')} allowDeselect={false} />
           )}
-          <DateInput aria-label="Date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} w={150} />
+          <DocNoDate docId={DOC_ID} prefix={prefix ?? undefined} date={docDate} onDate={setDocDate} dateAria="Date" />
         </Group>
       </Group>
 
@@ -152,6 +153,7 @@ export default function ExpenseEntryPage() {
             />
             {lastSaved && <SavedPanel lines={[`Expense ${lastSaved.exp_no}`]} onPrint={() => setPrintFor(lastSaved.exp_id)} />}
             <RecentCard
+              docId={DOC_ID}
               title="Recent expenses"
               icon={ReceiptText}
               loading={recentLoading}

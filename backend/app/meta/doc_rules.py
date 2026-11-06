@@ -156,10 +156,13 @@ def column_values(rows: Iterable[Mapping], values: Mapping[str, Any], table_obj,
             continue
         v = values.get(code)
         numeric_col = isinstance(col.type, (Integer, Numeric))
+        is_date = _s(r.get("FldDataType")).lower() == "date" or "date" in type(col.type).__name__.lower()
         if _blank(v):
-            out[col.name] = 0 if (numeric_col and _is_combo(r)) else (None if numeric_col else "")
+            # DsgrModule.GetInsertString (decompiled vTemple7.exe): a blank Text / List String field is stored as ONE SPACE,
+            # a blank Date as NULL, a blank Numeric as Val("") = 0.
+            out[col.name] = None if is_date else (0 if numeric_col else " ")
             continue
-        if _s(r.get("FldDataType")).lower() == "date" or "date" in type(col.type).__name__.lower():
+        if is_date:
             out[col.name] = _to_date(v)
         elif numeric_col:
             try:

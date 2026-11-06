@@ -189,6 +189,7 @@ function DocumentsTab() {
 
 function FinancialYearsTab() {
   const confirm = useConfirm()
+  const queryClient = useQueryClient()
   const { data: years = [], refetch } = useQuery({ queryKey: ['company-fy'], queryFn: companyApi.listFinancialYears })
   const [selected, setSelected] = useState(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -206,6 +207,24 @@ function FinancialYearsTab() {
       notifications.show({ message: 'Active financial year updated. Other users pick it up the next time they sign in.', color: 'teal' })
       refetch()
     } catch (err) { fail(err, 'Could not set active year') }
+  }
+  const [carrying, setCarrying] = useState(false)
+  // Legacy frmStkFinYrWriting: writes the latest year's opening stock from the previous year's closing and rebuilds quantity on hand.
+  async function onCarryForward() {
+    const latest = years.length ? years[years.length - 1] : null
+    if (!latest) return
+    if (!(await confirm({
+      title: 'Carry the stock forward?',
+      message: `The opening stock of the latest financial year (${fmt(latest.yrFdate)} to ${fmt(latest.yrTdate)}) is rewritten from the previous year's closing stock, and the quantity on hand is rebuilt. Any opening stock already written for that year is replaced.`,
+      confirmLabel: 'Carry forward',
+      tone: 'warning',
+    }))) return
+    setCarrying(true)
+    try {
+      const r = await companyApi.stockCarryForward()
+      queryClient.invalidateQueries()
+      notifications.show({ message: `${r.message} ${r.balances} item balance(s) carried into ${fmt(r.from_date)}.${r.all_earlier_stock ? ' Last year had no opening of its own, so all earlier stock was carried forward.' : ''}`, color: 'teal', autoClose: 9000 })
+    } catch (err) { fail(err, 'Stock carry forward failed') } finally { setCarrying(false) }
   }
   async function onRemove() {
     if (!fy) return
@@ -263,7 +282,7 @@ function FinancialYearsTab() {
       {years.length === 0 && <EmptyState icon={CalendarCheck} title="No financial years yet" hint="Use Create Financial Year to add one." />}
       <Group justify="flex-end" gap="xs" wrap="wrap">
         <Button variant="light" color="kumkum" leftSection={<CalendarCheck size={16} />} disabled={!fy || fy.Active === 'Y'} onClick={onSetActive}>Set Active Financial Year</Button>
-        <Tooltip label="Stock carry forward is not available in the web app yet"><Button variant="default" leftSection={<Database size={16} />} disabled data-disabled>Stock Carry Forward</Button></Tooltip>
+        <Tooltip label="Write the latest year's opening stock from the previous year's closing stock" withArrow><Button variant="light" color="kumkum" leftSection={<Database size={16} />} loading={carrying} disabled={years.length === 0} onClick={onCarryForward}>Stock Carry Forward</Button></Tooltip>
         <Button color="kumkum" leftSection={<CalendarPlus size={16} />} onClick={openCreate}>Create Financial Year</Button>
         <Button variant="light" color="red" leftSection={<CalendarX size={16} />} disabled={!fy || fy.Active === 'Y'} onClick={onRemove}>Remove Financial Year</Button>
       </Group>
@@ -350,8 +369,8 @@ export default function CompanyMasterPage() {
       </Card>
 
       {/* Action bar, pinned to the bottom like the legacy form's footer: Backup / Companies on the left, Save / Close on the right. */}
-      <div style={{ position: 'sticky', bottom: 12, zIndex: 5 }}>
-        <Group justify="space-between" p="sm" style={{ borderRadius: 16, border: '1px solid var(--vt-line)', background: 'var(--vt-surface)', boxShadow: '0 6px 20px rgba(43,9,9,0.12)' }}>
+      <div className="vt-action-bar">
+        <Group justify="space-between" p="sm" className="vt-action-bar-card">
           <Group gap="xs">
             <Tooltip label="Database backup is not available in the web app yet"><Button variant="default" disabled data-disabled>Backup</Button></Tooltip>
             <Tooltip label="Switching between companies is not available in the web app yet"><Button variant="default" disabled data-disabled>Companies...</Button></Tooltip>

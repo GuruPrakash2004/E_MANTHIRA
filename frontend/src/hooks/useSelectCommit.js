@@ -15,7 +15,7 @@ import { fieldScope, focusNextField } from './useEnterAsTab'
 export default function useSelectCommit({ useOptions, selectedValue, commit }) {
   const [typed, setTyped] = useState('')
   const [search] = useDebouncedValue(typed, 250)
-  const { options, loading, data } = useOptions(search)
+  const { options, loading, data, failed, reload } = useOptions(search)
   const [notFound, setNotFound] = useState(false)
   const inputRef = useRef(null)
   const latest = useRef({ options, loading, selectedValue })
@@ -37,7 +37,7 @@ export default function useSelectCommit({ useOptions, selectedValue, commit }) {
   const selectProps = {
     ref: inputRef,
     selectFirstOptionOnChange: true,
-    nothingFoundMessage: loading ? 'Loading...' : 'Not found',
+    nothingFoundMessage: loading ? 'Loading...' : failed ? 'Could not load this list - check the database connection, then reopen' : 'Not found',
     onSearchChange: (v) => {
       setTyped(v)
       if (v) setNotFound(false)
@@ -80,5 +80,5 @@ export default function useSelectCommit({ useOptions, selectedValue, commit }) {
     }, 450)
   }
 
-  return { options, loading, data, notFound, selectProps, onBlurCheck }
+  return { options, loading, data, notFound, selectProps, onBlurCheck, failed, reload }
 }

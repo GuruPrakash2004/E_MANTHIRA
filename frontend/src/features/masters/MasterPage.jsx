@@ -1,9 +1,10 @@
 import ExportExcelButton from '../../components/ui/ExportExcelButton'
+import ListingGrid from '../../components/ui/ListingGrid'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ActionIcon, Alert, Badge, Button, Card, Checkbox, Group, Kbd, Menu, Modal, SegmentedControl, Select, Skeleton, Stack, Table, Text, Textarea, TextInput, Title, Tooltip, UnstyledButton } from '@mantine/core'
-import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, ChevronUp, Copy, Database, Download, FileText, FileUp, ImageUp, Plus, Save, Search, SquarePen, Trash2, X } from 'lucide-react'
+import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, ChevronUp, Copy, Database, Download, FileText, FileUp, ImageUp, List, Plus, Save, Search, SquarePen, Trash2, X } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as attachmentsApi from '../../api/endpoints/attachments'
@@ -17,6 +18,7 @@ import EmptyState from '../../components/ui/EmptyState'
 import { SectionCard } from '../../components/ui/EntryParts'
 import { isFieldHidden, isFieldMandatory } from '../../utils/docFieldConditions'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
+import useRights from '../../hooks/useRights'
 
 // Everything on this screen is driven by backend metadata: caption / short form / column names / attachment flag from
 // the master's UtlTransactions row (`meta`), and every extra field (caption, widget, list, mandatory, read-only,
@@ -109,6 +111,7 @@ function refreshLookups(queryClient) {
 
 export default function MasterPage() {
   const { docId } = useParams()
+  const rights = useRights(Number(docId)) // New / Edit / Delete are offered only to users who hold those rights
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const confirm = useConfirm()
@@ -125,13 +128,14 @@ export default function MasterPage() {
   const [saving, setSaving] = useState(false)
   const [panel, setPanel] = useState(null) // open Supplier sub-screen / Attach Seva dialog
   const [copyOpen, setCopyOpen] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
   const [similar, setSimilar] = useState(null) // { code, caption, rows } shown after the legacy "Similar code already exists" prompt
   const [itemImgVersion, setItemImgVersion] = useState(0)
   const imgInput = useRef(null)
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['master', docId, search],
-    queryFn: () => mastersApi.listMaster(docId, search ? { search } : undefined),
+    queryFn: () => mastersApi.listMaster(docId, { top: 5000, ...(search ? { search } : {}) }), // every record, so the count and First / Next / Last cover them all
   })
   const { data: fieldsData } = useQuery({
     queryKey: ['doc-fields', docId],
@@ -152,7 +156,7 @@ export default function MasterPage() {
   const rows = useMemo(() => {
     if (!meta) return []
     const filtered = allRows.filter((r) => (statusFilter === 'all' ? true : statusFilter === 'active' ? !isInactive(r) : isInactive(r)))
-    return [...filtered].sort((a, b) => String(a[meta.code_col] ?? '').localeCompare(String(b[meta.code_col] ?? ''), undefined, { numeric: true, sensitivity: 'base' }))
+    return [...filtered].sort((a, b) => (Number(b[meta.id_col]) || 0) - (Number(a[meta.id_col]) || 0)) // last saved first
   }, [allRows, meta, statusFilter])
   const selectedRow = meta ? allRows.find((r) => r[meta.id_col] === selectedId) : null
   const hasParty = panels.length > 0 && Boolean(selectedId)
@@ -234,6 +238,14 @@ export default function MasterPage() {
     if (editing || !rows.length) return
     const row = rows[Math.min(Math.max(i, 0), rows.length - 1)]
     if (row) loadRow(row)
+  }
+  // Typing a code fills the still-empty name and the alias fields the layout marks `fill_from_code` (Item / Supplier / Customer).
+  function fillFromCode(code) {
+    const c = String(code || '').trim()
+    if (!c || !editing) return
+    setForm((f) => (String(f.name || '').trim() ? f : { ...f, name: c }))
+    const aliases = coreFields.filter((x) => x.fill_from_code).map((x) => x.code)
+    if (aliases.length) setExtra((x) => ({ ...x, ...Object.fromEntries(aliases.filter((k) => !String(x[k] ?? '').trim()).map((k) => [k, c])) }))
   }
   function onNew() {
     if (!meta || editing) return
@@ -333,7 +345,7 @@ export default function MasterPage() {
     onNext: () => goto(index + 1),
     onFirst: () => goto(0),
     onLast: () => goto(rows.length - 1),
-    onFind: () => searchRef.current?.focus(),
+    onFind: () => setListOpen(true),
   })
 
   const caption = meta?.caption || 'Master'
@@ -381,98 +393,6 @@ export default function MasterPage() {
       </Group>
 
       <div className="vt-master-layout">
-        {/* Record list + search */}
-        <Card withBorder p="md" className="vt-master-list-card">
-          <Stack gap="sm">
-            <TextInput
-              ref={searchRef}
-              aria-label={`Search ${caption} by code or name`}
-              placeholder="Search by code or name"
-              leftSection={<Search size={16} />}
-              rightSection={
-                search ? (
-                  <ActionIcon variant="subtle" color="gray" size={28} aria-label="Clear search" onClick={() => setSearch('')}>
-                    <X size={14} />
-                  </ActionIcon>
-                ) : null
-              }
-              value={search}
-              onChange={(e) => setSearch(e.currentTarget.value)}
-            />
-            <SegmentedControl
-              aria-label="Status filter"
-              color="kumkum"
-              size="xs"
-              fullWidth
-              value={statusFilter}
-              onChange={setStatusFilter}
-              data={[
-                { value: 'all', label: 'All' },
-                { value: 'active', label: 'Active' },
-                { value: 'inactive', label: 'Inactive' },
-              ]}
-            />
-            <ExportExcelButton
-              filename={caption}
-              rows={rows}
-              columns={[
-                { label: 'Code', value: (r) => r[meta.code_col] },
-                ...(meta?.name_col && meta.name_col !== meta.code_col ? [{ label: 'Name', value: (r) => r[meta.name_col] }] : []),
-                { label: 'Active', value: (r) => (isInactive(r) ? 'N' : 'Y') },
-              ]}
-              fullWidth
-            />
-            <div ref={listRef} className="vt-master-list" role="listbox" aria-label={`${caption} records`}>
-              {isLoading ? (
-                Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} height={46} radius="md" mb={6} />)
-              ) : rows.length === 0 ? (
-                <EmptyState
-                  icon={filtering ? Search : Database}
-                  title={filtering ? 'No matching records' : `No ${caption.toLowerCase()} records yet`}
-                  hint={filtering ? 'Try a different word, or clear the search and filter.' : 'Use New to add the first one.'}
-                />
-              ) : (
-                rows.map((row) => {
-                  const active = row[meta.id_col] === selectedId
-                  return (
-                    <UnstyledButton
-                      key={row[meta.id_col]}
-                      role="option"
-                      aria-selected={active}
-                      aria-current={active ? 'true' : undefined}
-                      disabled={editing}
-                      onClick={() => loadRow(row)}
-                      className="vt-master-item"
-                      data-active={active || undefined}
-                    >
-                      <Group justify="space-between" wrap="nowrap" gap="xs">
-                        <div style={{ minWidth: 0 }}>
-                          <Text size="sm" fw={600} truncate>
-                            {row[meta.name_col]}
-                          </Text>
-                          <Text size="xs" c="dimmed" className="vt-num" truncate>
-                            {(layout?.list_subtitle_cols || []).length ? layout.list_subtitle_cols.map((c) => row[c]).filter(Boolean).join(' · ') : row[meta.code_col]}
-                          </Text>
-                        </div>
-                        {isInactive(row) && (
-                          <Badge color="gray" variant="light" size="sm">
-                            Inactive
-                          </Badge>
-                        )}
-                      </Group>
-                    </UnstyledButton>
-                  )
-                })
-              )}
-            </div>
-            {filtering && (
-              <Text size="xs" c="dimmed">
-                Showing {rows.length} of {allRows.length}
-              </Text>
-            )}
-          </Stack>
-        </Card>
-
         {/* Record form */}
         <Stack gap="md" style={{ minWidth: 0 }}>
           <SectionCard title={`${caption} details`} hint={editing ? 'Fill in the fields and press Save (Alt+S).' : 'Choose New (Alt+N) to add a record, or Edit (Alt+E) to change this one.'}>
@@ -505,7 +425,10 @@ export default function MasterPage() {
                     readOnly={!editing}
                     value={form.code}
                     onChange={(e) => setForm((f) => ({ ...f, code: e.currentTarget.value }))}
-                    onBlur={(e) => checkSimilar(e.currentTarget.value)}
+                    onBlur={(e) => {
+                      checkSimilar(e.currentTarget.value)
+                      fillFromCode(e.currentTarget.value)
+                    }}
                     maw={520}
                   />
                   <TextInput
@@ -597,10 +520,13 @@ export default function MasterPage() {
               )}
             </Stack>
           </SectionCard>
+        </Stack>
 
+        {/* Additional Information: the Designer's extra fields, caption on the left and the value on the right */}
+        <Stack gap="md" style={{ minWidth: 0 }}>
           {extraFields.length > 0 && (
-            <SectionCard title="Header Info">
-              <Stack gap="sm" maw={520}>
+            <SectionCard title="Additional Information">
+              <Stack gap="sm" className="vt-inline-fields">
                 {extraFields.map((f) => (
                   <DynamicField key={f.FldCode} docId={docId} field={f} value={extra[f.FldCode]} onChange={(v) => setExtraField(f.FldCode, v)} required={isFieldMandatory(f, codeValues)} locked={!editing} />
                 ))}
@@ -666,8 +592,8 @@ export default function MasterPage() {
       </div>
 
       {/* Action bar pinned to the bottom, like the legacy form footer: New / Edit / Delete / Close and record navigation. */}
-      <div style={{ position: 'sticky', bottom: 12, zIndex: 5 }}>
-        <Group justify="space-between" gap="xs" p="sm" style={{ borderRadius: 16, border: '1px solid var(--vt-line)', background: 'var(--vt-surface)', boxShadow: '0 6px 20px rgba(43,9,9,0.12)' }}>
+      <div className="vt-action-bar">
+        <Group justify="space-between" gap="xs" p="sm" className="vt-action-bar-card">
           <Group gap="xs" wrap="wrap">
             {editing ? (
               <>
@@ -688,14 +614,23 @@ export default function MasterPage() {
               </>
             ) : (
               <>
-                <Button color="kumkum" leftSection={<Plus size={16} />} onClick={onNew} disabled={!meta}>
-                  New
-                </Button>
-                <Button variant="light" color="kumkum" leftSection={<SquarePen size={16} />} onClick={onEdit} disabled={!selectedRow}>
-                  Edit
-                </Button>
-                <Button variant="light" color="red" leftSection={<Trash2 size={16} />} onClick={onDelete} disabled={!selectedRow}>
-                  Delete
+                {rights.add && (
+                  <Button color="kumkum" leftSection={<Plus size={16} />} onClick={onNew} disabled={!meta}>
+                    New
+                  </Button>
+                )}
+                {rights.edit && (
+                  <Button variant="light" color="kumkum" leftSection={<SquarePen size={16} />} onClick={onEdit} disabled={!selectedRow}>
+                    Edit
+                  </Button>
+                )}
+                {rights.del && (
+                  <Button variant="light" color="red" leftSection={<Trash2 size={16} />} onClick={onDelete} disabled={!selectedRow}>
+                    Delete
+                  </Button>
+                )}
+                <Button variant="default" leftSection={<List size={16} />} onClick={() => setListOpen(true)} disabled={!meta}>
+                  List
                 </Button>
                 <Button variant="default" leftSection={<X size={16} />} onClick={onClose}>
                   Close
@@ -746,13 +681,25 @@ export default function MasterPage() {
           <Group gap={6} wrap="nowrap">
             {navBtn('First record (Ctrl+Shift+F)', <ChevronFirst size={18} />, () => goto(0), editing || index <= 0)}
             {navBtn('Previous record (Shift+Left)', <ChevronLeft size={18} />, () => goto(index - 1), editing || index <= 0)}
-            {navBtn('Find (Ctrl+Shift+S)', <Search size={17} />, () => searchRef.current?.focus(), false)}
+            {navBtn('Find (Ctrl+Shift+S)', <Search size={17} />, () => setListOpen(true), false)}
             {navBtn('Next record (Shift+Right)', <ChevronRight size={18} />, () => goto(index + 1), editing || index < 0 || index >= rows.length - 1)}
             {navBtn('Last record (Ctrl+Shift+L)', <ChevronLast size={18} />, () => goto(rows.length - 1), editing || index < 0 || index >= rows.length - 1)}
           </Group>
         </Group>
       </div>
 
+      {listOpen && (
+        <ListingGrid
+          docId={docId}
+          opened
+          onClose={() => setListOpen(false)}
+          onOpen={async (_, id) => {
+            // the grid shows names for combo ids, so load the record itself (from the list in hand, else straight from the DB)
+            const row = allRows.find((r) => r[meta.id_col] === id) || (await mastersApi.getMasterRow(docId, id).catch(() => null))
+            if (row) loadRow(row)
+          }}
+        />
+      )}
       {similar && (
         <Modal opened onClose={() => setSimilar(null)} radius="lg" title={<Text fw={700} size="lg" style={{ fontFamily: 'Marcellus, Georgia, serif' }}>Similar {similar.caption}</Text>}>
           <Stack gap="sm">
@@ -814,9 +761,7 @@ export default function MasterPage() {
         .vt-master-item[data-active] { background: var(--vt-gold-chip); border-color: var(--vt-line); }
         .vt-master-item:disabled { opacity: 0.6; cursor: not-allowed; }
         @media (min-width: 992px) {
-          .vt-master-layout { grid-template-columns: 340px minmax(0, 1fr); }
-          .vt-master-list-card { position: sticky; top: 90px; }
-          .vt-master-list { max-height: calc(100dvh - 380px); }
+          .vt-master-layout { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
         }
       `}</style>
     </Stack>

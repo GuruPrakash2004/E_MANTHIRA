@@ -12,7 +12,7 @@ import ScaleGrid from '../../components/ui/ScaleGrid'
 import { PageHeader } from '../../components/ui/EntryParts'
 import { downloadXls } from '../../utils/xls'
 import { isoDate } from '../../utils/format'
-import usePrintKey from '../../hooks/usePrintKey'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
 
 const n2 = (v) => (v == null ? '' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 const d8 = (v) => (v ? dayjs(v).format('DD-MMM-YYYY') : '')
@@ -24,7 +24,6 @@ const d8 = (v) => (v ? dayjs(v).format('DD-MMM-YYYY') : '')
  * parties, hiding balances at or below an amount.
  */
 export default function PartyOutstandingPage() {
-  usePrintKey(() => rows.length && window.print())
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [party, setParty] = useState(params.get('party') === 'S' ? 'S' : 'C')
@@ -124,7 +123,7 @@ export default function PartyOutstandingPage() {
 
       <Group justify="space-between">
         <Group gap="sm">
-          <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!rows.length} onClick={() => window.print()}>Print (F10)</Button>
+          <ReportPrintButtons title={`${name} Wise Outstanding`} period={`Period From ${dayjs(from).format('DD/MM/YYYY')} To ${dayjs(to).format('DD/MM/YYYY')}`} columns={columns} rows={rows} hotkey />
           <Button variant="light" color="kumkum" leftSection={<FileSpreadsheet size={16} />} disabled={!rows.length} onClick={() => downloadXls(`${name} Outstanding.xls`, rows, columns.map((c) => ({ label: c.label, value: (r) => (c.render ? c.render(r) : r[c.key]) })))}>Excel</Button>
         </Group>
         <Button variant="default" leftSection={<X size={16} />} onClick={() => navigate(-1)}>Close</Button>

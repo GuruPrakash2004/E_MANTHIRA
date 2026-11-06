@@ -57,6 +57,61 @@ def build_xls(name: str, rows: list[list]) -> bytes:
     return buf.getvalue()
 
 
+def build_listing_xls(name: str, company: str, title: str, headers: list[str], rows: list[list]) -> bytes:
+    """The standard listing sheet: company name band, "Listing of <page>" band, a coloured header row, banded
+    rows, and the first two columns frozen with the header (temple palette: maroon header, gold / ivory bands)."""
+    if len(rows) + 3 > MAX_ROWS:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"An .xls sheet holds at most {MAX_ROWS:,} rows; narrow the filters and export again")
+    if len(headers) > MAX_COLS:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"An .xls sheet holds at most {MAX_COLS} columns")
+    wb = xlwt.Workbook(encoding="utf-8")
+    for idx, (nm, rgb) in enumerate((("vt_gold", (0xF6, 0xEB, 0xC9)), ("vt_maroon", (0x7A, 0x1F, 0x1F)), ("vt_ivory", (0xFB, 0xF6, 0xEC)), ("vt_line", (0xE3, 0xD3, 0xB5))), start=0x21):
+        xlwt.add_palette_colour(nm, idx)
+        wb.set_colour_RGB(idx, *rgb)
+    st_company = xlwt.easyxf("pattern: pattern solid, fore_colour vt_gold; font: bold on, height 300, name Calibri; align: vert centre")
+    st_title = xlwt.easyxf("pattern: pattern solid, fore_colour vt_gold; font: bold on, height 240, name Calibri; align: vert centre")
+    st_head = xlwt.easyxf("pattern: pattern solid, fore_colour vt_maroon; font: bold on, colour white, height 200, name Calibri; align: vert centre, wrap on; borders: bottom thin, bottom_colour vt_line")
+    body = {}
+    for i, shade in enumerate(("white", "vt_ivory")):
+        base = f"pattern: pattern solid, fore_colour {shade}; font: name Calibri, height 200; borders: bottom thin, bottom_colour vt_line;"
+        body[(i, "t")] = xlwt.easyxf(base + " align: horiz left")
+        body[(i, "n")] = xlwt.easyxf(base + " align: horiz right", num_format_str="#,##0.00")
+        body[(i, "i")] = xlwt.easyxf(base + " align: horiz right", num_format_str="0")
+    ws = wb.add_sheet(sheet_name(name))
+    ncol = max(len(headers), 1)
+    ws.row(0).height_mismatch = True
+    ws.row(0).height = 440
+    ws.row(1).height_mismatch = True
+    ws.row(1).height = 340
+    ws.row(2).height_mismatch = True
+    ws.row(2).height = 380
+    for j in range(ncol):  # the two bands span the whole width
+        ws.write(0, j, company if j == 0 else "", st_company)
+        ws.write(1, j, f"Listing of {title}" if j == 0 else "", st_title)
+    for j, h in enumerate(headers):
+        ws.write(2, j, h, st_head)
+    widths = [min(max(len(str(h)) + 3, 8), 60) for h in headers]
+    for i, r in enumerate(rows):
+        shade = i % 2
+        for j in range(len(headers)):
+            v = _cell(r[j] if j < len(r) else "")
+            if isinstance(v, (int, float)):
+                kind = "i" if isinstance(v, int) or float(v).is_integer() else "n"
+                ws.write(3 + i, j, v, body[(shade, kind)])
+                widths[j] = max(widths[j], min(len(f"{v:,.2f}") + 2, 60))
+            else:
+                ws.write(3 + i, j, v, body[(shade, "t")])
+                widths[j] = max(widths[j], min(len(v) + 2, 60))
+    for j, w in enumerate(widths):
+        ws.col(j).width = int(256 * w)
+    ws.set_panes_frozen(True)
+    ws.set_horz_split_pos(3)  # rows 1-3 stay on top
+    ws.set_vert_split_pos(min(2, ncol))  # first two columns stay on the left
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def read_xls(data: bytes, sheet: str | None = None) -> list[list[str]]:
     """Rows of the named sheet (or the first) as strings; whole-number floats lose their '.0'."""
     if not data.startswith(_OLE_MAGIC):

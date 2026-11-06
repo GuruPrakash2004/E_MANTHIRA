@@ -1,4 +1,5 @@
 import { historyParams } from '../../lib/history'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
 import { ActionIcon, Grid, NumberInput, Select, Stack, Table, Text, Button } from '@mantine/core'
@@ -16,14 +17,13 @@ import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard, PageHead
 import { formatINR, isoDate } from '../../utils/format'
 import DocNavBar from '../../components/ui/DocNavBar'
 import { getVoucher } from '../../api/endpoints/voucher'
+import VoucherLinesTable, { appendLine, linesFromSaved, newVoucherLines } from '../../components/ui/VoucherLinesTable'
+import useDocRules from '../../hooks/useDocRules'
 
 const DOC_ID = 1272
 // Set by the server (link to a bill), not entered
 const COMPUTED_CODES = ['TRNTYPE', 'TRNID']
-const EMPTY_LINES = [
-  { ac_led_id: '', dr_amt: 0, cr_amt: 0 },
-  { ac_led_id: '', dr_amt: 0, cr_amt: 0 },
-]
+const EMPTY_LINES = newVoucherLines('DR')
 
 /**
  * Purchase Voucher (DocID 1272) — confirmed zero real usage, built per
@@ -49,6 +49,7 @@ export default function PurchaseVoucherPage() {
   const { data: bills } = useQuery({ queryKey: ['purchase-bills', 'unvouchered'], queryFn: () => inventoryApi.listPurchaseBills({ top: 100 }) })
   const unvoucheredBills = (bills || []).filter((b) => !b.VCHID)
   const { fields } = useDocFields(DOC_ID)
+  const rules = useDocRules(DOC_ID) // balance column / first-row type switches of this document
   const setValue = (code, v) => setValues((cur) => ({ ...cur, [code]: v }))
   const dateCodes = new Set(fields.filter((f) => f.FldDataType === 'Date').map((f) => f.FldCode))
   const headErrors = docFieldErrors(fields, values, COMPUTED_CODES)
@@ -57,7 +58,7 @@ export default function PurchaseVoucherPage() {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
   }
   function addLine() {
-    setLines((ls) => [...ls, { ac_led_id: '', dr_amt: 0, cr_amt: 0 }])
+    setLines((ls) => appendLine(ls, rules.first_row_type))
   }
   function removeLine(i) {
     setLines((ls) => (ls.length > 2 ? ls.filter((_, idx) => idx !== i) : ls))
@@ -80,7 +81,7 @@ export default function PurchaseVoucherPage() {
       }
       setValues(next)
       setPbId('')
-      setLines(r.lines.map((l) => ({ ac_led_id: String(l.ac_led_id), dr_amt: l.dr_amt, cr_amt: l.cr_amt })))
+      setLines(linesFromSaved(r.lines))
       setViewId(id)
       setViewInfo({ no: h.PrintPURVCHNO || h.PURVCHNO, trnType: h.TRNTYPE, trnId: h.TRNID })
     } catch (err) {
@@ -95,7 +96,7 @@ export default function PurchaseVoucherPage() {
     setResetKey((k) => k + 1)
     setAttempted(false)
     setPbId('')
-    setLines(EMPTY_LINES)
+    setLines(newVoucherLines(rules.first_row_type))
   }
   async function findVouchers(q) {
     const rows = await inventoryApi.listPurchaseVouchers({ top: 200 })
@@ -136,7 +137,7 @@ export default function PurchaseVoucherPage() {
       const result = await inventoryApi.createPurchaseVoucher(body)
       setLastSaved(result)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setLines(EMPTY_LINES)
+      setLines(newVoucherLines(rules.first_row_type))
       setPbId('')
       setValues({})
       setResetKey((k) => k + 1)
@@ -155,7 +156,7 @@ export default function PurchaseVoucherPage() {
 
   return (
     <Stack gap="lg" className="vt-rise">
-      <PageHeader title="Purchase Voucher" subtitle="Post the accounting for a purchase, optionally linked to a bill" />
+      <PageHeader title="Purchase Voucher" subtitle="Post the accounting for a purchase, optionally linked to a bill" right={<DocNoDate docId={DOC_ID} viewNo={viewInfo?.no || ''} date={voucherDate} onDate={setVoucherDate} dateDisabled={Boolean(viewId)} dateLabel="Voucher Date" />} />
 
       <EntryLayout
         viewing={Boolean(viewId)}
@@ -172,9 +173,6 @@ export default function PurchaseVoucherPage() {
             )}
             <SectionCard title="Voucher details" hint="Date, credit period and the purchase bill this voucher settles.">
               <Grid>
-                <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <DateInput label="Voucher Date" valueFormat="DD-MMM-YYYY" value={voucherDate} onChange={setVoucherDate} />
-                </Grid.Col>
                 <Grid.Col span={{ base: 12, sm: 12, xl: 4 }}>
                   <Select
                     label="Link Purchase Bill (optional)"
@@ -208,55 +206,15 @@ export default function PurchaseVoucherPage() {
                 </Button>
               }
             >
-              <Table.ScrollContainer minWidth={560}>
-                <Table>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Account Head</Table.Th>
-                      <Table.Th w={160}>Debit</Table.Th>
-                      <Table.Th w={160}>Credit</Table.Th>
-                      <Table.Th w={48} aria-label="Remove" />
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {lines.map((l, i) => (
-                      <Table.Tr key={i}>
-                        <Table.Td>
-                          <LookupSelect ledgerPicker ariaLabel={`Account head, line ${i + 1}`} label="" value={l.ac_led_id} onChange={(v) => updateLine(i, { ac_led_id: v })} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label={`Debit, line ${i + 1}`} value={l.dr_amt} onChange={(v) => updateLine(i, { dr_amt: v, cr_amt: v ? 0 : l.cr_amt })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <NumberInput aria-label={`Credit, line ${i + 1}`} value={l.cr_amt} onChange={(v) => updateLine(i, { cr_amt: v, dr_amt: v ? 0 : l.dr_amt })} decimalScale={2} />
-                        </Table.Td>
-                        <Table.Td>
-                          <ActionIcon
-                            color="red"
-                            variant="subtle"
-                            size={36}
-                            aria-label={`Remove line ${i + 1}`}
-                            disabled={lines.length <= 2}
-                            onClick={async () => {
-                              if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeLine(i)
-                            }}
-                          >
-                            <Trash2 size={16} />
-                          </ActionIcon>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                  <Table.Tfoot>
-                    <Table.Tr>
-                      <Table.Th>Total Dr / Total Cr</Table.Th>
-                      <Table.Th className="vt-num">{formatINR(totalDr)}</Table.Th>
-                      <Table.Th className="vt-num">{formatINR(totalCr)}</Table.Th>
-                      <Table.Th />
-                    </Table.Tr>
-                  </Table.Tfoot>
-                </Table>
-              </Table.ScrollContainer>
+              <VoucherLinesTable
+                docId={DOC_ID}
+                lines={lines}
+                setLines={setLines}
+                readOnly={Boolean(viewId)}
+                balanceCol={rules.balance_col}
+                firstType={rules.first_row_type}
+                attempted={attempted}
+              />
               {!balanced && (totalDr > 0 || totalCr > 0) && (
                 <Text size="sm" c="red" mt="xs" role="alert">
                   Debit and Credit totals are NOT matching!
@@ -285,6 +243,7 @@ export default function PurchaseVoucherPage() {
             />
             {lastSaved && <SavedPanel lines={[`Voucher ${lastSaved.purvch_no}`]} />}
             <RecentCard
+              docId={DOC_ID}
               title="Recent vouchers"
               icon={Receipt}
               loading={recentLoading}

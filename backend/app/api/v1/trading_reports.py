@@ -8,7 +8,8 @@ from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn
 from app.core.fy import FinancialYear, get_user_fy
-from app.core.security import CurrentUser, get_current_user
+from app.core.security import CurrentUser, get_current_user, require_right_for_form
+from app.meta.menu import RIGHT_VIEW
 from app.services import trading_reports as svc
 
 router = APIRouter(prefix="/trade-reports", tags=["trade-reports"])
@@ -34,7 +35,7 @@ def stock_level(
     as_on: date = Query(...),
     fy: FinancialYear = Depends(get_user_fy),
     conn: Connection = Depends(get_conn),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("Stock Level Report", RIGHT_VIEW)),
 ):
     return svc.stock_level_report(conn, template=template, as_on=as_on, fy_start=fy.start_date.date() if hasattr(fy.start_date, "date") else fy.start_date)
 
@@ -45,7 +46,7 @@ def stock_ageing(
     ranges: str = Query(..., description="e.g. 0-30,31-60,61-90,91- (blank end = open-ended)"),
     item_group_ids: str | None = Query(None),
     conn: Connection = Depends(get_conn),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("Stock Ageing Report", RIGHT_VIEW)),
 ):
     parsed: list[tuple[int, int | None]] = []
     for part in ranges.split(","):
@@ -66,7 +67,7 @@ def party_outstanding(
     group_ids: str | None = Query(None),
     ac_ids: str | None = Query(None),
     conn: Connection = Depends(get_conn),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("Customer Wise Outstanding", RIGHT_VIEW, by="caption")),
 ):
     return svc.party_outstanding(
         conn, party=party, from_date=from_date, to_date=to_date, receivable=receivable,
@@ -80,7 +81,7 @@ def party_outstanding_detail(
     to_date: date = Query(...),
     ac_ids: str | None = Query(None),
     conn: Connection = Depends(get_conn),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_right_for_form("Customer Wise Outstanding", RIGHT_VIEW, by="caption")),
 ):
     return svc.party_outstanding_detail(conn, party=party, to_date=to_date, ac_ids=_ints(ac_ids))
 

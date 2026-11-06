@@ -17,7 +17,7 @@ from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, update_row
 from app.meta import edit_rules
-from app.meta.numbering import next_doc_no
+from app.meta.numbering import next_doc_no, print_doc_no
 from app.services import ledger, voucher_fields, voucher_rules
 from app.utils.amount_in_words import amount_in_words
 
@@ -83,7 +83,7 @@ def create(conn: Connection, spec: Spec, *, data: VoucherInput, fy: FinancialYea
         conn,
         f"TrnHdr{s}",
         {
-            f"{s}NO": doc_no, "Prefix": data.prefix, f"Print{s}NO": doc_no, f"{s}Date": data.voucher_date,
+            f"{s}NO": doc_no, "Prefix": data.prefix, f"Print{s}NO": print_doc_no(conn, doc_id=spec.doc_id, doc_no=doc_no, prefix=data.prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year), f"{s}Date": data.voucher_date,
             "AddedBy": user_code, "AddedOn": datetime.now(), "Authorised": edit_rules.authorised_on_save(conn, spec.doc_id), "Cancelled": "N",
             "AMTINWORDS": amount_in_words(total_dr, "Rupees", "Paise"), "TOTDR": total_dr, "TOTCR": total_cr,
             **header,
@@ -102,7 +102,7 @@ def create(conn: Connection, spec: Spec, *, data: VoucherInput, fy: FinancialYea
     ledger.post(
         conn, doc_type=spec.doc_type, trn_id=vid, trn_no=doc_no, trn_date=data.voucher_date, due_date=data.voucher_date,
         narration=narration,
-        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
     )
     audit.record(conn, entity=spec.name, entity_id=vid, action="A", user_code=user_code, details=doc_no)
     return {"voucher_id": vid, "voucher_no": doc_no, "amount": total_dr}
@@ -184,7 +184,7 @@ def update(conn: Connection, spec: Spec, *, voucher_id: int, data: VoucherInput,
         )
     ledger.post(
         conn, doc_type=spec.doc_type, trn_id=voucher_id, trn_no=old["NO"], trn_date=data.voucher_date, due_date=data.voucher_date, narration=narration,
-        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
     )
     audit.record(conn, entity=spec.name, entity_id=voucher_id, action="E", user_code=user_code, details=old["NO"])
     return {"voucher_id": voucher_id, "voucher_no": old["NO"], "amount": total_dr}

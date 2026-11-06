@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from app.core import capabilities
 from app.core.db import get_conn
 
 router = APIRouter(prefix="/display", tags=["display"])
@@ -25,10 +26,11 @@ router = APIRouter(prefix="/display", tags=["display"])
 @router.get("/today-sevas")
 def today_sevas(conn: Connection = Depends(get_conn)):
     today = date.today()
+    disp = capabilities.sel("MstSVA", "sv", "SVADISPNAME", "sv.SVANAME")
     rows = conn.execute(
         text(
-            """
-            SELECT h.KNAME, h.SECKNAME, s.SANNIDHINAME, sv.SVADISPNAME, h.DaysPrintText
+            f"""
+            SELECT h.KNAME, h.SECKNAME, s.SANNIDHINAME, {disp} AS SVADISPNAME, h.DaysPrintText
             FROM TrnHdrSEVA h
             LEFT JOIN MstSANNIDHI s ON s.SANNIDHIID = h.SANNIDHIID
             LEFT JOIN MstSVA sv ON sv.SVAID = h.SVAID

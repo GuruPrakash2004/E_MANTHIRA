@@ -3,6 +3,7 @@ import { Autocomplete, NumberInput, Select, TextInput, Textarea, Tooltip } from 
 import { DateInput } from './ui/AppDates'
 import { useQuery } from '@tanstack/react-query'
 import LookupSelect from './LookupSelect'
+import AddressLines from './ui/AddressLines'
 import * as metaApi from '../api/endpoints/meta'
 import { applyTextRules, dateBounds, fieldDefault, fieldListOptions, inputAlignment, numberBounds } from '../utils/docFieldConditions'
 
@@ -13,7 +14,7 @@ import { applyTextRules, dateBounds, fieldDefault, fieldListOptions, inputAlignm
  * "no negative" and number / date ranges, and "refill" (type a new value or pick one used before).
  * `required` is passed in by the caller (already resolved via `isFieldMandatory`, which may be a live condition).
  */
-function FieldWidget({ docId, field, value, onChange, required, locked = false, error, ctx, onBlur, noSeed = false, compact = false, allowedValues }) {
+function FieldWidget({ docId, field, value, onChange, required, locked = false, error, ctx, onBlur, noSeed = false, compact = false, allowedValues, noAddressLines = false }) {
   // compact = a grid cell: no caption above, the caption becomes the accessible name
   const label = compact ? undefined : field.FldCaption
   const aria = compact ? field.FldCaption : undefined
@@ -58,13 +59,17 @@ function FieldWidget({ docId, field, value, onChange, required, locked = false, 
     if (isCombo) {
       return <LookupSelect docId={docId} field={field.FldCode} label={label} ariaLabel={aria} required={isRequired} disabled={readOnly} value={value ?? ''} onChange={onChange} error={error} ctx={ctx} onBlur={onBlur} allowedValues={allowedValues} />
     }
+    // An address column (Seva ADDRES, Donation / Hall / Asset ADDRESS): stacked address lines, stored as one multi-line value.
+    if (!compact && !noAddressLines && /^ADDRESS?$/i.test(field.FldCode) && field.FldDataType !== 'Numeric' && field.FldDataType !== 'Date') {
+      return <AddressLines label={label} value={value} onChange={(v) => onChange(v)} readOnly={readOnly} required={isRequired} error={error} maxLength={maxLength} onBlur={onBlur} />
+    }
     const listOptions = fieldListOptions(field)
     if (refill) {
       const data = [...new Set([...(listOptions || []), ...(refillValues || [])])]
       return <Autocomplete {...common} data={data} maxLength={maxLength} value={value || ''} onChange={(v) => onChange(applyTextRules(field, v))} styles={alignStyles} />
     }
     if (listOptions) {
-      return <Select {...common} data={listOptions} value={value || null} onChange={(v) => onChange(v || '')} allowDeselect={!isRequired} />
+      return <Select {...common} data={listOptions} value={value || null} onChange={(v) => onChange(v || '')} />
     }
     if (field.FldDataType === 'Numeric') {
       const b = numberBounds(field)

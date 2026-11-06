@@ -68,7 +68,7 @@ def list_all_print_options(conn: Connection = Depends(get_conn), _: CurrentUser 
         text(
             """
             SELECT o.DocID, m.MenuItemCaption, o.OptionOrder, o.OptionName, o.CrptFileName,
-                   o.DirectPrinterName, o.AfterSaveAction, o.DefaultPrint, o.NoOfCopies, o.InActive
+                   o.DirectPrinterName, o.AfterSaveAction, o.DefaultPrint, o.NoOfCopies, o.InActive, o.SelFormula, o.FormulasFld, o.FormulasVal
             FROM UtlOption o
             LEFT JOIN MstMenu m ON m.DocID = o.DocID
             ORDER BY m.MenuItemCaption, o.DocID, o.OptionOrder
@@ -79,6 +79,11 @@ def list_all_print_options(conn: Connection = Depends(get_conn), _: CurrentUser 
 
 
 class PrintOptionUpdate(BaseModel):
+    crpt_file_name: str | None = None
+    option_order: int | None = None
+    sel_formula: str | None = None
+    formulas_fld: str | None = None
+    formulas_val: str | None = None
     direct_printer_name: str | None = None
     after_save_action: str | None = None  # P | PP | DNP
     default_print: str | None = None  # Y | N
@@ -87,7 +92,7 @@ class PrintOptionUpdate(BaseModel):
 
 
 @router.put("/{doc_id}/{option_name}")
-def update_print_option(doc_id: int, option_name: str, body: PrintOptionUpdate, _: CurrentUser = Depends(get_current_user)):
+def update_print_option(doc_id: int, option_name: str, body: PrintOptionUpdate, user: CurrentUser = Depends(get_current_user)):
     updates = {}
     if body.direct_printer_name is not None:
         updates["DirectPrinterName"] = body.direct_printer_name
@@ -99,6 +104,10 @@ def update_print_option(doc_id: int, option_name: str, body: PrintOptionUpdate, 
         updates["NoOfCopies"] = body.no_of_copies
     if body.in_active is not None:
         updates["InActive"] = body.in_active
+    for val, col in ((body.crpt_file_name, "CrptFileName"), (body.option_order, "OptionOrder"), (body.sel_formula, "SelFormula"),
+                     (body.formulas_fld, "FormulasFld"), (body.formulas_val, "FormulasVal")):
+        if val is not None:
+            updates[col] = val
     if not updates:
         return {"message": "Nothing to update"}
 
@@ -110,7 +119,79 @@ def update_print_option(doc_id: int, option_name: str, body: PrintOptionUpdate, 
         )
         if result.rowcount == 0:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Print option not found")
+        _audit(conn, user, "E", doc_id, option_name)
     return {"message": "Saved"}
+
+
+def _audit(conn: Connection, user: CurrentUser, action: str, doc_id: int, option_name: str) -> None:
+    from app.core import audit
+
+    audit.record(conn, entity="UtlOption", entity_id=f"{doc_id}:{option_name}", action=action, user_code=user.user_code)
+
+
+@router.get("/screens")
+def screens_for_new_option(conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """The screens a print format can be added to: every menu entry that is a document (has a DocID)."""
+    rows = conn.execute(
+        text("SELECT DISTINCT DocID, MenuItemCaption FROM MstMenu WHERE DocID IS NOT NULL AND DocID > 0 AND MenuItemCaption IS NOT NULL ORDER BY MenuItemCaption")
+    ).all()
+    return [{"doc_id": r[0], "caption": (r[1] or "").strip()} for r in rows]
+
+
+@router.get("/rpt-files")
+def report_files(_: CurrentUser = Depends(get_current_user)):
+    """The .rpt files in the reports folder, for the Report File picker."""
+    from app.print.rpt_registry import scan_rpt_files
+
+    return sorted({os.path.basename(p) for p in scan_rpt_files(force=True).values()}, key=str.lower)
+
+
+class PrintOptionCreate(PrintOptionUpdate):
+    doc_id: int
+    option_name: str
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+def create_print_option(body: PrintOptionCreate, user: CurrentUser = Depends(get_current_user)):
+    name = body.option_name.strip()
+    if not name or not (body.crpt_file_name or "").strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Format name and report file are required")
+    with with_transaction() as conn:
+        if conn.execute(text("SELECT 1 FROM UtlOption WHERE DocID = :d AND OptionName = :o"), {"d": body.doc_id, "o": name}).first():
+            raise HTTPException(status.HTTP_409_CONFLICT, "This screen already has a format with that name")
+        order = body.option_order or int(conn.execute(text("SELECT ISNULL(MAX(OptionOrder), 0) + 1 FROM UtlOption WHERE DocID = :d"), {"d": body.doc_id}).scalar())
+        if body.default_print == "Y":  # one default format per screen, as the legacy screen keeps it
+            conn.execute(text("UPDATE UtlOption SET DefaultPrint = 'N' WHERE DocID = :d"), {"d": body.doc_id})
+        # every column the table requires gets the value the legacy rows carry for "not used"
+        conn.execute(
+            text(
+                "INSERT INTO UtlOption (DocID, OptionOrder, OptionName, CrptFileName, SelFormula, FormulasFld, FormulasVal, MultiRpt, "
+                "NoOfCopies, DefaultPrint, DirectPrinterName, OpenInOutlook, PrintAfterSave, EmailFooter, EmailCond, SMTPID, SMTPPwd, SMTPHost, "
+                "SMTPSSL, SMTPPort, AfterSaveAction, ClickOperation, CtrlClickOperation, EmailRouting, DoNotAttach, EmailSubject, EmailBody, "
+                "InActive, CtrlAltClickOperation, MultiPrint, AllowDateRange, AllowDocNoRange, TrackPrinted, MultiPrintQuery, blnWOAuth, MergePDF, "
+                "emailMultiRptIDS, FolderLoc, FldSel, CoPrintRptIDs, CoPrintCtrlRptIDS, CoPrintCtrlAltRptIDS) "
+                "VALUES (:d, :ord, :o, :f, :sel, :ff, :fv, 'N', :cp, :def, :pr, 'N', '', '', '', '', '', '', '', '', :as, 'P', '', 'N', '', '', '', "
+                ":ina, '', 'N', 'N', 'N', 'N', '', 'N', 'N', '', '', '', '', '', '')"
+            ),
+            {
+                "d": body.doc_id, "ord": order, "o": name, "f": body.crpt_file_name.strip(), "sel": body.sel_formula or "",
+                "ff": body.formulas_fld or "", "fv": body.formulas_val or "", "cp": body.no_of_copies or 1,
+                "def": body.default_print or "N", "pr": body.direct_printer_name or "", "as": body.after_save_action or "DNP",
+                "ina": body.in_active or "N",
+            },
+        )
+        _audit(conn, user, "A", body.doc_id, name)
+    return {"message": "Added"}
+
+
+@router.delete("/{doc_id}/{option_name}")
+def delete_print_option(doc_id: int, option_name: str, user: CurrentUser = Depends(get_current_user)):
+    with with_transaction() as conn:
+        result = conn.execute(text("DELETE FROM UtlOption WHERE DocID = :d AND OptionName = :o"), {"d": doc_id, "o": option_name})
+        if result.rowcount == 0:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Print option not found")
+        _audit(conn, user, "D", doc_id, option_name)
+    return {"message": "Deleted"}
 
 
 # ---------------------------------------------------------------- report fonts (legacy Kannada / Telugu / ... fonts)

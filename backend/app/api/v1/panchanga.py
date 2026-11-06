@@ -8,10 +8,12 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
-from app.core.security import CurrentUser, get_current_user
+from app.core.security import require_right_for_form,  CurrentUser, get_current_user
 from app.services import panchanga as panchanga_service
 from app.utils import xls as xls_util
 
+from app.meta.menu import RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
+_FORM = 'FRMUTLPANCHANGA'
 router = APIRouter(prefix="/panchanga", tags=["panchanga"])
 
 
@@ -33,7 +35,7 @@ class SetDayRequest(BaseModel):
 
 
 @router.put("")
-def set_panchanga_day(body: SetDayRequest, _: CurrentUser = Depends(get_current_user)):
+def set_panchanga_day(body: SetDayRequest, _: CurrentUser = Depends(require_right_for_form(_FORM, RIGHT_EDIT))):
     names = body.names or ([body.name] if body.name.strip() else [])
     with with_transaction() as conn:
         panchanga_service.set_day(conn, day=body.date, names=names)
@@ -46,7 +48,7 @@ class BulkSetRequest(BaseModel):
 
 
 @router.put("/bulk")
-def set_panchanga_bulk(body: BulkSetRequest, _: CurrentUser = Depends(get_current_user)):
+def set_panchanga_bulk(body: BulkSetRequest, _: CurrentUser = Depends(require_right_for_form(_FORM, RIGHT_EDIT))):
     """The same event name on many days at once (e.g. every Monday of a range); one transaction, all or nothing."""
     if not body.dates:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Choose at least one date")
@@ -59,7 +61,7 @@ def set_panchanga_bulk(body: BulkSetRequest, _: CurrentUser = Depends(get_curren
 
 
 @router.delete("/{day}")
-def delete_panchanga_day(day: date, _: CurrentUser = Depends(get_current_user)):
+def delete_panchanga_day(day: date, _: CurrentUser = Depends(require_right_for_form(_FORM, RIGHT_DELETE))):
     with with_transaction() as conn:
         panchanga_service.delete_day(conn, day=day)
     return {"message": "Deleted"}
@@ -67,13 +69,13 @@ def delete_panchanga_day(day: date, _: CurrentUser = Depends(get_current_user)):
 
 # -- Import from Excel (.xls, like every import in the app) and the Rathothsava date
 @router.get("/import/template")
-def import_template(_: CurrentUser = Depends(get_current_user)):
+def import_template(_: CurrentUser = Depends(require_right_for_form(_FORM, RIGHT_EDIT))):
     data = xls_util.build_xls("Panchanga", [panchanga_service.TEMPLATE_HEADER])
     return Response(content=data, media_type=xls_util.MIME, headers={"Content-Disposition": 'attachment; filename="Panchanga Template.xls"'})
 
 
 @router.post("/import/preview")
-async def import_preview(file: UploadFile = File(...), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+async def import_preview(file: UploadFile = File(...), conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right_for_form(_FORM, RIGHT_EDIT))):
     rows = xls_util.read_xls(await file.read())
     return {"rows": panchanga_service.import_preview(conn, rows)}
 
@@ -84,7 +86,7 @@ class ImportRow(BaseModel):
 
 
 @router.post("/import")
-def import_rows(rows: list[ImportRow], _: CurrentUser = Depends(get_current_user)):
+def import_rows(rows: list[ImportRow], _: CurrentUser = Depends(require_right_for_form(_FORM, RIGHT_EDIT))):
     with with_transaction() as conn:
         n = panchanga_service.import_save(conn, [r.model_dump() for r in rows])
     return {"message": "Data saved sucessfully.", "count": n}
@@ -101,7 +103,7 @@ class RathBody(BaseModel):
 
 
 @router.put("/rathothsava")
-def put_rathothsava(body: RathBody, _: CurrentUser = Depends(get_current_user)):
+def put_rathothsava(body: RathBody, _: CurrentUser = Depends(require_right_for_form(_FORM, RIGHT_EDIT))):
     with with_transaction() as conn:
         panchanga_service.save_rath(conn, day=body.day, enabled=body.enabled)
     return {"message": "Updated Successfully!"}

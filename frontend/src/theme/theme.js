@@ -38,7 +38,7 @@ export const theme = createTheme({
     // Redesign foundation: roomy hit targets (>=40px), clear labels, quiet table headers.
     TextInput: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
     PasswordInput: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
-    Select: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
+    Select: { defaultProps: { radius: 'md', allowDeselect: false }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
     NumberInput: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
     Textarea: { defaultProps: { radius: 'md' }, styles: { label: { fontWeight: 600, marginBottom: 4 } } },
     Button: { defaultProps: { radius: 'xl' }, styles: { root: { fontWeight: 600 } } },

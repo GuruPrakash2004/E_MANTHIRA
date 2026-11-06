@@ -67,6 +67,17 @@ def set_active_financial_year(body: SetActiveRequest, user: CurrentUser = Depend
     return {"message": "Active financial year updated"}
 
 
+@router.post("/financial-years/stock-carry-forward")
+def stock_carry_forward(user: CurrentUser = Depends(get_current_user)):
+    """Company Master > Financial Year(s) > Stock Carry Forward (legacy frmStkFinYrWriting): the latest year's opening stock."""
+    _require_admin(user)
+    from app.services import stock_carry_forward as scf
+
+    with with_transaction() as conn:
+        result = scf.carry_forward(conn, user_code=user.user_code)
+    return {"message": "Stock updated Successfully....", **result}
+
+
 @router.delete("/financial-years/{from_date}")
 def remove_financial_year(from_date: date, user: CurrentUser = Depends(get_current_user)):
     _require_admin(user)

@@ -11,31 +11,19 @@ from __future__ import annotations
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from app.core import capabilities
 from app.core.config import get_settings
 
 
 def ensure_schema(conn: Connection) -> None:
     if get_settings().is_mysql:
         return
-    exists = conn.execute(text("SELECT 1 FROM sys.tables WHERE name = 'WebPrintPref'")).scalar()
-    if exists:
-        return
-    conn.execute(
-        text(
-            """
-            CREATE TABLE WebPrintPref (
-                UserCode NVARCHAR(50) NOT NULL,
-                DocID INT NOT NULL,
-                OptionName NVARCHAR(100) NOT NULL,
-                ChangedOn DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-                CONSTRAINT PK_WebPrintPref PRIMARY KEY (UserCode, DocID)
-            )
-            """
-        )
-    )
+    return  # never create tables; get/set below degrade when WebPrintPref is absent
 
 
 def get_preferred_option(conn: Connection, user_code: str, doc_id: int) -> str | None:
+    if not capabilities.has_table("WebPrintPref"):
+        return None
     return conn.execute(
         text("SELECT OptionName FROM WebPrintPref WHERE UserCode = :u AND DocID = :d"),
         {"u": user_code, "d": doc_id},
@@ -43,6 +31,8 @@ def get_preferred_option(conn: Connection, user_code: str, doc_id: int) -> str |
 
 
 def set_preferred_option(conn: Connection, user_code: str, doc_id: int, option_name: str) -> None:
+    if not capabilities.has_table("WebPrintPref"):
+        return
     updated = conn.execute(
         text(
             "UPDATE WebPrintPref SET OptionName = :o, ChangedOn = SYSUTCDATETIME() "

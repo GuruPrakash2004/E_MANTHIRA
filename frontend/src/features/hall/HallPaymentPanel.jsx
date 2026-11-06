@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { formatINR } from '../../utils/format'
+import ReportPrintButtons from '../../components/ui/ReportPrint'
 import { downloadXls } from '../../utils/xls'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -228,6 +229,14 @@ export default function HallPaymentPanel({ hbId, onClose }) {
             </Table>
           </Table.ScrollContainer>
           <Group justify="flex-end">
+            <ReportPrintButtons size="xs" title={`Receipts - Hall Booking ${booking?.PrintHBNO || ''}`} columns={[
+              { key: 'PrintRCPTVCHNO', label: 'Receipt No' },
+              { key: 'RCPTVCHDate', label: 'Date', value: (r) => (r.RCPTVCHDate ? dayjs(r.RCPTVCHDate).format('DD-MMM-YYYY') : '') },
+              { key: 'RCPTTYPE', label: 'Type' },
+              { key: 'TOTDR', label: 'Amount', num: true, value: (r) => Number(r.TOTDR || 0).toFixed(2) },
+              { key: 'VCHTYP', label: 'Voucher type' },
+              { key: 'NARR', label: 'Narration' },
+            ]} rows={booking.receipts || []} />
             <Button size="xs" variant="default" leftSection={<FileDown size={14} />} disabled={(booking.receipts || []).length === 0} onClick={exportReceipts}>
               Export to Excel
             </Button>

@@ -1,4 +1,5 @@
 import { historyParams } from '../../lib/history'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { useEffect, useState } from 'react'
 import { Button, Group, NumberInput, Select, Stack, Text, Title } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
@@ -9,6 +10,7 @@ import * as donationApi from '../../api/endpoints/donation'
 import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
 import { handleAfterSave } from '../../lib/printing'
+import SplitPaymentPanel, { refRequiredModes, splitError, splitFromSaved, splitPayload } from '../../components/ui/SplitPaymentPanel'
 import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import DocDetailGrid, { blankLine, detailErrors } from '../../components/DocDetailGrid'
 import usePrefixes from '../../hooks/usePrefixes'
@@ -22,7 +24,9 @@ import useDocFields from '../../hooks/useDocFields'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
 import { formatINR, isoDate } from '../../utils/format'
+import dayjs from 'dayjs'
 import { useAuth } from '../../hooks/useAuth'
+import useBillAlertify from '../alertify/useBillAlertify'
 import { columnsFromLines, computeFormulas } from '../../utils/docCompute'
 
 const DOC_ID = 1261
@@ -30,6 +34,8 @@ const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
 // Computed by the server / shown in the summary, so not drawn as inputs.
 const COMPUTED_CODES = ['AMTINWORDS', 'ISSUEDBY', 'TOTAMT']
 // Entered fresh for each donor (the payment mode etc. carry over to the next receipt).
+// the single-payment fields: with a split receipt the main part supplies them, so they are not shown
+const SPLIT_PAY_CODES = ['PAYMNTMODE', 'LEDID', 'REFNO', 'CHEQUENO', 'CHEQUEDATE', 'BANKNAME']
 const PER_DONOR_CODES = ['DONOR', 'CONTACTNO', 'ADDRESS', 'PANNO', 'REFNO', 'CHEQUENO', 'CHEQUEDATE', 'BANKNAME', 'RMKS', 'HBID']
 
 export default function DonationReceiptPage() {
@@ -57,6 +63,10 @@ export default function DonationReceiptPage() {
   const dateCodes = new Set(fields.filter((f) => f.FldDataType === 'Date').map((f) => f.FldCode))
 
   const total = lines.reduce((sum, l) => sum + (Number(l.AMOUNT) || 0), 0)
+  // Split payment: the receipt paid in parts by different modes (WebSplitPayment). The header mirrors the main part.
+  const [splitOn, setSplitOn] = useState(false)
+  const [splitParts, setSplitParts] = useState([])
+  const refModes = refRequiredModes(fields, 'PAYMNTMODE')
   // the Designer's formulas (TOTAMT, AMTINWORDS, ISSUEDBY ...) for a new receipt; a saved one shows what was stored
   const computed = viewId ? undefined : computeFormulas(fields, values, columnsFromLines(lines), { userCode: user?.user_code || '' })
 
@@ -69,11 +79,17 @@ export default function DonationReceiptPage() {
   const headErrors = docFieldErrors(fields.filter((f) => f.FldSection !== 'Detail'), values, COMPUTED_CODES)
   const lineErrors = detailErrors(fields, lines, values)
   const firstError =
+    splitError(splitOn, splitParts, total, refModes) ||
     Object.values(headErrors)[0] ||
     Object.values(Object.values(lineErrors)[0] || {})[0] ||
     (prefix === null ? 'No document-number prefix configured' : null) ||
     (!(total > 0) ? 'Enter an amount greater than 0' : null)
   const canSave = !firstError
+  const alertify = useBillAlertify({
+    docId: DOC_ID, label: 'Donation', user: user?.user_code, fields, values, savedNo: viewId ? viewNo : '',
+    totals: [{ caption: 'Doc Date', value: dayjs(docDate).format('DD/MM/YYYY') }, { caption: 'Total Amount', value: formatINR(total) }, { caption: 'Net Amount', value: formatINR(total) }],
+    anchors: [isoDate(docDate)], defaultDir: 'after', valid: canSave, hint: firstError || 'Fill the bill details first',
+  })
 
   async function onBlurField(code) {
     if (code !== 'CONTACTNO') return
@@ -153,6 +169,8 @@ export default function DonationReceiptPage() {
     try {
       const l = await donationApi.getDonation(id)
       fillFromDonation(l, true)
+      setSplitParts(splitFromSaved(l.split_payments))
+      setSplitOn((l.split_payments || []).length > 1)
       setViewId(id)
       setViewNo(l.PrintDONRECNO || l.DONRECNO)
     } catch (err) {
@@ -162,6 +180,8 @@ export default function DonationReceiptPage() {
   function startNew() {
     setViewId(null)
     setViewNo('')
+    setSplitOn(false)
+    setSplitParts([])
     setLines([])
     setValues({})
     setAttempted(false)
@@ -201,8 +221,9 @@ export default function DonationReceiptPage() {
     setSaving(true)
     try {
       const cleanLines = lines.map((l) => Object.fromEntries(Object.entries(l).filter(([, v]) => v !== '' && v !== null && v !== undefined)))
-      const result = await donationApi.createDonation({ prefix, doc_date: isoDate(docDate), fields: payload(), lines: cleanLines })
+      const result = await donationApi.createDonation({ prefix, doc_date: isoDate(docDate), fields: payload(), lines: cleanLines, ...(splitOn ? { split_payments: splitPayload(splitParts) } : {}) })
       setLastSaved(result)
+      alertify.afterSave({ 'Doc No': result.donrec_no }) // the Alertify reminder asked for before saving; it never blocks the bill
       // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
       if (mode === 'print') directPrint(result.donrec_id)
       else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.donrec_id, openDialog: setPrintFor })
@@ -213,6 +234,8 @@ export default function DonationReceiptPage() {
         return keep
       })
       setLines([])
+      setSplitOn(false)
+      setSplitParts([])
       setAttempted(false)
       queryClient.invalidateQueries({ queryKey: ['donations'] })
       refetch()
@@ -248,7 +271,7 @@ export default function DonationReceiptPage() {
           {(prefixes || []).filter(Boolean).length > 1 && (
             <Select aria-label="Prefix" w={110} data={prefixes.filter(Boolean)} value={prefix || null} onChange={(v) => setPrefix(v || '')} allowDeselect={false} disabled={Boolean(viewId)} />
           )}
-          <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={Boolean(viewId) || !rules.edit_doc_date} w={150} />
+          <DocNoDate docId={DOC_ID} prefix={prefix ?? undefined} viewNo={viewId ? viewNo : ''} date={docDate} onDate={setDocDate} dateDisabled={Boolean(viewId) || !rules.edit_doc_date} />
         </Group>
       </Group>
 
@@ -268,6 +291,7 @@ export default function DonationReceiptPage() {
                 computed={computed}
                 readOnly={Boolean(viewId)}
                 onBlurField={onBlurField}
+                skip={splitOn ? SPLIT_PAY_CODES : undefined}
               />
               {!viewId && (
                 <Group gap="xs" align="flex-end" mt="md">
@@ -299,6 +323,19 @@ export default function DonationReceiptPage() {
                 errors={attempted ? headErrors : {}}
                 computed={computed}
                 readOnly={Boolean(viewId)}
+                skip={splitOn ? SPLIT_PAY_CODES : undefined}
+              />
+              <SplitPaymentPanel
+                docType="DONREC"
+                docId={DOC_ID}
+                enabled={splitOn}
+                setEnabled={setSplitOn}
+                parts={splitParts}
+                setParts={setSplitParts}
+                total={total}
+                readOnly={Boolean(viewId)}
+                refModes={refModes}
+                onMain={(m) => setValues((cur) => ({ ...cur, PAYMNTMODE: m.mode, LEDID: m.led_id, REFNO: m.ref_no || '', ...(String(m.mode).toUpperCase() === 'CHEQUE' ? { CHEQUENO: m.ref_no || '', CHEQUEDATE: m.chq_date || '', BANKNAME: m.bank_name || '' } : {}) }))}
               />
             </SectionCard>
           </Stack>
@@ -326,6 +363,7 @@ export default function DonationReceiptPage() {
               />
             )}
             <RecentCard
+              docId={DOC_ID}
               title="Recent donations"
               icon={Gift}
               loading={recentLoading}
@@ -345,7 +383,8 @@ export default function DonationReceiptPage() {
       />
 
       <CopyFromDialog opened={copyOpen} onClose={() => setCopyOpen(false)} docName="Donation Reciept Entry" search={findDonations} onLoad={copyFrom} />
-      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} search={findDonations} />
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.donrec_id, label: lastSaved.donrec_no } : null} onLoad={viewRecord} onNew={startNew} search={findDonations} alertify={alertify.nav} />
+      {alertify.modal}
       <DonorHistoryModal opened={donorOpen} onClose={() => setDonorOpen(false)} onPick={applyDonor} initialName={values.DONOR || ''} limit={Number(donorLimit) || 0} />
       <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Donation Receipt" />
     </Stack>

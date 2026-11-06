@@ -1,18 +1,28 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AppShell, Burger, Collapse, Group, NavLink, Text, Menu, Avatar, Badge, Stack, ActionIcon, Tooltip, UnstyledButton } from '@mantine/core'
-import { SlidersHorizontal, Calculator, ChevronDown, Database, FileText, LayoutDashboard, LogOut, Package, Receipt, Search, Star, Wallet, Wrench, X } from 'lucide-react'
+import { CalendarDays, Sparkles, Keyboard, Building2, SlidersHorizontal, Calculator, ChevronDown, Database, FileText, Hammer, LayoutDashboard, LayoutGrid, LogOut, Package, Receipt, Search, Star, Wallet, Wrench, X } from 'lucide-react'
 import { useDisclosure, useMediaQuery } from '@mantine/hooks'
 import useFavourites from '../hooks/useFavourites'
 import { Suspense } from 'react'
 import { Loader, Center } from '@mantine/core'
-import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom'
+import { Outlet, useNavigate, useLocation } from 'react-router-dom'
+import Link from './TabLink'
+import { registerTab } from '../lib/tabs'
 import { getMenu } from '../api/endpoints/meta'
+import { getReportCatalog } from '../api/endpoints/reports'
+import { CATALOG_FORM_TAB } from '../features/reports/catalogTabs'
 import { getDbSettings } from '../api/endpoints/dbSettings'
+import { getCompany } from '../api/endpoints/company'
 import { getFyShort, setSession } from '../api/api'
 import * as authApi from '../api/endpoints/auth'
 import { useQuery } from '@tanstack/react-query'
+import { getAskMeta } from '../api/endpoints/askData'
+import { buildSidebar, isSeparator } from './sidebarModel'
+import { routeForForm } from '../features/legacy/registry'
+import SoftventContact from './SoftventContact'
 import { notifications } from '@mantine/notifications'
 import { useAuth } from '../hooks/useAuth'
+import { RightsContext } from '../hooks/useRights'
 import useAutoFocusFirstField from '../hooks/useAutoFocusFirstField'
 import DevotionalBackdrop from './DevotionalBackdrop'
 import ShineLogo from './ShineLogo'
@@ -34,7 +44,9 @@ const ADMIN_DUPLICATES = new Set(['Security', 'Global Settings...', 'Database Co
 const BRAND_LOCKUP = '/brand/lockup-horizontal.png' // badge + "e-Mandira PRANALI" wordmark, side by side
 
 // One icon per sidebar group so the list can be scanned without reading every heading.
-const GROUP_ICON = { Transactions: Receipt, Vouchers: Wallet, Masters: Database, Reports: FileText, 'Ac-Reports': Calculator, Accounting: Calculator, Utilities: Wrench, Inventory: Package, Administration: SlidersHorizontal }
+const GROUP_ICON = { Transactions: Receipt, Vouchers: Wallet, Masters: Database, Reports: FileText, 'Ac-Reports': Calculator, Accounting: Calculator, Utilities: Wrench, Tools: Hammer, Inventory: Package, Administration: SlidersHorizontal }
+// A section the menu data adds later (any name) still gets an icon instead of a bare heading.
+const groupIcon = (label) => GROUP_ICON[label] || LayoutGrid
 
 // A handful of docs have a dedicated, purpose-built screen; everything else
 // that's a simple master (has a DocShForm short-form in UtlTransactions) is
@@ -57,6 +69,15 @@ const CAPTION_ROUTE = {
   'Panchanga': '/panchanga',
   'Hall Status': '/halls/status',
   'Purchase Voucher': '/inventory/purchase-voucher',
+  'Stock Adjustment Entry': '/inventory/stock-adjustment', // some temples' menu rows carry no form name, so match by caption
+  'Store Issue Note': '/inventory/store-issue',
+  'Purchase Bill': '/inventory/purchase-bill',
+  // Rows older temple editions list that have no web screen: an honest explanation page instead of a dead link
+  'Receipt / Payment / Expense Entry': '/not-in-web?c=Receipt%20%2F%20Payment%20%2F%20Expense%20Entry',
+  'Receipt / Payment /Expense Entry': '/not-in-web?c=Receipt%20%2F%20Payment%20%2F%20Expense%20Entry',
+  'Consolidated Reciept And Payment Report': '/not-in-web?c=Consolidated%20Reciept%20And%20Payment%20Report',
+  'Daily Wise Seva Report': '/not-in-web?c=Daily%20Wise%20Seva%20Report',
+  'Income And Expense Ledger Report': '/not-in-web?c=Income%20And%20Expense%20Ledger%20Report',
   // These two are tabs inside the Reports launcher (ReportsPage.jsx), not
   // dedicated screens — point the legacy MstMenu entries at the matching
   // tab instead of leaving them as dead (disabled) sidebar links.
@@ -72,6 +93,7 @@ const CAPTION_ROUTE = {
   'Stock Balance Report': '/inventory/stock-balance-report',
   'Stock Ledger Report': '/inventory/stock-ledger-report',
   'Audit Trail': '/audit-trail',
+  'Ask the Data': '/ask-data',
   // Already-built screens whose exact MstMenu caption was never added here —
   // confirmed against the live DB (MenuItemID 1, 809, 1287, 1728, 1405).
   'Import from Excel': '/settings/import-excel',
@@ -87,7 +109,11 @@ const CAPTION_ROUTE = {
   'Database Connectivity': '/settings/admin-master?tab=database',
   'Daily Sales Report': '/reports/daily-sales',
   'Product Sales Summary Report': '/reports/product-sales',
-  'Profit Margin': '/not-in-web?c=Profit%20Margin',
+  'Profit Margin': '/reports/profit-margin',
+  'Generate Multi Payment Voucher': '/reports/multi-payment',
+  'SQL Query Execution': '/admin-tools/sql',
+  'SQL Saved Query': '/admin-tools/saved-queries',
+  'Bulk Update': '/admin-tools/bulk-update',
   'Label Printing': '/utilities/label-printing',
   'Authorise Documents': '/utilities/authorise',
   'ShortClosedFields': '/not-in-web?c=ShortClosedFields',
@@ -100,13 +126,29 @@ const CAPTION_ROUTE = {
   'Barcode Ammendment': '/not-in-web?c=Barcode%20Ammendment',
   'Voice Command Alternatives': '/not-in-web?c=Voice%20Command%20Alternatives',
   'Import Legacy Data': '/not-in-web?c=Import%20Legacy%20Data',
+  'AuditLog Sync': '/not-in-web?c=AuditLog%20Sync',
+  'Customer OutStanding': '/reports/party-outstanding?party=C',
+  'Supplier OutStanding': '/reports/party-outstanding?party=S',
+  'Party wise OutStanding': '/reports/party-wise-outstanding',
+  'Customer Ageing': '/reports/ageing?kind=receivable',
+  'Supplier Ageing': '/reports/ageing?kind=payable',
+  'Bill wise Ageing': '/reports/ageing?kind=receivable&view=bills',
+  'Customer Reminder': '/reports/reminder?kind=receivable',
+  'Supplier Reminder': '/reports/reminder?kind=payable',
+  'Customer Ledger': '/reports?tab=general-ledger&kind=customer',
+  'Supplier Ledger': '/reports?tab=general-ledger&kind=supplier',
+  'Voucher Listing': '/reports/voucher-listing',
+  'Day Book': '/reports/day-book',
+  'Holiday Master': '/masters/holidays', // the legacy row carries no form name, so it is matched by caption
+  'Company Settings...': '/settings/admin-master?tab=global-settings',
 }
 
 function routeFor(item) {
   if (item._route) return item._route
   if (CAPTION_ROUTE[item.caption]) return CAPTION_ROUTE[item.caption]
   if (item.type === 'Masters' && item.doc_id) return `/masters/${item.doc_id}`
-  return null
+  return routeForForm(item.form_key) // by legacy form name: survives renamed captions and repeated rows
+
 }
 
 // Destinations AppShellLayout itself adds outside the metadata-driven menu
@@ -137,6 +179,7 @@ const EXTRA_SEARCH_LINKS = [
   { caption: 'Hall Booking with Voucher Detail Report', to: '/reports?tab=hall-voucher', group: 'Reports', keywords: 'hall voucher' },
   { caption: 'Subsidiary Reports', to: '/reports?tab=catalog', group: 'Reports', keywords: 'catalog subsidiary' },
   { caption: 'PDF Generator', to: '/reports/pdf-generator', group: 'Reports', keywords: 'pdf bulk receipts print' },
+  { caption: 'Ask the Data', to: '/ask-data', group: 'Reports', adminOnly: true, keywords: 'ai question sql chart query natural language' },
   { caption: 'Audit Trail', to: '/audit-trail', group: 'Administration', adminOnly: true, keywords: 'log history who changed' },
   { caption: 'Import from Excel', to: '/settings/import-excel', group: 'Administration', adminOnly: true, keywords: 'upload xls bulk import' },
   { alias: true, caption: 'Admin Master', to: '/settings/admin-master', group: 'Administration', adminOnly: true, keywords: 'settings administration' },
@@ -200,6 +243,10 @@ export default function AppShellLayout() {
   // Which database this session is talking to (shown in the header), and the financial year it works in.
   const { data: db } = useQuery({ queryKey: ['db-settings-name'], queryFn: getDbSettings, staleTime: 5 * 60_000 })
   const dbName = db?.db_name || ''
+  // The company's own name (Company Master, MstComp.CompName) is what the header shows.
+  const { data: company } = useQuery({ queryKey: ['company'], queryFn: getCompany, staleTime: 10 * 60_000, retry: false })
+  const companyName = (company?.CompName || '').trim()
+  const [helpOpen, setHelpOpen] = useState(false)
   const fyBadge = getFyShort()
   const currentFyId = Number(localStorage.getItem('vtemple_fy_id')) || 0
   const { data: fyList = [] } = useQuery({ queryKey: ['fy-list'], queryFn: authApi.financialYears, staleTime: 5 * 60_000 })
@@ -225,6 +272,7 @@ export default function AppShellLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const mainRef = useRef(null)
+  useEffect(() => registerTab(location.pathname + location.search), [location.pathname, location.search]) // each tab names itself after its screen (lib/tabs.js)
 
   // Every screen starts with the cursor already in its first field — no
   // page has to wire this itself, see useAutoFocusFirstField.js.
@@ -252,9 +300,18 @@ export default function AppShellLayout() {
 
   // A query (not a one-off fetch) so "Refresh from Doc Designer" re-reads the menu too
   const { data: menuRows } = useQuery({ queryKey: ['menu'], queryFn: getMenu, staleTime: 5 * 60_000 })
+  // The reports listed in the Subsidiary Reports catalog (UtlReports, already filtered by the user's report rights) are
+  // shown under it in the sidebar, as the legacy launcher lists them: Complete Day, Detailed Collection, Seva Issue, Kanike...
+  const { data: reportCatalog } = useQuery({ queryKey: ['report-catalog'], queryFn: getReportCatalog, staleTime: 5 * 60_000, retry: false })
   useEffect(() => {
-    setMenu((menuRows || []).filter((m) => !ADMIN_DUPLICATES.has(m.caption)))
-  }, [menuRows])
+    const rows = (menuRows || []).filter((m) => !ADMIN_DUPLICATES.has(m.caption))
+    const at = rows.findIndex((m) => m.caption === 'Subsidiary Reports')
+    if (at < 0 || !reportCatalog?.length) return setMenu(rows)
+    const kids = reportCatalog
+      .filter((r) => CATALOG_FORM_TAB[r.form_name])
+      .map((r) => ({ ...rows[at], menu_item_id: `rpt-${r.rpt_id}`, caption: r.name, form_key: null, doc_id: null, _route: `/reports?tab=${CATALOG_FORM_TAB[r.form_name]}` }))
+    setMenu([...rows.slice(0, at + 1), ...kids, ...rows.slice(at + 1)])
+  }, [menuRows, reportCatalog])
 
   // "/" jumps to the header search, unless the user is actually typing somewhere (a real
   // input/textarea/contenteditable): never hijacks normal form entry.
@@ -280,23 +337,9 @@ export default function AppShellLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // The sidebar is built purely from the menu the backend serves (MstMenu): section, sub-group heading and order all
-  // come from the data. A `_heading` entry renders as a sub-group label.
-  const grouped = []
-  ;[...menu]
-    .sort((x, y) => (x.section_order ?? 99) - (y.section_order ?? 99))
-    .forEach((m) => {
-      const label = m.section || m.type
-      let g = grouped.find((x) => x.type === label)
-      if (!g) {
-        g = { type: label, items: [], sub: null }
-        grouped.push(g)
-      }
-      const sub = m.subgroup || ''
-      if (sub && sub !== g.sub) g.items.push({ menu_item_id: `h-${label}-${sub}`, caption: sub, _heading: true })
-      g.sub = sub
-      g.items.push(m)
-    })
+  // The sidebar draws a prepared list (sidebarModel.js): separators and blank captions are dropped first, so the
+  // section, sub-group heading and order all come from the real entries and no gaps are left.
+  const grouped = useMemo(() => buildSidebar(menu), [menu])
 
   // Open the group that holds the active route (landing on a screen via bookmark/search/favourite).
   useEffect(() => {
@@ -315,6 +358,7 @@ export default function AppShellLayout() {
     extraKeywords[l.to] = `${extraKeywords[l.to] || ''} ${l.caption} ${l.keywords || ''}`
   })
   const menuItems = menu
+    .filter((item) => !isSeparator(item.caption))
     .map((item) => {
       const to = routeFor(item)
       return { caption: item.caption, to, group: item.type, keywords: extraKeywords[to] }
@@ -327,6 +371,11 @@ export default function AppShellLayout() {
     // unless the extra is an `alias` (another name for the same place, e.g. "Users" for Admin Master)
     ...EXTRA_SEARCH_LINKS.filter((l) => (!l.adminOnly || isAdmin) && (l.alias || !haveRoute.has(l.to))),
   ]
+  const askItem = searchItems.find((it) => it.to === '/ask-data')
+  const { data: askMeta } = useQuery({ queryKey: ['ask-meta'], queryFn: getAskMeta, enabled: !!askItem, staleTime: 30 * 60 * 1000 })
+  let askLang = 'en'
+  try { askLang = localStorage.getItem('ask-lang') || 'en' } catch { /* storage unavailable */ }
+  const askTip = askMeta?.captions?.[askLang]?.nav_tooltip || askMeta?.captions?.en?.nav_tooltip || askItem?.caption
 
   const { favs, isPinned, toggle: togglePin } = useFavourites(user?.user_code)
   // Drop favourites that are no longer reachable (menu changed, rights changed).
@@ -346,6 +395,9 @@ export default function AppShellLayout() {
     logout()
     navigate('/login')
   }
+
+  // the menu row of the screen on show: its rights drive which buttons the screen offers
+  const activeScreen = menu.find((item) => !isSeparator(item.caption) && routeFor(item) && isCurrentPath(routeFor(item))) || null
 
   // A route is current when it matches the path and no other menu route matches more specifically
   // (so /halls/entry lights up only Hall Booking Entry, not Hall Booking too).
@@ -398,30 +450,24 @@ export default function AppShellLayout() {
             </Link>
           </Group>
 
-          {/* Inline search from tablet up (type right in the header, results drop down under it). */}
-          <Group visibleFrom="sm" style={{ flex: 1, maxWidth: 460, marginInline: 'auto' }} wrap="nowrap">
-            <GlobalSearch items={searchItems} inputRef={searchRef} />
-          </Group>
-
-          <Group gap="xs" wrap="nowrap">
-            <ActionIcon hiddenFrom="sm" variant="subtle" color="kumkum" size={44} aria-label="Search screens" onClick={() => setMobileSearch(true)}>
-              <Search size={20} />
-            </ActionIcon>
-            <ShortcutHelp />
-            {user?.user_code?.toUpperCase() === 'ADMIN' && <DesignerRefreshButton />}
-            <ThemeToggle />
-            {dbName && (
-              <Tooltip label={`Connected database: ${dbName}${db?.db_server ? ` on ${db.db_server}` : ''}`} withArrow>
-                <Badge color="kumkum" variant="light" size="lg" leftSection={<Database size={14} />} visibleFrom="md" style={{ textTransform: 'none' }}>
-                  {dbName}
-                </Badge>
-              </Tooltip>
+          {/* Company name (from the Company Master) on one line, the financial year beside it. */}
+          <Group gap="sm" wrap="nowrap" visibleFrom="md" style={{ flex: '0 1 auto', minWidth: 0, background: 'var(--vt-gold-chip)', border: '1px solid var(--vt-line)', borderRadius: 999, padding: '5px 8px 5px 22px', boxShadow: 'inset 0 0 0 1px rgba(199,154,61,0.35)' }}>
+            {companyName && (
+              <Text
+                title={dbName ? `${companyName} (database ${dbName}${db?.db_server ? ` on ${db.db_server}` : ''})` : companyName}
+                fw={700}
+                truncate="end"
+                style={{ fontFamily: "'Cinzel Decorative', Marcellus, Georgia, serif", fontSize: 'clamp(13px, 1.2vw, 19px)', letterSpacing: 1, wordSpacing: '0.35em', lineHeight: 1.3, whiteSpace: 'nowrap', color: 'var(--vt-badge-ink)', textShadow: '0 1px 0 rgba(199,154,61,0.35)', minWidth: 0 }}
+              >
+                {companyName}
+              </Text>
             )}
+            {companyName && fyBadge && <div aria-hidden style={{ width: 1, height: 22, background: 'var(--vt-line)', flexShrink: 0 }} />}
             {fyBadge && (
-              <Menu shadow="md" width={290} position="bottom-end" withinPortal>
+              <Menu shadow="md" width={290} position="bottom" withinPortal>
                 <Menu.Target>
                   <Tooltip label="Financial year - click to change" withArrow>
-                    <Badge component="button" type="button" color="gold" variant="light" size="lg" c="var(--vt-badge-ink)" visibleFrom="lg" rightSection={<ChevronDown size={14} />} style={{ cursor: 'pointer' }} aria-label={`${fyBadge}. Change financial year`}>
+                    <Badge component="button" type="button" variant="filled" size="lg" radius="xl" className="vt-lift" leftSection={<CalendarDays size={15} />} rightSection={<ChevronDown size={15} />} style={{ cursor: 'pointer', fontSize: 14, fontWeight: 700, letterSpacing: 0.3, height: 34, paddingInline: 14, flexShrink: 0, color: '#F4E1A6', background: 'linear-gradient(135deg, var(--vt-g1) 0%, var(--vt-g2d) 100%)', border: '1.5px solid #C79A3D', boxShadow: '0 2px 6px rgba(90,20,20,0.35), inset 0 0 0 1px rgba(244,225,166,0.25)' }} aria-label={`${fyBadge}. Change financial year`}>
                       {fyBadge}
                     </Badge>
                   </Tooltip>
@@ -442,16 +488,57 @@ export default function AppShellLayout() {
                 </Menu.Dropdown>
               </Menu>
             )}
-            <Tooltip label={user?.user_name || user?.user_code} withArrow>
-              <Avatar visibleFrom="xs" radius="xl" color="kumkum" variant="filled" size={40} aria-label={`Signed in as ${user?.user_name || user?.user_code}`}>
-                {(user?.user_code || '?').slice(0, 2).toUpperCase()}
-              </Avatar>
-            </Tooltip>
-            <Tooltip label="Sign out" withArrow>
-              <ActionIcon variant="light" color="kumkum" size={40} aria-label="Sign out" onClick={onSignOut}>
-                <LogOut size={18} />
-              </ActionIcon>
-            </Tooltip>
+          </Group>
+
+          {/* Inline search from tablet up (type right in the header, results drop down under it). */}
+          <Group visibleFrom="sm" justify="center" style={{ flex: 1, minWidth: 180 }} wrap="nowrap">
+            <div style={{ width: '100%', maxWidth: 520 }}>
+              <GlobalSearch items={searchItems} inputRef={searchRef} />
+            </div>
+          </Group>
+
+          <Group gap="xs" wrap="nowrap">
+            <ActionIcon hiddenFrom="sm" variant="subtle" color="kumkum" size={44} aria-label="Search screens" onClick={() => setMobileSearch(true)}>
+              <Search size={20} />
+            </ActionIcon>
+            {/* Everything else lives under the profile icon, to save header space. */}
+            <Menu shadow="lg" width={300} position="bottom-end" radius="md" withinPortal styles={{ dropdown: { padding: 0, overflow: 'hidden', border: '1px solid var(--vt-line)', background: 'var(--vt-surface)' }, item: { padding: '9px 16px', borderRadius: 0 }, label: { padding: '10px 16px 4px', letterSpacing: 0.8, textTransform: 'uppercase', fontSize: 11, color: 'var(--vt-accent)' } }}>
+              <Menu.Target>
+                <Tooltip label={user?.user_name || user?.user_code} withArrow>
+                  <Avatar component="button" type="button" radius="xl" color="kumkum" variant="filled" size={40} style={{ cursor: 'pointer', border: 0 }} aria-label={`Signed in as ${user?.user_name || user?.user_code}. Open menu`}>
+                    {(user?.user_code || '?').slice(0, 2).toUpperCase()}
+                  </Avatar>
+                </Tooltip>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Group gap="sm" wrap="nowrap" p="md" style={{ background: 'linear-gradient(135deg, var(--vt-g1) 0%, var(--vt-g2d) 100%)' }}>
+                  <Avatar radius="xl" size={46} color="gold" variant="filled" style={{ border: '2px solid var(--mantine-color-gold-4, #C79A3D)', flexShrink: 0 }}>
+                    {(user?.user_code || '?').slice(0, 2).toUpperCase()}
+                  </Avatar>
+                  <div style={{ minWidth: 0 }}>
+                    <Text fw={700} size="sm" truncate style={{ color: '#F4E1A6' }}>{user?.user_name || user?.user_code}</Text>
+                    <Group gap={6} wrap="nowrap" mt={2}>
+                      <Badge size="xs" variant="filled" color="gold" c="kumkum.9">{isAdmin ? 'Administrator' : 'User'}</Badge>
+                      <Text size="xs" truncate style={{ color: 'rgba(244,225,166,0.8)' }}>{user?.user_code}</Text>
+                    </Group>
+                  </div>
+                </Group>
+                {dbName && (
+                  <Group gap={8} px="md" py={8} wrap="nowrap" style={{ background: 'var(--vt-sandal)', borderBottom: '1px solid var(--vt-line)' }}>
+                    <Database size={14} color="var(--vt-accent)" />
+                    <Text size="xs" truncate title={db?.db_server ? `${dbName} on ${db.db_server}` : dbName} style={{ color: 'var(--vt-accent)' }}>Database: <b>{dbName}</b></Text>
+                  </Group>
+                )}
+                <Menu.Label>Tools</Menu.Label>
+                {askItem && <Menu.Item component={Link} to={askItem.to} leftSection={<Sparkles size={16} />}>{askTip}</Menu.Item>}
+                <Menu.Item leftSection={<Keyboard size={16} />} rightSection={<Text size="xs" c="dimmed">F1</Text>} onClick={() => setHelpOpen(true)}>Keyboard shortcuts</Menu.Item>
+                {isAdmin && <DesignerRefreshButton asItem />}
+                <ThemeToggle asItem />
+                <Menu.Divider />
+                <Menu.Item color="red" leftSection={<LogOut size={16} />} onClick={onSignOut}>Sign out</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+            <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} hideButton />
           </Group>
         </Group>
       </AppShell.Header>
@@ -497,7 +584,7 @@ export default function AppShellLayout() {
               ))}
             </RailGroup>
             {grouped.map((g) => (
-              <RailGroup key={g.type} label={g.type} icon={GROUP_ICON[g.type]} active={g.items.some((item) => isCurrentPath(routeFor(item)))}>
+              <RailGroup key={g.type} label={g.type} icon={groupIcon(g.type)} active={g.items.some((item) => isCurrentPath(routeFor(item)))}>
                 {g.items.map((item) => {
                   if (item._heading) return <Menu.Label key={item.menu_item_id}>{item.caption}</Menu.Label>
                   const to = routeFor(item)
@@ -578,12 +665,13 @@ export default function AppShellLayout() {
         {!rail && (
           <Stack gap={8} align="center" py="sm" px={4} mx="xs" mb="xs" style={{ borderRadius: 16, background: 'rgba(244,225,166,0.08)', border: '1px solid rgba(244,225,166,0.18)' }}>
             {/* One line (nowrap, tight tracking so it fits the 224px sidebar), logo centred beneath. */}
-            <Text fw={600} c="#D9B9A3" tt="uppercase" ta="center" style={{ fontSize: 11, letterSpacing: 0.7, whiteSpace: 'nowrap' }}>
+            <Text fw={600} c="#D9B9A3" tt="uppercase" ta="center" style={{ fontSize: 9, letterSpacing: 0.6, whiteSpace: 'nowrap' }}>
               Designed &amp; developed by
             </Text>
             <a className="vt-softvent-link" href="https://softvent.com" target="_blank" rel="noopener noreferrer" aria-label="Softvent website, opens in a new tab" style={{ display: 'block' }}>
               <img src="/softvent-logo-dark.png" alt="Softvent" style={{ height: 30, width: 'auto', objectFit: 'contain', display: 'block' }} />
             </a>
+            <SoftventContact />
           </Stack>
         )}
       </AppShell.Navbar>
@@ -604,7 +692,9 @@ export default function AppShellLayout() {
           transition={{ duration: 0.45, ease: [0.22, 0.8, 0.3, 1], delay: welcome ? 0 : 0.15 }}
         >
           <Suspense fallback={<PageFallback />}>
-            <Outlet />
+            <RightsContext.Provider value={activeScreen}>
+              <Outlet />
+            </RightsContext.Provider>
           </Suspense>
         </motion.div>
       </AppShell.Main>
@@ -651,7 +741,7 @@ export default function AppShellLayout() {
 // Collapsible group heading for the sidebar (a real button with aria-expanded, >= 36px tall).
 // `active` = the current screen lives inside this group, so it stays visibly marked even when collapsed.
 function GroupHeader({ label, open, active, onToggle }) {
-  const Icon = GROUP_ICON[label]
+  const Icon = groupIcon(label)
   return (
     <UnstyledButton className="vt-side-head" data-active={active || undefined} onClick={onToggle} w="100%" px="xs" aria-expanded={open}>
       <Group justify="space-between" wrap="nowrap" gap={4} h={40}>

@@ -75,7 +75,7 @@ def _label(conn: Connection, doc_id: int, col: dict, value) -> object:
     if value is None or value == "":
         return ""
     if col["kind"] == "ledger":
-        return conn.execute(text("SELECT LEDNAME FROM MstLed WHERE LEDID = :i"), {"i": value}).scalar() or ""
+        return conn.execute(text("SELECT AcLedName FROM MstAcLed WHERE AcLedID = :i"), {"i": value}).scalar() or ""
     if col["kind"] == "combo":
         return meta_lookups.display_of(conn, doc_id, col["code"], value)
     return value
@@ -112,7 +112,7 @@ def _date(s: str, caption: str, line: int) -> str:
 def _pick(conn: Connection, doc_id: int, col: dict, s: str, line: int) -> str:
     """Name -> id for a lookup column (exact name, ignoring case)."""
     if col["kind"] == "ledger":
-        hit = conn.execute(text("SELECT TOP 1 LEDID FROM MstLed WHERE LTRIM(RTRIM(LEDNAME)) = :n"), {"n": s}).scalar()
+        hit = conn.execute(text("SELECT TOP 1 AcLedID FROM MstAcLed WHERE LTRIM(RTRIM(AcLedName)) = :n"), {"n": s}).scalar()
     else:
         opts = meta_lookups.resolve_lookup(conn, doc_id=doc_id, field_code=col["code"], search=s, top=200)
         hit = next((o["value"] for o in opts if str(o["label"]).strip().lower() == s.lower()), None)

@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 // in the browser cache, and pages are lazy-loaded from App.jsx.
 export default defineConfig({
   plugins: [react()],
-  server: { port: 5173 },
+  server: { port: 5173, proxy: { '/api': 'http://localhost:8010' } },
   build: {
     target: 'es2020',
     rollupOptions: {

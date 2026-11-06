@@ -220,12 +220,36 @@ def resolve_prefix(
     unconditional = [r["Prefix"] for r in rows if not (r["CndFldCode"] or "").strip()]
     if unconditional:
         return unconditional
+    if not field_values:  # a plain "which prefixes does this document have" listing: nothing to test the rules against
+        return list(dict.fromkeys(r["Prefix"] for r in rows))
     matched = []
     for r in rows:
         fld = (r["CndFldCode"] or "").strip()
         val = (r["CndFldValue"] or "").strip()
         op = (r["CndOperator"] or "=").strip()
         actual = str(field_values.get(fld, "")).strip()
-        if op == "=" and actual.upper() == val.upper():
+        if _prefix_condition(op, actual, val):
             matched.append(r["Prefix"])
     return matched
+
+
+def _prefix_condition(op: str, actual: str, expected: str) -> bool:
+    """One `CndOperator` of UtlDocNoPrefix (e.g. vTmplSMattDelhi: prefix SV when SANNIDHIID <> 'T P - Puja', TP when = it)."""
+    a, b = actual.strip(), expected.strip()
+    try:
+        x, y = float(a), float(b)  # both numeric: compare as numbers
+    except ValueError:
+        x, y = a.upper(), b.upper()
+    if op in ("=", "=="):
+        return x == y
+    if op in ("<>", "!="):
+        return x != y
+    if op == ">":
+        return x > y
+    if op == "<":
+        return x < y
+    if op == ">=":
+        return x >= y
+    if op == "<=":
+        return x <= y
+    return False

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { PasswordInput, Select, TextInput } from '@mantine/core'
+import { PasswordInput, TextInput } from '@mantine/core'
 import { AlertCircle, CircleCheck, Database, Loader2, PlugZap } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -41,17 +41,25 @@ export default function DatabaseSettingsPanel({ onClose } = {}) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null) // {ok, detail} | null
-  const [databases, setDatabases] = useState(null) // null = server not connected yet
 
-  // The form always starts blank: saved/.env values are never pre-filled, so a
-  // new connection is entered and saved fresh. Only a read-only note shows
-  // what the backend is connected to right now.
+  // The form opens with the connection the backend is using right now (server, port, database, user), so only the
+  // password - which the server never sends back - has to be typed to reconnect or to change one detail.
   useEffect(() => {
     dbSettingsApi
       .getDbSettings()
       .then((d) => {
         setCurrent(d)
         setPasswordSet(Boolean(d.password_set))
+        setForm((f) => ({
+          ...f,
+          db_engine: d.db_engine || f.db_engine,
+          db_driver_odbc: d.db_driver_odbc ?? f.db_driver_odbc,
+          db_server: d.db_server || '',
+          db_port: d.db_port || '',
+          db_name: d.db_name || '',
+          db_user: d.db_user || '',
+          db_trust_cert: d.db_trust_cert || f.db_trust_cert,
+        }))
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -67,30 +75,8 @@ export default function DatabaseSettingsPanel({ onClose } = {}) {
     return { ...form, db_port: form.db_port === '' ? null : Number(form.db_port) }
   }
 
-  // Step 1: connect to the server only, then offer its databases.
-  async function onConnectServer() {
-    setBusy(true)
-    setResult(null)
-    try {
-      const r = await dbSettingsApi.listDatabases({ ...body(), db_name: 'master' })
-      setResult({ ok: r.ok, detail: r.detail })
-      if (r.ok) {
-        setDatabases(r.databases)
-        if (!r.databases.includes(form.db_name)) set('db_name', r.databases[0] || '')
-      } else {
-        setDatabases(null)
-      }
-    } catch (err) {
-      setDatabases(null)
-      setResult({ ok: false, detail: err?.response?.data?.detail || 'Could not reach the backend' })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // Changing any server credential invalidates the database list.
+  // One form, one database: the name is typed in (no server-wide database list is loaded).
   function setServerField(field, value) {
-    setDatabases(null)
     setResult(null)
     set(field, value)
   }
@@ -138,10 +124,7 @@ export default function DatabaseSettingsPanel({ onClose } = {}) {
 
   function onSubmit(e) {
     e.preventDefault()
-    if (busy) return
-    if (!databases) {
-      if (form.db_server && form.db_user) onConnectServer()
-    } else if (form.db_name) onSave()
+    if (!busy && form.db_server && form.db_name && form.db_user) onSave()
   }
 
   return (
@@ -149,7 +132,6 @@ export default function DatabaseSettingsPanel({ onClose } = {}) {
       <div className="vt-dbcard-head">
         <Database size={16} />
         <span className="vt-dbcard-title">Database Connection</span>
-        <span className="vt-dbcard-step">Step {databases ? 2 : 1} of 2</span>
       </div>
       {current?.db_server && (
         <p className="vt-dbcard-note">
@@ -158,38 +140,30 @@ export default function DatabaseSettingsPanel({ onClose } = {}) {
         </p>
       )}
 
-      {!databases ? (
-        <div className="vt-dbcard-fields">
-          <div className="vt-dbcard-row">
-            <TextInput data-autofocus autoFocus label="Server Name" placeholder="host or host\instance" value={form.db_server} onChange={(e) => setServerField('db_server', e.currentTarget.value)} />
-            <TextInput
-              label="Port"
-              type="number"
-              placeholder={hasInstance ? 'not needed (instance name)' : 'optional'}
-              disabled={hasInstance}
-              value={hasInstance ? '' : form.db_port}
-              onChange={(e) => setServerField('db_port', Number(e.currentTarget.value) || '')}
-            />
-          </div>
-          <div className="vt-dbcard-row">
-            <TextInput label="SQL User Name" value={form.db_user} onChange={(e) => setServerField('db_user', e.currentTarget.value)} />
-            <PasswordInput
-              label="SQL Password"
-              placeholder={passwordSet ? 'Re-enter to connect' : ''}
-              value={form.db_password}
-              onChange={(e) => setServerField('db_password', e.currentTarget.value)}
-            />
-          </div>
+      <div className="vt-dbcard-fields">
+        <div className="vt-dbcard-row">
+          <TextInput data-autofocus autoFocus={!current?.db_server} label="Server Name" placeholder="host or host\instance" value={form.db_server} onChange={(e) => setServerField('db_server', e.currentTarget.value)} />
+          <TextInput
+            label="Port"
+            type="number"
+            placeholder={hasInstance ? 'not needed (instance name)' : 'optional'}
+            disabled={hasInstance}
+            value={hasInstance ? '' : form.db_port}
+            onChange={(e) => setServerField('db_port', Number(e.currentTarget.value) || '')}
+          />
         </div>
-      ) : (
-        <div className="vt-dbcard-fields">
-          <p className="vt-dbcard-note" style={{ margin: 0 }}>
-            Connected to <b>{form.db_server}</b>
-            {hasInstance || !form.db_port ? '' : `:${form.db_port}`}
-          </p>
-          <Select data-autofocus label="Database Name" data={databases} value={form.db_name || null} onChange={(v) => set('db_name', v || '')} searchable nothingFoundMessage="No databases" />
+        <TextInput label="Database Name" placeholder="e.g. vTmplSLV" value={form.db_name} onChange={(e) => setServerField('db_name', e.currentTarget.value.trim())} />
+        <div className="vt-dbcard-row">
+          <TextInput label="SQL User Name" value={form.db_user} onChange={(e) => setServerField('db_user', e.currentTarget.value)} />
+          <PasswordInput
+            label="SQL Password"
+            autoFocus={Boolean(current?.db_server)}
+            placeholder={passwordSet ? 'Re-enter to connect' : ''}
+            value={form.db_password}
+            onChange={(e) => setServerField('db_password', e.currentTarget.value)}
+          />
         </div>
-      )}
+      </div>
 
       {result && (
         <div className={`vt-dbcard-msg ${result.ok ? 'ok' : 'err'}`} role={result.ok ? 'status' : 'alert'}>
@@ -199,25 +173,13 @@ export default function DatabaseSettingsPanel({ onClose } = {}) {
       )}
 
       <div className="vt-dbcard-actions">
-        {!databases ? (
-          <>
-            <button type="submit" className="vt-dbcard-primary" disabled={busy || !form.db_server || !form.db_user}>
-              {busy ? <Loader2 size={16} className="vt-spin" /> : <PlugZap size={16} />}
-              Connect &amp; Next
-            </button>
-            {onClose && (
-              <button type="button" className="vt-dbcard-secondary" disabled={busy} onClick={onClose}>Cancel</button>
-            )}
-          </>
-        ) : (
-          <>
-            <button type="submit" className="vt-dbcard-primary" disabled={busy || !form.db_name}>
-              {busy ? <Loader2 size={16} className="vt-spin" /> : <CircleCheck size={16} />}
-              Save &amp; Reconnect
-            </button>
-            <button type="button" className="vt-dbcard-secondary" disabled={busy || !form.db_name} onClick={onTest}>Test</button>
-            <button type="button" className="vt-dbcard-secondary" disabled={busy} onClick={() => { setDatabases(null); setResult(null) }}>Back</button>
-          </>
+        <button type="submit" className="vt-dbcard-primary" disabled={busy || !form.db_server || !form.db_name || !form.db_user}>
+          {busy ? <Loader2 size={16} className="vt-spin" /> : <PlugZap size={16} />}
+          Save &amp; Reconnect
+        </button>
+        <button type="button" className="vt-dbcard-secondary" disabled={busy || !form.db_server || !form.db_name || !form.db_user} onClick={onTest}>Test</button>
+        {onClose && (
+          <button type="button" className="vt-dbcard-secondary" disabled={busy} onClick={onClose}>Cancel</button>
         )}
       </div>
 

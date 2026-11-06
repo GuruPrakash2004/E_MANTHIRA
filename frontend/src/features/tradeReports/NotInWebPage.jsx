@@ -77,6 +77,31 @@ const ENTRIES = {
     why: 'Maps spoken phrases to desktop menu commands for the Windows app. It controls the desktop menus, so it does not apply to the browser.',
     evidence: (a) => [`Voice command phrases stored: ${a.voice_commands}`],
   },
+  'AuditLog Sync': {
+    form: 'frmUtlAuditLogSync',
+    why: 'Copies the structure of the tables into a separate audit-log database and writes trigger SQL into the document set-up. The web app does not use that second database: every change it makes is recorded in its own audit log, which you can read under Audit Trail.',
+    evidence: () => [],
+  },
+  'Receipt / Payment / Expense Entry': {
+    form: 'document RPE (TrnHdrRPE), a generic Designer document',
+    why: 'An older edition of the software kept receipts, payments and expenses in one combined document (TrnHdrRPE). The web app has them as the separate Receipt Voucher, Payment Voucher and Expense Entry screens; the combined form itself is not rebuilt.',
+    evidence: () => ['Combined document tables: TrnHdrRPE / TrnDtlRPE (present only in older editions)'],
+  },
+  'Consolidated Reciept And Payment Report': {
+    form: 'Reports menu row (the menu stores no form name)',
+    why: 'A report in the menu of this temple that combines receipts and payments. It is not rebuilt in the web app; Day Book and Voucher Listing show the same vouchers.',
+    evidence: () => [],
+  },
+  'Daily Wise Seva Report': {
+    form: 'Reports menu row (the menu stores no form name)',
+    why: 'A day-by-day seva listing report in the menu of this temple. It is not rebuilt in the web app; Detailed Collection and the Seva list cover the same data.',
+    evidence: () => [],
+  },
+  'Income And Expense Ledger Report': {
+    form: 'Reports menu row (the menu stores no form name)',
+    why: 'An income and expense ledger report in the menu of this temple. It is not rebuilt in the web app; the General Ledger report covers the same ledgers.',
+    evidence: () => [],
+  },
   'Import Legacy Data': {
     form: 'frmUtlImportLegacyData',
     why: 'A one-time migration tool that reads data from an older version of the software into this database. Run it from the Windows app during a migration; it is not available from the browser.',

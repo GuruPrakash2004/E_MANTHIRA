@@ -7,15 +7,19 @@ was not included in the sample backup (doc 01 §11), so this new app writes
 to a small `WebAuditLog` table in the main database instead — one row per
 create/edit/delete/cancel, with a JSON snapshot of what changed.
 
-This is the ONE deliberate new table allowed by CLAUDE.md rule 1 (prefixed
-`Web`, created idempotently here, never touching legacy tables).
+If the table is absent in a database it is NOT created: auditing degrades to a no-op.
 """
 from __future__ import annotations
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+import logging
+
+from app.core import capabilities
 from app.core.config import get_settings
+
+log = logging.getLogger(__name__)
 
 
 def ensure_schema(conn: Connection) -> None:
@@ -29,27 +33,18 @@ def ensure_schema(conn: Connection) -> None:
             raise RuntimeError("WebAuditLog table missing — run backend/sql/mysql_schema.sql first")
         return
 
-    exists = conn.execute(text("SELECT 1 FROM sys.tables WHERE name = 'WebAuditLog'")).scalar()
-    if exists:
-        return
-    conn.execute(
-        text(
-            """
-            CREATE TABLE WebAuditLog (
-                ID INT IDENTITY(1,1) PRIMARY KEY,
-                AtUtc DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-                UserCode NVARCHAR(50) NULL,
-                Entity NVARCHAR(100) NOT NULL,
-                EntityID NVARCHAR(50) NOT NULL,
-                Action CHAR(1) NOT NULL,   -- A / M / D / C (add/modify/delete/cancel)
-                Details NVARCHAR(MAX) NULL
-            )
-            """
-        )
-    )
+    # Create the web-only tables a legacy database lacks (user decision 2026-11-04; see core/web_schema.py). If the login
+    # cannot create them, that feature just stays off.
+    from app.core import web_schema
+
+    web_schema.provision()  # own autocommit connection: never inside this transaction
+    if not conn.execute(text("SELECT 1 FROM sys.tables WHERE name = 'WebAuditLog'")).scalar():
+        log.warning("WebAuditLog is not present in this database - web audit trail disabled")
 
 
 def record(conn: Connection, *, entity: str, entity_id: object, action: str, user_code: str, details: str | None = None) -> None:
+    if not capabilities.has_table("WebAuditLog"):
+        return
     conn.execute(
         text(
             "INSERT INTO WebAuditLog (UserCode, Entity, EntityID, Action, Details) "

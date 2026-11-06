@@ -82,6 +82,21 @@ def resolve_lookup(
     sql = f"SELECT {value_col} AS value, {display_col} AS label FROM {table} WHERE 1 = 1"
     params: dict = {}
 
+    # Legacy frmTrnSeva.FillSevaCombo: the Seva list follows the chosen Sannidhi. When MstSanSeva maps that Sannidhi to
+    # sevas, only those (active) sevas are offered; with no mapping (or no Sannidhi yet) every active seva is.
+    if table.lower() == "mstsva" and ctx is not None and "SANNIDHIID" in ctx:
+        from app.core import capabilities
+
+        if capabilities.has_col(table, "InActive"):
+            sql += " AND InActive = 'N'"
+        try:
+            san = int(ctx.get("SANNIDHIID") or 0)
+        except (TypeError, ValueError):
+            san = 0
+        if san and capabilities.has_table("MstSanSeva") and conn.execute(text("SELECT TOP 1 1 FROM MstSanSeva WHERE SanID = :s"), {"s": san}).first():
+            sql += f" AND {value_col} IN (SELECT SvaID FROM MstSanSeva WHERE SanID = :san_id)"
+            params["san_id"] = san
+
     parsed = _parse_cond(row["FldCmbAddnlCond"])
     if parsed:
         col, op, val = parsed
@@ -101,7 +116,9 @@ def resolve_lookup(
 
     sql += f" ORDER BY {display_col} {limit_clause(top)}"
     rows = conn.execute(text(sql), params).mappings().all()
-    return [{"value": r["value"], "label": r["label"]} for r in rows]
+    # A master row can have a NULL name in some temple editions (e.g. vTmplAyyappa's Nakshatra); the legacy combo shows
+    # it blank, so the label is "" rather than null (a null label crashes the dropdown).
+    return [{"value": r["value"], "label": "" if r["label"] is None else r["label"]} for r in rows]
 
 
 def resolve_pickup(conn: Connection, *, doc_id: int, field_code: str, values: dict) -> dict:

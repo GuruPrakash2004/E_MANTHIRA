@@ -51,6 +51,16 @@ export function referencedCodes(text) {
   return [...String(text || '').matchAll(/#([A-Za-z0-9_]+)#/g)].map((m) => m[1])
 }
 
+/**
+ * The fields a combo's list depends on: the `#CODE#` references in its designer filter, plus the one link the legacy form
+ * hard-wires: a Seva list follows the chosen Sannidhi (frmTrnSeva.FillSevaCombo; the backend applies MstSanSeva).
+ */
+export function comboDependencies(field) {
+  const deps = referencedCodes(field?.FldCmbAddnlCond)
+  if (field?.FldCode === 'SVAID' && !deps.includes('SANNIDHIID')) deps.push('SANNIDHIID')
+  return deps
+}
+
 /** True if this designer field should be hidden right now. */
 export function isFieldHidden(fieldMeta, codeValues) {
   if (!fieldMeta) return false

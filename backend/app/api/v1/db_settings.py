@@ -34,6 +34,27 @@ def get_db_settings():
     return rds.effective_fields()
 
 
+_TEMPLE_SCAN = """
+SET NOCOUNT ON;
+CREATE TABLE #found (n sysname);
+DECLARE @n sysname, @sql nvarchar(max);
+DECLARE c CURSOR LOCAL FAST_FORWARD FOR
+    SELECT name FROM sys.databases WHERE state = 0 AND database_id > 4 AND HAS_DBACCESS(name) = 1;
+OPEN c; FETCH NEXT FROM c INTO @n;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SET @sql = N'IF EXISTS (SELECT 1 FROM ' + QUOTENAME(@n) + N'.sys.tables WHERE name = ''UtlTransactions'')'
+             + N' AND EXISTS (SELECT 1 FROM ' + QUOTENAME(@n) + N'.sys.tables WHERE name = ''MstMenu'')'
+             + N' AND EXISTS (SELECT 1 FROM ' + QUOTENAME(@n) + N'.sys.tables WHERE name = ''MstSANNIDHI'')'
+             + N' INSERT INTO #found VALUES (@x)';
+    BEGIN TRY EXEC sp_executesql @sql, N'@x sysname', @x = @n; END TRY BEGIN CATCH END CATCH;
+    FETCH NEXT FROM c INTO @n;
+END
+CLOSE c; DEALLOCATE c;
+SELECT n FROM #found ORDER BY n; DROP TABLE #found;
+"""
+
+
 @router.post("/databases")
 def list_databases(body: DbSettingsIn):
     """Step 1 of the panel: connect to the SERVER only (master, using exactly
@@ -55,9 +76,21 @@ def list_databases(body: DbSettingsIn):
                 "AND name NOT IN ('master','tempdb','model','msdb') "
                 "AND HAS_DBACCESS(name) = 1 ORDER BY name"
             )).fetchall()
+            temples: list[str] = []
+            try:  # which of them are temple databases (have the metadata tables the web app is built on)? read-only
+                cur = conn.connection.cursor()  # raw DBAPI cursor: the script has several statements, the list is its last result
+                cur.execute(_TEMPLE_SCAN)
+                while cur.description is None and cur.nextset():
+                    pass
+                temples = [r[0] for r in cur.fetchall()]
+            except Exception as exc:  # noqa: BLE001 - the plain list is still useful
+                import logging
+
+                logging.getLogger(__name__).warning("temple database scan failed: %s", exc)
+                temples = []
     finally:
         engine.dispose()
-    return {"ok": True, "detail": f"Connected to server (via {driver})", "databases": [r[0] for r in rows]}
+    return {"ok": True, "detail": f"Connected to server (via {driver})", "databases": [r[0] for r in rows], "temple_databases": temples}
 
 
 @router.post("/test")

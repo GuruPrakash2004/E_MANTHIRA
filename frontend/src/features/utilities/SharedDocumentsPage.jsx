@@ -1,3 +1,4 @@
+import DataGrid from '../../components/ui/DataGrid'
 import { useState } from 'react'
 import { ActionIcon, Autocomplete, Button, Card, FileInput, Group, Modal, Skeleton, Stack, Table, Text, TextInput, Textarea } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
@@ -8,12 +9,14 @@ import * as api from '../../api/endpoints/utilities'
 import EmptyState from '../../components/ui/EmptyState'
 import UtilityBanner from '../../components/ui/UtilityBanner'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
+import useRights from '../../hooks/useRights'
 
 /**
  * Shared Documents (legacy frmUtlSharedDocuments): files shared with every user, listed by Group Name with remarks.
  * Add needs a group and a file; Edit changes the group and remarks; Remove deletes the row and the file.
  */
 export default function SharedDocumentsPage() {
+  const rights = useRights()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const confirm = useConfirm()
@@ -90,45 +93,47 @@ export default function SharedDocumentsPage() {
           ) : rows.length === 0 ? (
             <EmptyState icon={FolderOpen} title="No shared documents yet" hint="Press Add to share the first one." />
           ) : (
-            <Table.ScrollContainer minWidth={520}>
-              <Table highlightOnHover>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th w={70}>SI No</Table.Th>
-                    <Table.Th>Group Name</Table.Th>
-                    <Table.Th>File Name</Table.Th>
-                    <Table.Th>Remarks</Table.Th>
-                    <Table.Th w={50} />
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {rows.map((r) => (
-                    <Table.Tr key={r.doc_id} onClick={() => setSel(r.doc_id)} style={{ cursor: 'pointer', background: sel === r.doc_id ? 'var(--vt-gold-chip)' : undefined }}>
-                      <Table.Td>{r.sl_no}</Table.Td>
-                      <Table.Td>{r.group}</Table.Td>
-                      <Table.Td>{r.file}</Table.Td>
-                      <Table.Td>{r.remarks}</Table.Td>
-                      <Table.Td>
-                        <ActionIcon variant="subtle" color="kumkum" aria-label={`Download ${r.file}`} disabled={!r.available} title={r.available ? 'Download' : 'This file is not on the server'} onClick={(e) => { e.stopPropagation(); download(r) }}>
-                          <Download size={16} />
-                        </ActionIcon>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
+            <DataGrid
+              name="shared-documents"
+              idKey="doc_id"
+              rows={rows}
+              selected={sel}
+              onSelect={setSel}
+              maxHeight="60vh"
+              columns={[
+                { key: 'sl_no', label: 'SI No' },
+                { key: 'group', label: 'Group Name' },
+                { key: 'file', label: 'File Name' },
+                { key: 'remarks', label: 'Remarks' },
+                {
+                  key: 'dl',
+                  label: 'Download',
+                  value: () => '',
+                  render: (r) => (
+                    <ActionIcon variant="subtle" color="kumkum" aria-label={`Download ${r.file}`} disabled={!r.available} title={r.available ? 'Download' : 'This file is not on the server'} onClick={(e) => { e.stopPropagation(); download(r) }}>
+                      <Download size={16} />
+                    </ActionIcon>
+                  ),
+                },
+              ]}
+            />
           )}
           <Group justify="flex-end">
+            {rights.add && (
             <Button color="kumkum" leftSection={<FilePlus2 size={16} />} onClick={() => setForm({ mode: 'add', group: '', remarks: '', file: null })}>
               Add
             </Button>
+            )}
+            {rights.edit && (
             <Button variant="light" color="kumkum" leftSection={<Pencil size={16} />} disabled={!current} onClick={() => setForm({ mode: 'edit', doc_id: current.doc_id, group: current.group, file_name: current.file, remarks: current.remarks })}>
               Edit
             </Button>
+            )}
+            {rights.del && (
             <Button variant="light" color="red" leftSection={<Trash2 size={16} />} disabled={!current} onClick={remove}>
               Remove
             </Button>
+            )}
           </Group>
         </Stack>
       </Card>

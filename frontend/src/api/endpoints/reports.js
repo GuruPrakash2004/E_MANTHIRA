@@ -25,3 +25,6 @@ export const catalogRights = (userId) => get(`/reports/catalog/rights/${userId}`
 export const saveCatalogRights = (userId, rptIds) => put(`/reports/catalog/rights/${userId}`, { rpt_ids: rptIds })
 export const partyGlAccounts = (kind) => get('/reports/party-gl/accounts', { params: { kind } })
 export const runPartyGl = (body) => post('/reports/party-gl', body)
+
+// Complete Day as the original RptDtlCompDayDtl.rpt prints it (a PDF from the Crystal print service)
+export const completeDayPdf = (filters) => api.post('/reports/complete-day/pdf', filters, { responseType: 'blob' }).then((r) => r.data)

@@ -21,7 +21,7 @@ from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, update_row
 from app.meta import edit_rules
-from app.meta.numbering import next_doc_no
+from app.meta.numbering import next_doc_no, print_doc_no
 from app.services import ledger, voucher_fields, voucher_rules
 from app.utils.amount_in_words import amount_in_words
 
@@ -86,7 +86,7 @@ def create(conn: Connection, *, data: PaymentVoucherInput, fy: FinancialYear, us
         {
             NO_COLUMN: doc_no,
             "Prefix": data.prefix,
-            "PrintPMTVCHNO": doc_no,
+            "PrintPMTVCHNO": print_doc_no(conn, doc_id=DOC_ID, doc_no=doc_no, prefix=data.prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year),
             "PMTVCHDate": data.voucher_date,
             "AddedBy": user_code,
             "AddedOn": datetime.now(),
@@ -126,7 +126,7 @@ def create(conn: Connection, *, data: PaymentVoucherInput, fy: FinancialYear, us
         due_date=data.voucher_date,
         narration=narration,
         lines=[
-            ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
+            ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
             for l in data.lines
         ],
     )
@@ -213,7 +213,7 @@ def update(conn: Connection, *, pmtvch_id: int, data: PaymentVoucherInput, fy: F
         )
     ledger.post(
         conn, doc_type="PMTVCH", trn_id=pmtvch_id, trn_no=old["PMTVCHNO"], trn_date=data.voucher_date, due_date=data.voucher_date, narration=narration,
-        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_ledger(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
     )
     audit.record(conn, entity="Payment Voucher", entity_id=pmtvch_id, action="E", user_code=user_code, details=old["PMTVCHNO"])
     return {"pmtvch_id": pmtvch_id, "pmtvch_no": old["PMTVCHNO"], "amount": total_dr}

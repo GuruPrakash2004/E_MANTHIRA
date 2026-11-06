@@ -1,4 +1,5 @@
 import { historyParams } from '../../lib/history'
+import DocNoDate from '../../components/ui/DocNoDate'
 import { useEffect, useState } from 'react'
 import { Group, Stack, Text, Title } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
@@ -130,7 +131,7 @@ export default function GroupSevaDocPage() {
             </Text>
           </div>
         </Group>
-        <DateInput aria-label="Document date" valueFormat="DD-MMM-YYYY" value={docDate} onChange={(v) => v && setDocDate(v)} disabled={Boolean(viewId)} w={150} />
+        <DocNoDate docId={DOC_ID} viewNo={viewId ? viewNo : ''} date={docDate} onDate={setDocDate} dateDisabled={Boolean(viewId)} />
       </Group>
 
       <EntryLayout
@@ -159,6 +160,7 @@ export default function GroupSevaDocPage() {
             />
             {lastSaved && <SavedPanel lines={[`Group ${lastSaved.no}`]} />}
             <RecentCard
+              docId={DOC_ID}
               title="Recent groups"
               icon={Users}
               loading={recentLoading}

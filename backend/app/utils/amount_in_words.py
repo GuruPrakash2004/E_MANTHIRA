@@ -95,8 +95,12 @@ def _get_hundreds(my_number: str, loop_state: list[int]) -> str:
     return left
 
 
-def amount_in_words(amount: float, currency: str = "Rupees", sub_currency: str = "Paise") -> str:
-    """Same call shape/behaviour as legacy `getAmtInWordsLakhs(amount, currency, sub_currency)`."""
+def amount_in_words(amount: float, currency: str = "Rupees", sub_currency: str = "Paise", *, raw: bool = False) -> str:
+    """Same call shape/behaviour as legacy `getAmtInWordsLakhs(amount, currency, sub_currency)`.
+
+    `raw=True` skips the `removeSpaces()` clean-up, i.e. path (2) of the module docstring: what the EXE writes into
+    `TrnHdrSEVA.AMTINWRDS` and the auto-created `TrnHdrRCPTVCH.AMTINWORDS` ("Rupees Three Hundred  Only", verified on
+    395/400 legacy rows)."""
     if amount is None:
         amount = 0.0
     negative = amount < 0
@@ -168,7 +172,7 @@ def amount_in_words(amount: float, currency: str = "Rupees", sub_currency: str =
 
     prefix = "Minus " if negative else ""
     result = f"{prefix}{text}{text2} Only"
-    return _remove_spaces(result)
+    return result if raw else _remove_spaces(result)
 
 
 def _remove_spaces(words: str) -> str:

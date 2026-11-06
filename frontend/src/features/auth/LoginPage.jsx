@@ -1,4 +1,5 @@
 import DevotionalBackdrop from '../../components/DevotionalBackdrop'
+import SoftventContact from '../../components/SoftventContact'
 import ThemeToggle from '../../components/ThemeToggle'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -177,12 +178,13 @@ export default function LoginPage() {
             style={{ background: 'linear-gradient(180deg, var(--vt-g2) 0%, var(--vt-g3) 100%)', border: '1px solid rgba(244,225,166,0.3)', borderRadius: 16 }}
           >
             {/* One line, logo centred beneath. */}
-            <Text size="xs" fw={600} c="#D9B9A3" tt="uppercase" ta="center" style={{ letterSpacing: 2, whiteSpace: 'nowrap' }}>
+            <Text fw={600} c="#D9B9A3" tt="uppercase" ta="center" style={{ fontSize: 10, letterSpacing: 1.5, whiteSpace: 'nowrap' }}>
               Designed &amp; developed by
             </Text>
             <a className="vt-softvent-link" href="https://softvent.com" target="_blank" rel="noopener noreferrer" aria-label="Softvent website, opens in a new tab" style={{ display: 'block' }}>
               <img src="/softvent-logo-dark.png" alt="Softvent" style={{ height: '2.75rem', width: 'auto', objectFit: 'contain', display: 'block' }} />
             </a>
+            <SoftventContact />
           </Stack>
         </Stack>
 

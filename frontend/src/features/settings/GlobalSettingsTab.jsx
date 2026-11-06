@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import * as settingsApi from '../../api/endpoints/settings'
 import { useAuth } from '../../hooks/useAuth'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
+import AlertifyCard from './AlertifyCard'
 import WelcomeVideoCard from './WelcomeVideoCard'
 import { DeleteLinkageDialog, DocPrefixDialog, FieldCaptionsDialog, FilterSettingsDialog, FormUserwiseDialog, LoginSettingsDialog, MasterSettingsDialog, PostDocListDialog, SearchFieldsDialog, StockSettingsDialog, TransactionSettingsDialog } from './OtherSettingsDialogs'
 
@@ -175,6 +176,7 @@ export default function GlobalSettingsTab() {
       {adding && <AddDialog groups={groups.map(([, l]) => l).filter(Boolean)} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); qc.invalidateQueries({ queryKey: ['settings'] }) }} />}
       {dialog && DIALOGS[dialog] && (() => { const D = DIALOGS[dialog]; return <D onClose={() => setDialog(null)} /> })()}
       <WelcomeVideoCard />
+      {isAdmin && <AlertifyCard />}
     </Stack>
   )
 }

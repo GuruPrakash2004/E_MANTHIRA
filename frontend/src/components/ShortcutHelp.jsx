@@ -21,16 +21,18 @@ const GROUPS = [
 ]
 
 /** F1 (or the header button) lists every keyboard shortcut. */
-export default function ShortcutHelp() {
-  const [open, setOpen] = useState(false)
-  useHotkeys('f1', (e) => { e.preventDefault(); setOpen((o) => !o) }, { enableOnFormTags: true })
+export default function ShortcutHelp({ open: openProp, onOpenChange, hideButton = false }) {
+  const [own, setOwn] = useState(false)
+  const open = openProp ?? own
+  const setOpen = onOpenChange || setOwn
+  useHotkeys('f1', (e) => { e.preventDefault(); setOpen(!open) }, { enableOnFormTags: true })
   return (
     <>
-      <Tooltip label="Keyboard shortcuts (F1)" withArrow>
+      {!hideButton && <Tooltip label="Keyboard shortcuts (F1)" withArrow>
         <ActionIcon variant="subtle" color="kumkum" size={40} visibleFrom="sm" aria-label="Keyboard shortcuts" onClick={() => setOpen(true)}>
           <Keyboard size={20} />
         </ActionIcon>
-      </Tooltip>
+      </Tooltip>}
       <Modal opened={open} onClose={() => setOpen(false)} title="Keyboard shortcuts" size="lg" centered>
         <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
           {GROUPS.map((g) => (
