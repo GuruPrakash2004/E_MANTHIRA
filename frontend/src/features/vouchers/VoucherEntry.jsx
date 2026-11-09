@@ -86,14 +86,19 @@ export default function VoucherEntry({ cfg }) {
   const totalCr = lines.reduce((s, l) => s + (Number(l.cr_amt) || 0), 0)
   const amount = cfg.amountSide === 'cr' ? totalCr : totalDr
   // Total Dr / Total Cr / Amount in Words: the Designer's formulas over the grid (SVTCOLSUM(5) = the Credit column)
+  // the two totals are shown as money (₹ 2,555.00) whatever decimals the Designer gives the field
+  const totalsShown = { TOTDR: formatINR(totalDr), TOTCR: formatINR(totalCr) }
   const computed = readOnly
-    ? undefined
-    : computeFormulas(
-        fields,
-        values,
-        { DRAMT: lines.map((l) => l.dr_amt), CRAMT: lines.map((l) => l.cr_amt), 5: lines.map((l) => l.cr_amt) },
-        { userCode: user?.user_code || '' }
-      )
+    ? totalsShown
+    : {
+        ...computeFormulas(
+          fields,
+          values,
+          { DRAMT: lines.map((l) => l.dr_amt), CRAMT: lines.map((l) => l.cr_amt), 5: lines.map((l) => l.cr_amt) },
+          { userCode: user?.user_code || '' }
+        ),
+        ...totalsShown,
+      }
   const balanced = Math.round(totalDr * 100) === Math.round(totalCr * 100) && amount > 0
 
   const headErrors = docFieldErrors(fields, values, COMPUTED_CODES)
@@ -368,8 +373,11 @@ export default function VoucherEntry({ cfg }) {
             </SectionCard>
 
             <SectionCard title="Payment details" hint="Cheque, bank, card and narration — shown as set up for this voucher.">
-              <DocFieldsForm {...common} section="Footer" />
-              <DocFieldsForm {...common} section="Total" />
+              {/* each section is its own grid with a -8px gutter margin; the 16px gap keeps the rows evenly spaced across the two */}
+              <Stack gap={16}>
+                <DocFieldsForm {...common} section="Footer" />
+                <DocFieldsForm {...common} section="Total" />
+              </Stack>
             </SectionCard>
           </Stack>
         }
