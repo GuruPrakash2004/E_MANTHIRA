@@ -188,6 +188,7 @@ class Rendered:
     orientation: str = ""
     bottom_margin_pt: float = 0.0
     widened_right_pt: float = 0.0  # >0: a roll receipt whose objects run past its page; the preview page was widened to fit them
+    orig_page_pt: tuple[float, float] | None = None  # set with a named paper (A4...) that was widened the same way: its own (width, height)
 
 
 def render(job: PrintJob) -> Rendered:
@@ -209,7 +210,15 @@ def render(job: PrintJob) -> Rendered:
             widened = float(resp.headers.get("X-Widened-Right-Pt", "0") or 0)
         except ValueError:
             widened = 0.0
+        orig = None
+        try:
+            ow, _, oh = (resp.headers.get("X-Orig-Page-Pt") or "").partition("x")
+            if ow and oh:
+                orig = (float(ow), float(oh))
+        except ValueError:
+            orig = None
         return Rendered(
+            orig_page_pt=orig,
             pdf=resp.content,
             paper_kind=resp.headers.get("X-Paper-Kind", "Named"),
             paper_name=resp.headers.get("X-Paper-Name", ""),

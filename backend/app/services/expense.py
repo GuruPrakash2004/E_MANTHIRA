@@ -21,7 +21,7 @@ from sqlalchemy.engine import Connection
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, table, update_row, pad_blanks
-from app.meta import doc_rules
+from app.meta import doc_rules, edit_rules
 from app.meta.numbering import next_doc_no, print_doc_no
 
 DOC_ID = 1260
@@ -50,7 +50,8 @@ def _amount(line: dict) -> float:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Amount must be a number")
 
 
-def create(conn: Connection, *, data: ExpenseInput, fy: FinancialYear, user_code: str) -> dict:
+def _check(conn: Connection, data: ExpenseInput, fy: FinancialYear):
+    """The Designer's own rules for a header + lines; returns (rows, values, head, detail, total)."""
     assert_date_in_fy(data.expense_date, fy)
     rows = doc_rules.load_fields(conn, DOC_ID)
     if not rows:
@@ -69,34 +70,77 @@ def create(conn: Connection, *, data: ExpenseInput, fy: FinancialYear, user_code
             raise HTTPException(exc.status_code, f"Line {i}: {exc.detail}")
         if _amount(l) <= 0:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
-
-    doc_no = next_doc_no(
-        conn, table_name=TABLE, no_column=NO_COLUMN, prefix=data.prefix,
-        fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
-    )
     total = round(sum(_amount(l) for l in data.lines), 2)
-    cols = doc_rules.column_values(head, values, table(TABLE))
-    cols.update(
-        {
-            NO_COLUMN: doc_no, "Prefix": data.prefix, "PrintEXPNO": print_doc_no(conn, doc_id=DOC_ID, doc_no=doc_no, prefix=data.prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "EXPDate": data.expense_date,
-            "AddedBy": user_code, "AddedOn": datetime.now(), "Authorised": "Y", "Cancelled": "N", "TOTAMT": total,
-        }
-    )
-    # What the EXE writes for blanks (checked on 29 legacy rows in two temples): ' ' for text, NULL for no cheque date, 0 for no amount.
+    return rows, values, head, detail, total
+
+
+def _blanks(cols: dict) -> None:
+    """What the EXE writes for blanks (checked on 29 legacy rows in two temples): ' ' for text, NULL for no cheque date, 0 for no amount."""
     pad_blanks(cols, keep=("CHEQUEDT", "RMKS_XML", "Prefix"))
     if not str(cols.get("CHEQUEDT") or "").strip() or str(cols["CHEQUEDT"]).startswith("1900-01-01"):
         cols["CHEQUEDT"] = None
     if cols.get("CHEQUEAMT") in (None, "", " "):
         cols["CHEQUEAMT"] = 0
-    exp_id = insert_row(conn, TABLE, cols, returning="EXPID")
-    for i, l in enumerate(data.lines, start=1):
+
+
+def _write_lines(conn: Connection, exp_id: int, detail: list[dict], lines: list[dict]) -> None:
+    for i, l in enumerate(lines, start=1):
         lv = doc_rules.effective_values(detail, l)
         dcols = doc_rules.column_values(detail, lv, table("TrnDtlEXP"))
         dcols.update({"EXPID": exp_id, "SlNo": i, "ItemSlNO": i, "ShortClosed": "N", "ShortClosedBy": 0, "AMOUNT": _amount(l)})
         pad_blanks(dcols, keep=("ITEMDESC_XML", "DRMKS_XML"))
         insert_row(conn, "TrnDtlEXP", dcols)
+
+
+def create(conn: Connection, *, data: ExpenseInput, fy: FinancialYear, user_code: str) -> dict:
+    rows, values, head, detail, total = _check(conn, data, fy)
+
+    doc_no = next_doc_no(
+        conn, table_name=TABLE, no_column=NO_COLUMN, prefix=data.prefix,
+        fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
+    )
+    cols = doc_rules.column_values(head, values, table(TABLE))
+    cols.update(
+        {
+            NO_COLUMN: doc_no, "Prefix": data.prefix, "PrintEXPNO": print_doc_no(conn, doc_id=DOC_ID, doc_no=doc_no, prefix=data.prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year),
+            "EXPDate": data.expense_date,
+            "AddedBy": user_code, "AddedOn": datetime.now(), "Authorised": "Y", "Cancelled": "N", "TOTAMT": total,
+        }
+    )
+    _blanks(cols)
+    exp_id = insert_row(conn, TABLE, cols, returning="EXPID")
+    _write_lines(conn, exp_id, detail, data.lines)
     audit.record(conn, entity="Expense Entry", entity_id=exp_id, action="A", user_code=user_code, details=doc_no)
     return {"exp_id": exp_id, "exp_no": doc_no, "total_amt": total}
+
+
+def update(conn: Connection, *, exp_id: int, data: ExpenseInput, fy: FinancialYear, user_code: str) -> dict:
+    """
+    Edit a saved expense: the number (EXPNO / Prefix / PrintEXPNO) and who/when it was added stay as they are; the header and the lines
+    are rewritten for the new values. Nothing is posted to the ledger for an Expense Entry (AccTrn = 'N'), so that is all there is.
+    """
+    old = conn.execute(text(f"SELECT {NO_COLUMN}, PrintEXPNO, Cancelled, EXPDate, Authorised FROM {TABLE} WHERE EXPID = :id"), {"id": exp_id}).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Expense Entry not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=old["EXPDate"], authorised=old["Authorised"])
+    if not edit_rules.doc_date_editable(conn, DOC_ID):
+        data.expense_date = old["EXPDate"].date() if isinstance(old["EXPDate"], datetime) else old["EXPDate"]  # date stays as saved
+
+    rows, values, head, detail, total = _check(conn, data, fy)
+    cols = doc_rules.column_values(head, values, table(TABLE))
+    for keep in (NO_COLUMN, "Prefix", "PrintEXPNO", "AddedBy", "AddedOn", "Cancelled"):
+        cols.pop(keep, None)
+    cols.update({"EXPDate": data.expense_date, "ChangedBy": user_code, "ChangedOn": datetime.now(), "TOTAMT": total})
+    if edit_rules.auth_required(conn, DOC_ID):
+        cols["Authorised"] = "N"  # an edited document goes back for authorisation
+    _blanks(cols)
+    update_row(conn, TABLE, "EXPID", exp_id, cols)  # columns this database does not have are skipped by update_row
+    conn.execute(text("DELETE FROM TrnDtlEXP WHERE EXPID = :id"), {"id": exp_id})
+    _write_lines(conn, exp_id, detail, data.lines)
+    audit.record(conn, entity="Expense Entry", entity_id=exp_id, action="E", user_code=user_code, details=old[NO_COLUMN])
+    return {"exp_id": exp_id, "exp_no": old[NO_COLUMN], "print_no": old["PrintEXPNO"] or old[NO_COLUMN], "total_amt": total}
 
 
 def list_recent(conn: Connection, *, fy: FinancialYear, search: str = "", top: int = 50) -> list[dict]:

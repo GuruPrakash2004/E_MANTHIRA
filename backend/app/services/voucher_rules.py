@@ -24,3 +24,11 @@ def assert_not_hall_receipt(conn: Connection, receipt_id: int) -> None:
     Hall Booking > Receipt Info (the web app's safeguard; the legacy voucher form would leave the booking out of step)."""
     if conn.execute(text("SELECT TOP 1 1 FROM TrnHdrRCPTVCH WHERE RCPTVCHID = :i AND HBID > 0"), {"i": receipt_id}).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "This receipt belongs to a Hall Booking. Change or delete it from Hall Booking > Receipt Info.")
+
+
+def delete_bill_det(conn: Connection, dtl_table: str, id_col: str, doc_id: int) -> None:
+    """Legacy `deleteDoc` / `SaveDoc` also clear `<detail table>BillDet` (bill-wise adjustment rows of the voucher) when it is deleted or re-saved."""
+    from app.core.capabilities import has_table
+
+    if has_table(f"{dtl_table}BillDet"):
+        conn.execute(text(f"DELETE FROM {dtl_table}BillDet WHERE {id_col} = :id"), {"id": doc_id})

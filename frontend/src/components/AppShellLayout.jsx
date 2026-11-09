@@ -9,8 +9,6 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import Link from './TabLink'
 import { registerTab } from '../lib/tabs'
 import { getMenu } from '../api/endpoints/meta'
-import { getReportCatalog } from '../api/endpoints/reports'
-import { CATALOG_FORM_TAB } from '../features/reports/catalogTabs'
 import { getDbSettings } from '../api/endpoints/dbSettings'
 import { getCompany } from '../api/endpoints/company'
 import { getFyShort, setSession } from '../api/api'
@@ -300,18 +298,11 @@ export default function AppShellLayout() {
 
   // A query (not a one-off fetch) so "Refresh from Doc Designer" re-reads the menu too
   const { data: menuRows } = useQuery({ queryKey: ['menu'], queryFn: getMenu, staleTime: 5 * 60_000 })
-  // The reports listed in the Subsidiary Reports catalog (UtlReports, already filtered by the user's report rights) are
-  // shown under it in the sidebar, as the legacy launcher lists them: Complete Day, Detailed Collection, Seva Issue, Kanike...
-  const { data: reportCatalog } = useQuery({ queryKey: ['report-catalog'], queryFn: getReportCatalog, staleTime: 5 * 60_000, retry: false })
+  // The catalog reports (Complete Day, Detailed Collection, Seva Issue, Kanike...) are reached from the Subsidiary Reports
+  // page itself, so the sidebar lists only the real menu entries.
   useEffect(() => {
-    const rows = (menuRows || []).filter((m) => !ADMIN_DUPLICATES.has(m.caption))
-    const at = rows.findIndex((m) => m.caption === 'Subsidiary Reports')
-    if (at < 0 || !reportCatalog?.length) return setMenu(rows)
-    const kids = reportCatalog
-      .filter((r) => CATALOG_FORM_TAB[r.form_name])
-      .map((r) => ({ ...rows[at], menu_item_id: `rpt-${r.rpt_id}`, caption: r.name, form_key: null, doc_id: null, _route: `/reports?tab=${CATALOG_FORM_TAB[r.form_name]}` }))
-    setMenu([...rows.slice(0, at + 1), ...kids, ...rows.slice(at + 1)])
-  }, [menuRows, reportCatalog])
+    setMenu((menuRows || []).filter((m) => !ADMIN_DUPLICATES.has(m.caption)))
+  }, [menuRows])
 
   // "/" jumps to the header search, unless the user is actually typing somewhere (a real
   // input/textarea/contenteditable): never hijacks normal form entry.
@@ -451,23 +442,23 @@ export default function AppShellLayout() {
           </Group>
 
           {/* Company name (from the Company Master) on one line, the financial year beside it. */}
-          <Group gap="sm" wrap="nowrap" visibleFrom="md" style={{ flex: '0 1 auto', minWidth: 0, background: 'var(--vt-gold-chip)', border: '1px solid var(--vt-line)', borderRadius: 999, padding: '5px 8px 5px 22px', boxShadow: 'inset 0 0 0 1px rgba(199,154,61,0.35)' }}>
+          <Group gap="sm" wrap="nowrap" visibleFrom="md" style={{ flex: '0 1 auto', minWidth: 0, background: 'linear-gradient(135deg, var(--vt-g1) 0%, var(--vt-g2d) 100%)', border: '1.5px solid #C79A3D', borderRadius: 999, padding: '5px 8px 5px 22px', boxShadow: '0 2px 6px rgba(90,20,20,0.35), inset 0 0 0 1px rgba(244,225,166,0.25)' }}>
             {companyName && (
               <Text
                 title={dbName ? `${companyName} (database ${dbName}${db?.db_server ? ` on ${db.db_server}` : ''})` : companyName}
                 fw={700}
                 truncate="end"
-                style={{ fontFamily: "'Cinzel Decorative', Marcellus, Georgia, serif", fontSize: 'clamp(13px, 1.2vw, 19px)', letterSpacing: 1, wordSpacing: '0.35em', lineHeight: 1.3, whiteSpace: 'nowrap', color: 'var(--vt-badge-ink)', textShadow: '0 1px 0 rgba(199,154,61,0.35)', minWidth: 0 }}
+                style={{ fontFamily: 'Marcellus, Georgia, serif', fontSize: 'clamp(15px, 1.3vw, 21px)', letterSpacing: 0.8, lineHeight: 1.3, whiteSpace: 'nowrap', color: '#F4E1A6', textShadow: '0 1px 2px rgba(43,9,9,0.55)', minWidth: 0 }}
               >
                 {companyName}
               </Text>
             )}
-            {companyName && fyBadge && <div aria-hidden style={{ width: 1, height: 22, background: 'var(--vt-line)', flexShrink: 0 }} />}
+            {companyName && fyBadge && <div aria-hidden style={{ width: 1, height: 22, background: 'rgba(244,225,166,0.35)', flexShrink: 0 }} />}
             {fyBadge && (
               <Menu shadow="md" width={290} position="bottom" withinPortal>
                 <Menu.Target>
                   <Tooltip label="Financial year - click to change" withArrow>
-                    <Badge component="button" type="button" variant="filled" size="lg" radius="xl" className="vt-lift" leftSection={<CalendarDays size={15} />} rightSection={<ChevronDown size={15} />} style={{ cursor: 'pointer', fontSize: 14, fontWeight: 700, letterSpacing: 0.3, height: 34, paddingInline: 14, flexShrink: 0, color: '#F4E1A6', background: 'linear-gradient(135deg, var(--vt-g1) 0%, var(--vt-g2d) 100%)', border: '1.5px solid #C79A3D', boxShadow: '0 2px 6px rgba(90,20,20,0.35), inset 0 0 0 1px rgba(244,225,166,0.25)' }} aria-label={`${fyBadge}. Change financial year`}>
+                    <Badge component="button" type="button" variant="filled" size="lg" radius="xl" className="vt-lift" leftSection={<CalendarDays size={15} />} rightSection={<ChevronDown size={15} />} style={{ cursor: 'pointer', fontSize: 14, fontWeight: 700, letterSpacing: 0.3, height: 34, paddingInline: 14, flexShrink: 0, color: 'var(--vt-badge-ink)', background: 'var(--vt-gold-chip)', border: '1px solid var(--vt-line)', boxShadow: 'inset 0 0 0 1px rgba(199,154,61,0.35)' }} aria-label={`${fyBadge}. Change financial year`}>
                       {fyBadge}
                     </Badge>
                   </Tooltip>

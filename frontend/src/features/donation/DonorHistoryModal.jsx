@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Group, Modal, Stack, Table, Text, TextInput } from '@mantine/core'
 import { Search } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -9,6 +9,11 @@ import EmptyState from '../../components/ui/EmptyState'
 /** Show Donor (legacy frmTrnDONREC.btnShowDonars_Click): earlier donors, newest first; picking one copies the details. */
 export default function DonorHistoryModal({ opened, onClose, onPick, initialName = '', limit = 0 }) {
   const [name, setName] = useState(initialName)
+  // The dialog stays mounted, so its box must be refilled from the Donor Name on the form every time it opens (legacy: the list is
+  // narrowed to donors whose name starts with what was typed there).
+  useEffect(() => {
+    if (opened) setName((initialName || '').trim())
+  }, [opened, initialName])
   const { data = [], isLoading } = useQuery({
     queryKey: ['donor-history', name, limit],
     queryFn: () => donationApi.donorHistory({ name, top: limit || undefined }),

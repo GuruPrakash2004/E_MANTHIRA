@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as donationApi from '../../api/endpoints/donation'
 import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
-import { handleAfterSave } from '../../lib/printing'
+import { handleAfterSave, loadFormats, pickFormat, printErrorMessage, printNow, rememberFormat } from '../../lib/printing'
 import SplitPaymentPanel, { refRequiredModes, splitError, splitFromSaved, splitPayload } from '../../components/ui/SplitPaymentPanel'
 import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import DocDetailGrid, { blankLine, detailErrors } from '../../components/DocDetailGrid'
@@ -19,7 +19,8 @@ import DonorHistoryModal from './DonorHistoryModal'
 import DocNavBar from '../../components/ui/DocNavBar'
 import CopyFromDialog from '../../components/ui/CopyFromDialog'
 import useDocRules from '../../hooks/useDocRules'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useConfirm } from '../../components/ui/ConfirmProvider'
 import useDocFields from '../../hooks/useDocFields'
 import useDocShortcuts from '../../hooks/useDocShortcuts'
 import { SectionCard, EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
@@ -33,13 +34,15 @@ const DOC_ID = 1261
 const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
 // Computed by the server / shown in the summary, so not drawn as inputs.
 const COMPUTED_CODES = ['AMTINWORDS', 'ISSUEDBY', 'TOTAMT']
-// Entered fresh for each donor (the payment mode etc. carry over to the next receipt).
 // the single-payment fields: with a split receipt the main part supplies them, so they are not shown
 const SPLIT_PAY_CODES = ['PAYMNTMODE', 'LEDID', 'REFNO', 'CHEQUENO', 'CHEQUEDATE', 'BANKNAME']
-const PER_DONOR_CODES = ['DONOR', 'CONTACTNO', 'ADDRESS', 'PANNO', 'REFNO', 'CHEQUENO', 'CHEQUEDATE', 'BANKNAME', 'RMKS', 'HBID']
+const errorText = (err, fallback) => err?.response?.data?.detail || fallback
 
 export default function DonationReceiptPage() {
   const queryClient = useQueryClient()
+  const confirm = useConfirm()
+  const navigate = useNavigate()
+  const location = useLocation()
   // The receipt is rendered from the Doc Designer (UtlDocDsgrFlds): header/footer fields by FldCode, detail lines.
   const [values, setValues] = useState({})
   const [resetKey, setResetKey] = useState(0)
@@ -51,8 +54,13 @@ export default function DonationReceiptPage() {
   const [lastSaved, setLastSaved] = useState(null)
   const [printFor, setPrintFor] = useState(null)
   const [donorOpen, setDonorOpen] = useState(false)
+  const [printOption, setPrintOption] = useState(null) // the Options-menu format the preview should open on (null = the user's last / the default)
   const [viewId, setViewId] = useState(null)
   const [viewNo, setViewNo] = useState('')
+  const [editing, setEditing] = useState(false) // a saved receipt opened for changes (Edit in the ribbon)
+  // the screen opens empty and locked (also after Cancel) until New is pressed; "Donation for <prefix>" from a Hall Booking arrives with details and opens ready to save
+  const [idle, setIdle] = useState(() => !location.state?.prefill)
+  const readOnly = (Boolean(viewId) && !editing) || idle
   const [donorLimit, setDonorLimit] = useState('')
   const [copyOpen, setCopyOpen] = useState(false)
   const rules = useDocRules(DOC_ID) // UtlTransactions switches: Copy From, document-date lock ...
@@ -68,13 +76,13 @@ export default function DonationReceiptPage() {
   const [splitParts, setSplitParts] = useState([])
   const refModes = refRequiredModes(fields, 'PAYMNTMODE')
   // the Designer's formulas (TOTAMT, AMTINWORDS, ISSUEDBY ...) for a new receipt; a saved one shows what was stored
-  const computed = viewId ? undefined : computeFormulas(fields, values, columnsFromLines(lines), { userCode: user?.user_code || '' })
+  const computed = viewId && !editing ? undefined : computeFormulas(fields, values, columnsFromLines(lines), { userCode: user?.user_code || '' })
 
-  // Always at least one line, like the legacy grid.
+  // Always at least one line while entering, like the legacy grid.
   useEffect(() => {
-    if (fields.length && lines.length === 0 && !viewId) setLines([blankLine(fields)])
+    if (fields.length && lines.length === 0 && !viewId && !idle) setLines([blankLine(fields)])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, lines.length, viewId])
+  }, [fields, lines.length, viewId, idle])
 
   const headErrors = docFieldErrors(fields.filter((f) => f.FldSection !== 'Detail'), values, COMPUTED_CODES)
   const lineErrors = detailErrors(fields, lines, values)
@@ -108,7 +116,6 @@ export default function DonationReceiptPage() {
 
   const { data: prefixes } = usePrefixes(DOC_ID)
   // "Donation for <prefix>" on a Hall Booking opens this screen with the booking's details filled in (legacy FillHBEHdrData).
-  const location = useLocation()
   useEffect(() => {
     const p = location.state?.prefill
     if (!p) return
@@ -134,6 +141,8 @@ export default function DonationReceiptPage() {
       )
     }
     setDonorOpen(false)
+    // legacy: after a donor is picked the cursor goes to the first line's Amount cell
+    setTimeout(() => document.querySelector('.vt-entry-main input[aria-label="Amount"]')?.focus(), 200)
   }
 
   // Map a saved TrnHdrDONREC row (+ lines) into the entry: its columns are the Designer FldCodes
@@ -171,14 +180,18 @@ export default function DonationReceiptPage() {
       fillFromDonation(l, true)
       setSplitParts(splitFromSaved(l.split_payments))
       setSplitOn((l.split_payments || []).length > 1)
+      setIdle(false) // a record is open: leave the "cancelled, nothing open" state
       setViewId(id)
+      setEditing(false)
       setViewNo(l.PrintDONRECNO || l.DONRECNO)
     } catch (err) {
-      notifications.show({ message: err?.response?.data?.detail || 'Could not open that record', color: 'red' })
+      notifications.show({ message: errorText(err, 'Could not open that record'), color: 'red' })
     }
   }
   function startNew() {
+    setIdle(false)
     setViewId(null)
+    setEditing(false)
     setViewNo('')
     setSplitOn(false)
     setSplitParts([])
@@ -187,6 +200,42 @@ export default function DonationReceiptPage() {
     setAttempted(false)
     setResetKey((k) => k + 1) // re-applies the Designer defaults
     setDocDate(new Date())
+  }
+  // Cancel a new entry: an empty, locked form with only New in the ribbon
+  async function cancelEntry(silent) {
+    if (!idle && silent !== true && !(await confirm({ title: 'Discard this entry?', message: 'What you have typed will be cleared.', confirmLabel: 'Discard' }))) return
+    setViewId(null)
+    setEditing(false)
+    setViewNo('')
+    setSplitOn(false)
+    setSplitParts([])
+    setLines([])
+    setValues({}) // no resetKey bump here: the Designer defaults come back only when New is pressed
+    setAttempted(false)
+    setLastSaved(null)
+    setIdle(true)
+  }
+  async function deleteDonation() {
+    if (!(await confirm({ title: 'Delete this receipt?', message: `Donation receipt ${viewNo} and its voucher entries will be deleted.`, confirmLabel: 'Delete' }))) return
+    try {
+      const r = await donationApi.deleteDonation(viewId)
+      notifications.show({ message: r?.message || 'Deleted Donation Receipt Successfully!', color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: ['donations'] })
+      refetch()
+      setLastSaved(null)
+      cancelEntry(true) // back to the locked, empty screen (not a new entry)
+    } catch (err) {
+      notifications.show({ message: errorText(err, 'Could not delete the receipt'), color: 'red' })
+    }
+  }
+  async function startEdit() {
+    // the screen must show what is saved right now, not what was loaded a while ago
+    await viewRecord(viewId)
+    setEditing(true)
+  }
+  async function cancelEdit() {
+    await viewRecord(viewId)
+    setEditing(false)
   }
   async function findDonations(q, { allFy = true } = {}) {
     const rows = await donationApi.listDonations({ search: q, top: 30, ...(allFy ? { days: 0 } : {}) })
@@ -202,7 +251,7 @@ export default function DonationReceiptPage() {
       notifications.show({ message: err?.response?.data?.detail || 'Could not copy that document', color: 'red' })
     }
   }
-  useHotkeys('f6', (e) => { e.preventDefault(); if (!viewId) loadLastEntry() }, { enableOnFormTags: true }, [viewId])
+  useHotkeys('f6', (e) => { e.preventDefault(); if (!viewId && !idle) loadLastEntry() }, { enableOnFormTags: true }, [viewId, idle])
 
   function payload() {
     return Object.fromEntries(
@@ -221,36 +270,64 @@ export default function DonationReceiptPage() {
     setSaving(true)
     try {
       const cleanLines = lines.map((l) => Object.fromEntries(Object.entries(l).filter(([, v]) => v !== '' && v !== null && v !== undefined)))
-      const result = await donationApi.createDonation({ prefix, doc_date: isoDate(docDate), fields: payload(), lines: cleanLines, ...(splitOn ? { split_payments: splitPayload(splitParts) } : {}) })
+      const body = { prefix, doc_date: isoDate(docDate), fields: payload(), lines: cleanLines, ...(splitOn ? { split_payments: splitPayload(splitParts) } : {}) }
+      if (editing && viewId) {
+        const done = await donationApi.updateDonation(viewId, body)
+        setLastSaved(done)
+        notifications.show({ message: 'Changes saved successfully!', color: 'teal' })
+        setAttempted(false)
+        queryClient.invalidateQueries({ queryKey: ['donations'] })
+        refetch()
+        await viewRecord(viewId)
+        if (mode === 'print') directPrint(viewId)
+        return
+      }
+      const result = await donationApi.createDonation(body)
       setLastSaved(result)
       alertify.afterSave({ 'Doc No': result.donrec_no }) // the Alertify reminder asked for before saving; it never blocks the bill
-      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      // Save only saves (the preview opens from Print / the Options menu); F10 = save and print at once
       if (mode === 'print') directPrint(result.donrec_id)
       else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.donrec_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setValues((cur) => {
-        const keep = { ...cur }
-        PER_DONOR_CODES.forEach((c) => delete keep[c])
-        return keep
-      })
-      setLines([])
-      setSplitOn(false)
-      setSplitParts([])
       setAttempted(false)
       queryClient.invalidateQueries({ queryKey: ['donations'] })
       refetch()
+      // the saved receipt stays on screen (read-only) so it can be checked before printing; New starts the next one
+      await viewRecord(result.donrec_id)
     } catch (err) {
-      notifications.show({ message: err?.response?.data?.detail || 'Save failed', color: 'red' })
+      notifications.show({ title: 'Save failed', message: errorText(err, 'Save failed'), color: 'red' })
     } finally {
       setSaving(false)
     }
   }
 
   const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+
+  // The Options drop-down lists this screen's print formats (UtlOption); each one acts on its own Print Click, like the legacy ribbon:
+  // D = print straight away, anything else = open the preview / print window on that format.
+  const { data: printFormats = [] } = useQuery({ queryKey: ['print-formats', DOC_ID], queryFn: () => loadFormats(DOC_ID), staleTime: 60_000 })
+  async function printWithFormat(format) {
+    if (!viewId) return notifications.show({ message: 'Open a saved receipt first (Find, List or the arrows), then choose a print option', color: 'yellow' })
+    setPrintOption(format?.option_name || null) // the preview window opens on the very format that was clicked
+    if (!format) return setPrintFor(viewId)
+    try {
+      await rememberFormat(DOC_ID, format.option_name)
+      // keep the cached list in step with the saved choice, so the ribbon's Print button and the next preview start on it too
+      queryClient.setQueryData(['print-formats', DOC_ID], (list) => (Array.isArray(list) ? list.map((f) => ({ ...f, selected: f.option_name === format.option_name, preferred: f.option_name === format.option_name })) : list))
+      if (String(format.click_operation || '').toUpperCase() === 'D' && format.available) {
+        notifications.show({ message: await printNow({ docId: DOC_ID, recordId: viewId, format }), color: 'teal' })
+      } else setPrintFor(viewId)
+    } catch (err) {
+      notifications.show({ title: 'Could not print', message: await printErrorMessage(err), color: 'red' })
+      setPrintFor(viewId)
+    }
+  }
   useDocShortcuts({
-    onSave: () => !viewId && onSave('save'),
+    onSave: () => !idle && (!viewId || editing) && onSave('save'),
+    onNew: () => (viewId || idle) && startNew(),
+    onEdit: () => viewId && !editing && startEdit(),
     onPrint: () => lastSaved && setPrintFor(lastSaved.donrec_id),
-    onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : !idle && onSave('print')),
   })
 
   const paymentLabel = values.PAYMNTMODE ? String(values.PAYMNTMODE) : null
@@ -271,12 +348,12 @@ export default function DonationReceiptPage() {
           {(prefixes || []).filter(Boolean).length > 1 && (
             <Select aria-label="Prefix" w={110} data={prefixes.filter(Boolean)} value={prefix || null} onChange={(v) => setPrefix(v || '')} allowDeselect={false} disabled={Boolean(viewId)} />
           )}
-          <DocNoDate docId={DOC_ID} prefix={prefix ?? undefined} viewNo={viewId ? viewNo : ''} date={docDate} onDate={setDocDate} dateDisabled={Boolean(viewId) || !rules.edit_doc_date} />
+          <DocNoDate docId={DOC_ID} prefix={prefix ?? undefined} viewNo={viewId ? viewNo : ''} date={docDate} onDate={setDocDate} dateDisabled={readOnly || !rules.edit_doc_date} />
         </Group>
       </Group>
 
       <EntryLayout
-        viewing={Boolean(viewId)}
+        viewing={readOnly}
         main={
           <Stack gap="lg">
             <SectionCard title="Receipt and donor" hint="Drawn from this temple's Doc Designer. A known contact number fills the donor's details.">
@@ -287,13 +364,15 @@ export default function DonationReceiptPage() {
                 setValue={setValue}
                 setValues={setValues}
                 resetKey={resetKey}
+                seedDefaults={!idle}
                 errors={attempted ? headErrors : {}}
                 computed={computed}
-                readOnly={Boolean(viewId)}
+                readOnly={readOnly}
+                singleAddress
                 onBlurField={onBlurField}
                 skip={splitOn ? SPLIT_PAY_CODES : undefined}
               />
-              {!viewId && (
+              {!readOnly && (
                 <Group gap="xs" align="flex-end" mt="md">
                   <NumberInput aria-label="Show No. of records" placeholder="Nos" w={70} min={0} hideControls value={donorLimit} onChange={setDonorLimit} />
                   <Button variant="light" color="kumkum" onClick={() => setDonorOpen(true)}>
@@ -309,7 +388,7 @@ export default function DonationReceiptPage() {
             </SectionCard>
 
             <SectionCard title="Amount" hint="Each line is a donation (optionally for a seva); the lines add up to the receipt total.">
-              <DocDetailGrid docId={DOC_ID} rows={lines} setRows={setLines} values={values} errors={attempted ? lineErrors : {}} readOnly={Boolean(viewId)} />
+              <DocDetailGrid docId={DOC_ID} rows={lines} setRows={setLines} values={values} errors={attempted ? lineErrors : {}} readOnly={readOnly} />
             </SectionCard>
 
             <SectionCard title="Payment details">
@@ -320,9 +399,10 @@ export default function DonationReceiptPage() {
                 setValue={setValue}
                 setValues={setValues}
                 resetKey={resetKey}
+                seedDefaults={!idle}
                 errors={attempted ? headErrors : {}}
                 computed={computed}
-                readOnly={Boolean(viewId)}
+                readOnly={readOnly}
                 skip={splitOn ? SPLIT_PAY_CODES : undefined}
               />
               <SplitPaymentPanel
@@ -333,7 +413,7 @@ export default function DonationReceiptPage() {
                 parts={splitParts}
                 setParts={setSplitParts}
                 total={total}
-                readOnly={Boolean(viewId)}
+                readOnly={readOnly}
                 refModes={refModes}
                 onMain={(m) => setValues((cur) => ({ ...cur, PAYMNTMODE: m.mode, LEDID: m.led_id, REFNO: m.ref_no || '', ...(String(m.mode).toUpperCase() === 'CHEQUE' ? { CHEQUENO: m.ref_no || '', CHEQUEDATE: m.chq_date || '', BANKNAME: m.bank_name || '' } : {}) }))}
               />
@@ -344,17 +424,18 @@ export default function DonationReceiptPage() {
           <>
             <SummaryCard
               rows={[
+                ...(viewId ? [{ label: editing ? 'Editing receipt no' : 'Receipt no', value: viewNo }] : []),
                 ...(paymentLabel ? [{ label: 'Payment', value: paymentLabel }] : []),
                 { label: 'Lines', value: lines.length },
               ]}
               totalLabel="Donation amount"
               total={formatINR(total)}
               words={total}
-              warning={firstError || null}
+              warning={readOnly ? null : firstError || null}
               saving={saving}
-              saveDisabled={!canSave || Boolean(viewId)}
+              saveDisabled={readOnly || !canSave}
               onSave={() => onSave('save')}
-              onSavePrint={() => onSave('print')}
+              hideActions // Save lives in the ribbon below (no separate Save & Print)
             />
             {lastSaved && (
               <SavedPanel
@@ -383,10 +464,10 @@ export default function DonationReceiptPage() {
       />
 
       <CopyFromDialog opened={copyOpen} onClose={() => setCopyOpen(false)} docName="Donation Reciept Entry" search={findDonations} onLoad={copyFrom} />
-      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.donrec_id, label: lastSaved.donrec_no } : null} onLoad={viewRecord} onNew={startNew} search={findDonations} alertify={alertify.nav} />
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.donrec_id, label: lastSaved.donrec_no } : null} onLoad={viewRecord} onNew={startNew} showNew={Boolean(viewId) && !editing} entryMode={!viewId && !idle} newOnly={idle} cancelEditLabel="Cancel" onCancelEntry={cancelEntry} onDelete={deleteDonation} onClose={() => navigate('/')} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('save')} onPrint={() => printWithFormat(pickFormat(printFormats))} printFormats={printFormats} onPrintFormat={printWithFormat} saving={saving} editing={editing} search={findDonations} alertify={alertify.nav} />
       {alertify.modal}
       <DonorHistoryModal opened={donorOpen} onClose={() => setDonorOpen(false)} onPick={applyDonor} initialName={values.DONOR || ''} limit={Number(donorLimit) || 0} />
-      <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Donation Receipt" />
+      <PrintPickerModal opened={Boolean(printFor)} onClose={() => { setPrintFor(null); setPrintOption(null) }} docId={DOC_ID} recordId={printFor} title="Donation Receipt" initialOption={printOption} />
     </Stack>
   )
 }

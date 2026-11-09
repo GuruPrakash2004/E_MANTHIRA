@@ -9,7 +9,7 @@ import { useAuth } from '../../hooks/useAuth'
 import DatabaseSettingsPanel from '../../components/DatabaseSettingsPanel'
 import ShineLogo from '../../components/ShineLogo'
 import HeroVisual from '../../components/HeroVisual'
-import { cachedWelcome, getWelcome, welcomeVideoUrl } from '../../api/endpoints/welcome'
+import { cachedPickStillValid, cachedWelcome, getWelcome, pickedUrl } from '../../api/endpoints/welcome'
 
 // Original artwork (see vTemple_Analysis/08_UI_UX_Design_System.md §4 "Ornament kit"):
 // hand-built SVG gopuram + kolam pattern, drawn for this project — not stock icons.
@@ -50,7 +50,9 @@ export default function LoginPage() {
     const v = document.createElement('video')
     v.preload = 'auto'
     v.muted = true
-    v.src = cfg?.custom ? welcomeVideoUrl(cfg.version) : '/welcome/temple-awakening.mp4'
+    // a random-each-sign-in pick is not known until sign-in, so only a still-valid per-day / hourly pick (or the built-in clip) is warmed
+    if (!cachedPickStillValid(cfg) && cfg?.custom) return undefined
+    v.src = (cachedPickStillValid(cfg) && pickedUrl(cfg)) || '/welcome/temple-awakening.mp4'
     v.load()
     return () => v.removeAttribute('src')
   }, [])

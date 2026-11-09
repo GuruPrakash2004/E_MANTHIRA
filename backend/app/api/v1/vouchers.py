@@ -1,10 +1,12 @@
 """Payment Voucher + Receipt Voucher endpoints (standalone, not source-doc-driven)."""
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.core.db import get_conn, with_transaction
@@ -25,10 +27,21 @@ class CancelRequest(BaseModel):
 # ---- Payment Voucher (DocID 1224) ----
 
 
+class AdjustmentRequest(BaseModel):
+    """One bill-wise adjustment of a line (see services/bill_adjust.py): against a pending bill ('A') or a new reference ('N')."""
+
+    adj_acc_id: int = 0
+    amount: float
+    side: str = "DR"
+    adj_type: str = "A"
+    new_ref_no: str = ""
+
+
 class VoucherLineRequest(BaseModel):
     ac_led_id: int
     dr_amt: float = 0.0
     cr_amt: float = 0.0
+    adjustments: list[AdjustmentRequest] = []
 
 
 class PaymentVoucherCreateRequest(BaseModel):
@@ -216,6 +229,21 @@ def delete_journal_voucher(jnrvch_id: int, user: CurrentUser = Depends(require_r
     with with_transaction() as conn:
         journal_service.delete(conn, jnrvch_id=jnrvch_id, user_code=user.user_code)
     return {"message": "Deleted Journal Voucher Successfully!"}
+
+
+@router.get("/vouchers/pending-bills")
+def pending_bills(
+    ac_led_id: int, side: str = "DR", doc_id: int = 0, voucher_id: int = 0, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user),
+):
+    """The pending bills of a party for the Bill wise Adjustment window (legacy mSP_GetPendBills); `voucher_id` is the voucher being edited."""
+    from app.services import bill_adjust
+
+    own = 0
+    if voucher_id and doc_id:
+        sh = conn.execute(text("SELECT DocShForm FROM UtlTransactions WHERE DocID = :d"), {"d": doc_id}).scalar()
+        if sh and re.fullmatch(r"\w+", str(sh).strip()):
+            own = bill_adjust.own_acc_id(conn, str(sh).strip(), voucher_id)
+    return bill_adjust.pending_bills(conn, ac_led_id=ac_led_id, side=side, own_acc=own)
 
 
 @router.get("/vouchers/account-heads")

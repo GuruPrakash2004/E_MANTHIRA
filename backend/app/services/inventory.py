@@ -33,10 +33,10 @@ from sqlalchemy.engine import Connection
 
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
-from app.legacy.tables import insert_row
-from app.meta import doc_rules
+from app.legacy.tables import insert_row, update_row
+from app.meta import doc_rules, edit_rules
 from app.meta.numbering import next_doc_no, print_doc_no
-from app.services import ledger, voucher_rules
+from app.services import ledger, trn_voucher, voucher_rules
 
 
 def _post_stock(
@@ -180,6 +180,79 @@ def list_stock_adjustments(conn: Connection, *, fy: FinancialYear, top: int = 50
     return [dict(r) for r in rows]
 
 
+def get_stock_adjustment(conn: Connection, *, sa_id: int) -> dict:
+    """One saved adjustment for viewing: the header row and its lines with the item / UOM names."""
+    head = conn.execute(text("SELECT * FROM TrnHdrSA WHERE SAID = :id"), {"id": sa_id}).mappings().first()
+    if head is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Stock Adjustment not found")
+    lines = conn.execute(
+        text(
+            "SELECT d.SlNo, d.ITEMID, i.ITEMCODE, i.ITEMNAME, d.UOMID, u.UOMCODE, d.SAQty, d.SARate, d.SAAmt, d.ADJTYPE, d.DRMKS "
+            "FROM TrnDtlSA d LEFT JOIN MstITEM i ON i.ITEMID = d.ITEMID LEFT JOIN MstUOM u ON u.UOMID = d.UOMID "
+            "WHERE d.SAID = :id ORDER BY d.SlNo"
+        ),
+        {"id": sa_id},
+    ).mappings().all()
+    return {"header": dict(head), "lines": [dict(r) for r in lines]}
+
+
+def update_stock_adjustment(conn: Connection, *, sa_id: int, data: StockAdjustmentInput, fy: FinancialYear, user_code: str) -> dict:
+    """
+    Edit a saved adjustment: its number (SANO / Prefix / PrintSANO) and who/when it was added stay as they are; the header, the lines and the
+    stock it posted are rewritten for the new values, in the caller's one transaction (the old stock lines go first, so the stock-out check
+    sees the real stock, and the new ones are posted under the same document number).
+    """
+    old = conn.execute(text("SELECT SANO, PrintSANO, Cancelled, SADate, Authorised FROM TrnHdrSA WHERE SAID = :id"), {"id": sa_id}).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Stock Adjustment not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, DOC_ID_SA, doc_date=old["SADate"], authorised=old["Authorised"])
+    assert_date_in_fy(data.doc_date, fy)
+    if not data.lines:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please add at least one item line")
+    for l in data.lines:
+        if l.qty <= 0:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
+        if l.adj_type not in ("Add", "Reduce"):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Adjust type must be Add or Reduce")
+    header, values = doc_rules.header_columns(conn, DOC_ID_SA, "TrnHdrSA", data.fields, computed=("TOTQTY",))
+    loc_id = int(values.get("LOCID") or 0)
+    if not loc_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Location is mandatory")
+
+    conn.execute(text("DELETE FROM UtlStockList WHERE UTDocID = :d AND DocNo = :n"), {"d": DOC_ID_SA, "n": old["SANO"]})
+    out: dict[int, float] = {}
+    for l in data.lines:
+        if l.adj_type == "Reduce":
+            out[l.item_id] = out.get(l.item_id, 0.0) + l.qty
+    _check_stock_out(conn, loc_id=loc_id, outgoing=out)
+
+    total_qty = sum(l.qty for l in data.lines)
+    cols = {k: v for k, v in header.items() if k not in ("SANO", "Prefix", "PrintSANO", "AddedBy", "AddedOn", "Cancelled")}
+    cols.update({"SADate": data.doc_date, "TOTQTY": total_qty, "ChangedBy": user_code, "ChangedOn": datetime.now()})
+    if edit_rules.auth_required(conn, DOC_ID_SA):
+        cols["Authorised"] = "N"
+    update_row(conn, "TrnHdrSA", "SAID", sa_id, cols)
+    conn.execute(text("DELETE FROM TrnDtlSA WHERE SAID = :id"), {"id": sa_id})
+    for i, l in enumerate(data.lines, start=1):
+        insert_row(
+            conn, "TrnDtlSA",
+            {
+                "SAID": sa_id, "SlNo": i, "ItemSlNO": i, "ITEMID": l.item_id, "UOMID": l.uom_id,
+                "ShortClosed": "N", "ShortClosedBy": 0, "StkQty": l.qty, "SAQty": l.qty, "SARate": l.rate,
+                "SAAmt": round(l.qty * l.rate, 2), "ADJTYPE": l.adj_type, "DRMKS": l.remarks,
+            },
+        )
+    _post_stock(
+        conn, doc_id=DOC_ID_SA, hdr_id=sa_id, doc_name="Stock Adjustment Entry", doc_type="SA", doc_no=old["SANO"], doc_date=data.doc_date,
+        loc_id=loc_id,
+        lines=[{"item_id": l.item_id, "qty": l.qty, "rate": l.rate, "multiplier": 1 if l.adj_type == "Add" else -1} for l in data.lines],
+    )
+    audit.record(conn, entity="Stock Adjustment Entry", entity_id=sa_id, action="E", user_code=user_code, details=old["SANO"])
+    return {"sa_id": sa_id, "sa_no": old["SANO"], "total_qty": total_qty}
+
+
 def delete_stock_adjustment(conn: Connection, *, sa_id: int, user_code: str) -> None:
     row = conn.execute(text("SELECT SANO FROM TrnHdrSA WHERE SAID = :id"), {"id": sa_id}).mappings().first()
     if row is None:
@@ -266,6 +339,70 @@ def list_store_issues(conn: Connection, *, fy: FinancialYear, top: int = 50) -> 
     sql = f"SELECT * FROM TrnHdrISS WHERE ISSDate BETWEEN :fs AND :fe ORDER BY ISSID DESC {limit_clause(top)}"
     rows = conn.execute(text(sql), {"fs": fy.start_date, "fe": fy.end_date}).mappings().all()
     return [dict(r) for r in rows]
+
+
+def get_store_issue(conn: Connection, *, iss_id: int) -> dict:
+    """One saved issue note for viewing: the header row and its lines with the item / UOM names."""
+    head = conn.execute(text("SELECT * FROM TrnHdrISS WHERE ISSID = :id"), {"id": iss_id}).mappings().first()
+    if head is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Store Issue Note not found")
+    lines = conn.execute(
+        text(
+            "SELECT d.SlNo, d.ITEMID, i.ITEMCODE, i.ITEMNAME, d.UOMID, u.UOMCODE, d.ISSQty, d.DRMKS "
+            "FROM TrnDtlISS d LEFT JOIN MstITEM i ON i.ITEMID = d.ITEMID LEFT JOIN MstUOM u ON u.UOMID = d.UOMID "
+            "WHERE d.ISSID = :id ORDER BY d.SlNo"
+        ),
+        {"id": iss_id},
+    ).mappings().all()
+    return {"header": dict(head), "lines": [dict(r) for r in lines]}
+
+
+def update_store_issue(conn: Connection, *, iss_id: int, data: StoreIssueInput, fy: FinancialYear, user_code: str) -> dict:
+    """Edit a saved issue note (same rules as update_stock_adjustment): number kept, header + lines + the stock it took out rewritten."""
+    old = conn.execute(text("SELECT ISSNO, PrintISSNO, Cancelled, ISSDate, Authorised FROM TrnHdrISS WHERE ISSID = :id"), {"id": iss_id}).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Store Issue Note not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, DOC_ID_ISS, doc_date=old["ISSDate"], authorised=old["Authorised"])
+    assert_date_in_fy(data.doc_date, fy)
+    if not data.lines:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please add at least one item line")
+    for l in data.lines:
+        if l.qty <= 0:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
+    header, values = doc_rules.header_columns(conn, DOC_ID_ISS, "TrnHdrISS", data.fields, computed=("TOTQTY",))
+    loc_id = int(values.get("LOCID") or 0)
+    if not loc_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Location is mandatory")
+
+    conn.execute(text("DELETE FROM UtlStockList WHERE UTDocID = :d AND DocNo = :n"), {"d": DOC_ID_ISS, "n": old["ISSNO"]})
+    out: dict[int, float] = {}
+    for l in data.lines:
+        out[l.item_id] = out.get(l.item_id, 0.0) + l.qty
+    _check_stock_out(conn, loc_id=loc_id, outgoing=out)
+
+    total_qty = sum(l.qty for l in data.lines)
+    cols = {k: v for k, v in header.items() if k not in ("ISSNO", "Prefix", "PrintISSNO", "AddedBy", "AddedOn", "Cancelled")}
+    cols.update({"ISSDate": data.doc_date, "TOTQTY": total_qty, "ChangedBy": user_code, "ChangedOn": datetime.now()})
+    if edit_rules.auth_required(conn, DOC_ID_ISS):
+        cols["Authorised"] = "N"
+    update_row(conn, "TrnHdrISS", "ISSID", iss_id, cols)
+    conn.execute(text("DELETE FROM TrnDtlISS WHERE ISSID = :id"), {"id": iss_id})
+    for i, l in enumerate(data.lines, start=1):
+        insert_row(
+            conn, "TrnDtlISS",
+            {
+                "ISSID": iss_id, "SlNo": i, "ItemSlNO": i, "ITEMID": l.item_id, "UOMID": l.uom_id,
+                "ShortClosed": "N", "ShortClosedBy": 0, "StkQty": l.qty, "ISSQty": l.qty, "DRMKS": l.remarks,
+            },
+        )
+    _post_stock(
+        conn, doc_id=DOC_ID_ISS, hdr_id=iss_id, doc_name="Store Issue Note", doc_type="ISS", doc_no=old["ISSNO"], doc_date=data.doc_date,
+        loc_id=loc_id, lines=[{"item_id": l.item_id, "qty": l.qty, "multiplier": -1} for l in data.lines],
+    )
+    audit.record(conn, entity="Store Issue Note", entity_id=iss_id, action="E", user_code=user_code, details=old["ISSNO"])
+    return {"iss_id": iss_id, "iss_no": old["ISSNO"], "total_qty": total_qty}
 
 
 def delete_store_issue(conn: Connection, *, iss_id: int, user_code: str) -> None:
@@ -361,7 +498,9 @@ def create_purchase_bill(conn: Connection, *, data: PurchaseBillInput, fy: Finan
         lines=[{"item_id": l.item_id, "qty": l.qty, "rate": l.rate, "multiplier": 1} for l in data.lines],
     )
     audit.record(conn, entity="Purchase Bill", entity_id=pb_id, action="A", user_code=user_code, details=doc_no)
-    return {"pb_id": pb_id, "pb_no": doc_no, "total_qty": total_qty, "pb_value": pb_value}
+    # legacy GenVch: saving the bill makes its Purchase Voucher (and GL posting) in the same transaction
+    voucher = trn_voucher.generate(conn, DOC_ID_PB, pb_id, user_code=user_code)
+    return {"pb_id": pb_id, "pb_no": doc_no, "total_qty": total_qty, "pb_value": pb_value, "voucher_id": voucher["id"] if voucher else None, "voucher_no": voucher["print_no"] if voucher else None}
 
 
 def list_purchase_bills(conn: Connection, *, fy: FinancialYear, top: int = 50) -> list[dict]:
@@ -395,7 +534,9 @@ def get_purchase_bill(conn: Connection, *, pb_id: int) -> dict:
         ),
         {"id": pb_id},
     ).mappings().all()
-    return {"header": dict(head), "lines": [dict(r) for r in lines]}
+    setup = trn_voucher.settings_for(conn, DOC_ID_PB)
+    voucher = trn_voucher.linked_voucher(conn, setup, pb_id) if setup else None
+    return {"header": dict(head), "lines": [dict(r) for r in lines], "voucher": voucher}
 
 
 def search_line_items(conn: Connection, *, q: str = "", top: int = 100) -> list[dict]:
@@ -412,10 +553,72 @@ def search_line_items(conn: Connection, *, q: str = "", top: int = 100) -> list[
     return [dict(r) for r in conn.execute(text(sql), {"q": like}).mappings().all()]
 
 
+def update_purchase_bill(conn: Connection, *, pb_id: int, data: PurchaseBillInput, fy: FinancialYear, user_code: str) -> dict:
+    """Edit a saved purchase bill: number kept; the header (supplier details included), the lines and the stock it brought in are rewritten."""
+    old = conn.execute(text("SELECT PBNO, PrintPBNO, Cancelled, PBDate, Authorised FROM TrnHdrPB WHERE PBID = :id"), {"id": pb_id}).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Purchase Bill not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, DOC_ID_PB, doc_date=old["PBDate"], authorised=old["Authorised"])
+    assert_date_in_fy(data.doc_date, fy)
+    if not data.lines:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please add at least one item line")
+    for l in data.lines:
+        if l.qty <= 0 or l.rate <= 0:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
+    supp = conn.execute(
+        text("SELECT SUPPNAME, BAdd1, BAdd2, City, State, PinCode, Country FROM MstSUPP WHERE SUPPID = :id"), {"id": data.supp_id}
+    ).mappings().first()
+    header, values = doc_rules.header_columns(
+        conn, DOC_ID_PB, "TrnHdrPB", data.fields, computed=("TOTQTY", "PBVALUE", "VCHID", "ISSUEDBY", "TOTAMTIWRDS", "AMTINWORDS")
+    )
+    loc_id = int(values.get("LOCID") or 0)
+    if not loc_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Location is mandatory")
+
+    total_qty = sum(l.qty for l in data.lines)
+    pb_value = round(sum(l.qty * l.rate for l in data.lines), 2)
+    # not rewritten on edit: the number, who added it, and VCHID (the link to the bill's voucher; the Designer default 0 would cut it)
+    cols = {k: v for k, v in header.items() if k.upper() not in ("PBNO", "PREFIX", "PRINTPBNO", "ADDEDBY", "ADDEDON", "CANCELLED", "ISSUEDBY", "VCHID")}
+    cols.update(
+        {
+            "PBDate": data.doc_date, "SUPPID": data.supp_id,
+            "PartyName": supp["SUPPNAME"] if supp else "", "PartyAdd1": supp["BAdd1"] if supp else "", "PartyAdd2": supp["BAdd2"] if supp else "",
+            "PartyCity": supp["City"] if supp else "", "PartyState": supp["State"] if supp else "", "PartyPinCode": supp["PinCode"] if supp else "",
+            "PartyCountry": supp["Country"] if supp else "",
+            "TOTQTY": total_qty, "PBVALUE": pb_value, "ChangedBy": user_code, "ChangedOn": datetime.now(),
+        }
+    )
+    if edit_rules.auth_required(conn, DOC_ID_PB):
+        cols["Authorised"] = "N"
+    update_row(conn, "TrnHdrPB", "PBID", pb_id, cols)
+    conn.execute(text("DELETE FROM UtlStockList WHERE UTDocID = :d AND DocNo = :n"), {"d": DOC_ID_PB, "n": old["PBNO"]})
+    conn.execute(text("DELETE FROM TrnDtlPB WHERE PBID = :id"), {"id": pb_id})
+    for i, l in enumerate(data.lines, start=1):
+        insert_row(
+            conn, "TrnDtlPB",
+            {
+                "PBID": pb_id, "SlNo": i, "ItemSlNO": i, "ITEMID": l.item_id, "UOMID": l.uom_id,
+                "ShortClosed": "N", "ShortClosedBy": 0, "StkQty": l.qty, "PBQty": l.qty, "PBRate": l.rate, "PBAmt": round(l.qty * l.rate, 2),
+            },
+        )
+    _post_stock(
+        conn, doc_id=DOC_ID_PB, hdr_id=pb_id, doc_name="Purchase Bill", doc_type="PB", doc_no=old["PBNO"], doc_date=data.doc_date,
+        loc_id=loc_id, lines=[{"item_id": l.item_id, "qty": l.qty, "rate": l.rate, "multiplier": 1} for l in data.lines],
+    )
+    audit.record(conn, entity="Purchase Bill", entity_id=pb_id, action="E", user_code=user_code, details=old["PBNO"])
+    # legacy edit (Mode 'M'): the bill's existing voucher is refilled under its own number; a bill without one gets one
+    voucher = trn_voucher.regenerate(conn, DOC_ID_PB, pb_id, user_code=user_code)
+    return {"pb_id": pb_id, "pb_no": old["PBNO"], "total_qty": total_qty, "pb_value": pb_value, "voucher_id": voucher["id"] if voucher else None, "voucher_no": voucher["print_no"] if voucher else None}
+
+
 def delete_purchase_bill(conn: Connection, *, pb_id: int, user_code: str) -> None:
     row = conn.execute(text("SELECT PBNO FROM TrnHdrPB WHERE PBID = :id"), {"id": pb_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Purchase Bill not found")
+    # legacy delete: the bill's voucher, its lines and its GL rows go too (refused when the voucher was already used in accounting)
+    trn_voucher.delete_generated(conn, DOC_ID_PB, pb_id, user_code=user_code)
     conn.execute(text("DELETE FROM UtlStockList WHERE UTDocID = :d AND DocNo = :n"), {"d": DOC_ID_PB, "n": row["PBNO"]})
     conn.execute(text("DELETE FROM TrnDtlPB WHERE PBID = :id"), {"id": pb_id})
     conn.execute(text("DELETE FROM TrnHdrPB WHERE PBID = :id"), {"id": pb_id})
@@ -496,6 +699,60 @@ def create_purchase_voucher(conn: Connection, *, data: PurchaseVoucherInput, fy:
     return {"purvch_id": purvch_id, "purvch_no": doc_no, "amount": total_dr}
 
 
+def _assert_voucher_changeable(conn: Connection, purvch_id: int, *, verb: str) -> dict:
+    row = conn.execute(
+        text("SELECT PURVCHNO, PURVCHDate, Cancelled, Authorised, TRNTYPE FROM TrnHdrPURVCH WHERE PURVCHID = :id"), {"id": purvch_id}
+    ).mappings().first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Purchase Voucher not found")
+    if (row["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Current record is cancelled. {'Cannot edit!' if verb == 'edit' else 'Deletion not possible!'}")
+    if str(row["TRNTYPE"] or "").strip() == "PB":
+        raise HTTPException(status.HTTP_409_CONFLICT, f"This voucher was generated from a Purchase Bill. {verb.capitalize()} the bill instead.")
+    edit_rules.assert_editable(conn, DOC_ID_PURVCH, doc_date=row["PURVCHDate"], authorised=row["Authorised"])
+    if trn_voucher._adjusted(conn, "PURVCH", purvch_id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "This voucher is already used in accounting transactions, so it cannot be changed")
+    return dict(row)
+
+
+def update_purchase_voucher(conn: Connection, *, purvch_id: int, data: PurchaseVoucherInput, fy: FinancialYear, user_code: str) -> dict:
+    """Edit a standalone voucher (legacy Mode "M"): number and who/when it was added stay; header, lines and the GL posting are rewritten."""
+    old = _assert_voucher_changeable(conn, purvch_id, verb="edit")
+    assert_date_in_fy(data.voucher_date, fy)
+    if len(data.lines) < 2:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "At least two account-head lines are required")
+    total_dr = round(sum(l.dr_amt for l in data.lines), 2)
+    total_cr = round(sum(l.cr_amt for l in data.lines), 2)
+    if total_dr <= 0:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
+    if abs(total_dr - total_cr) > 0.005:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Debit and Credit totals are NOT matching!")
+    voucher_rules.check_heads(conn, data.lines)
+    header, _values = doc_rules.header_columns(conn, DOC_ID_PURVCH, "TrnHdrPURVCH", data.fields, computed=("TRNTYPE", "TRNID"))
+    for keep in ("PURVCHNO", "Prefix", "PrintPURVCHNO", "AddedBy", "AddedOn", "Cancelled", "Authorised", "TRNTYPE", "TRNID"):
+        header.pop(keep, None)
+    cols = {**header, "PURVCHDate": data.voucher_date, "ChangedBy": user_code, "ChangedOn": datetime.now()}
+    if edit_rules.auth_required(conn, DOC_ID_PURVCH):
+        cols["Authorised"] = "N"  # an edited document goes back for authorisation
+    update_row(conn, "TrnHdrPURVCH", "PURVCHID", purvch_id, cols)
+    ledger.delete_posting(conn, doc_type="PURVCH", trn_no=old["PURVCHNO"], trn_id=purvch_id)
+    conn.execute(text("DELETE FROM TrnDtlPURVCH WHERE PURVCHID = :id"), {"id": purvch_id})
+    voucher_rules.delete_bill_det(conn, "TrnDtlPURVCH", "PURVCHID", purvch_id)
+    for i, l in enumerate(data.lines, start=1):
+        insert_row(
+            conn, "TrnDtlPURVCH",
+            {"PURVCHID": purvch_id, "SlNo": i, "AcLedID": l.ac_led_id, "PURVCHAmt": l.dr_amt or l.cr_amt, "CrAmt": l.cr_amt, "DrAmt": l.dr_amt,
+             "AmtType": "DR" if l.dr_amt else "CR", "AgRefAmt": 0, "NewRefAmt": 0},
+        )
+    ledger.post(
+        conn, doc_type="PURVCH", trn_id=purvch_id, trn_no=old["PURVCHNO"], trn_date=data.voucher_date, due_date=data.voucher_date,
+        narration=f"Purchase Voucher {old['PURVCHNO']}",
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+    )
+    audit.record(conn, entity="Purchase Voucher", entity_id=purvch_id, action="E", user_code=user_code, details=old["PURVCHNO"])
+    return {"purvch_id": purvch_id, "purvch_no": old["PURVCHNO"], "amount": total_dr}
+
+
 def list_purchase_vouchers(conn: Connection, *, fy: FinancialYear, top: int = 50) -> list[dict]:
     from app.core.db import limit_clause
 
@@ -505,12 +762,11 @@ def list_purchase_vouchers(conn: Connection, *, fy: FinancialYear, top: int = 50
 
 
 def delete_purchase_voucher(conn: Connection, *, purvch_id: int, user_code: str) -> None:
-    row = conn.execute(text("SELECT PURVCHNO FROM TrnHdrPURVCH WHERE PURVCHID = :id"), {"id": purvch_id}).mappings().first()
-    if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Purchase Voucher not found")
+    row = _assert_voucher_changeable(conn, purvch_id, verb="delete")
     ledger.delete_posting(conn, doc_type="PURVCH", trn_no=row["PURVCHNO"], trn_id=purvch_id)
     conn.execute(text("UPDATE TrnHdrPB SET VCHID = NULL WHERE VCHID = :id"), {"id": purvch_id})
     conn.execute(text("DELETE FROM TrnDtlPURVCH WHERE PURVCHID = :id"), {"id": purvch_id})
+    voucher_rules.delete_bill_det(conn, "TrnDtlPURVCH", "PURVCHID", purvch_id)
     conn.execute(text("DELETE FROM TrnHdrPURVCH WHERE PURVCHID = :id"), {"id": purvch_id})
     audit.record(conn, entity="Purchase Voucher", entity_id=purvch_id, action="D", user_code=user_code)
 
@@ -564,6 +820,42 @@ def create_bom(conn: Connection, *, data: BomInput, fy: FinancialYear, user_code
 
     audit.record(conn, entity="Bill of Material", entity_id=bom_id, action="A", user_code=user_code, details=doc_no)
     return {"bom_id": bom_id, "bom_no": doc_no}
+
+
+def get_bom(conn: Connection, *, bom_id: int) -> dict:
+    h = conn.execute(text("SELECT * FROM MstHdrBOM WHERE BOMID = :id"), {"id": bom_id}).mappings().first()
+    if h is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bill of Material not found")
+    lines = conn.execute(text("SELECT ITEMID, Qty FROM MstDtlBOM WHERE BOMID = :id ORDER BY SlNo"), {"id": bom_id}).mappings().all()
+    return {"header": dict(h), "lines": [dict(l) for l in lines]}
+
+
+def update_bom(conn: Connection, *, bom_id: int, data: BomInput, fy: FinancialYear, user_code: str) -> dict:
+    """Edit a saved recipe (legacy Mode "M"): number, prefix and who/when it was added stay; header and components are rewritten."""
+    old = conn.execute(text("SELECT BOMNO, BOMDate, Cancelled, Authorised FROM MstHdrBOM WHERE BOMID = :id"), {"id": bom_id}).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Bill of Material not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, DOC_ID_BOM, doc_date=old["BOMDate"], authorised=old["Authorised"])
+    assert_date_in_fy(data.eff_from, fy)
+    if not data.components:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please add at least one component")
+    for c in data.components:
+        if c.qty <= 0:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
+    cols = {
+        "BOMDate": data.eff_from, "BOMItemID": data.bom_item_id, "EffFrom": data.eff_from, "EffTo": data.eff_to, "HRMKS": data.remarks,
+        "ChangedBy": user_code, "ChangedOn": datetime.now(),
+    }
+    if edit_rules.auth_required(conn, DOC_ID_BOM):
+        cols["Authorised"] = "N"  # an edited document goes back for authorisation
+    update_row(conn, "MstHdrBOM", "BOMID", bom_id, cols)
+    conn.execute(text("DELETE FROM MstDtlBOM WHERE BOMID = :id"), {"id": bom_id})
+    for i, c in enumerate(data.components, start=1):
+        insert_row(conn, "MstDtlBOM", {"BOMID": bom_id, "SlNo": i, "ITEMID": c.item_id, "Qty": c.qty})
+    audit.record(conn, entity="Bill of Material", entity_id=bom_id, action="E", user_code=user_code, details=old["BOMNO"])
+    return {"bom_id": bom_id, "bom_no": old["BOMNO"]}
 
 
 def list_boms(conn: Connection, *, top: int = 50) -> list[dict]:
@@ -720,9 +1012,12 @@ def stock_ledger_report(conn: Connection, *, item_id: int, loc_id: int | None, f
 
 
 def delete_bom(conn: Connection, *, bom_id: int, user_code: str) -> None:
-    row = conn.execute(text("SELECT BOMID FROM MstHdrBOM WHERE BOMID = :id"), {"id": bom_id}).first()
+    row = conn.execute(text("SELECT BOMID, BOMDate, Cancelled, Authorised FROM MstHdrBOM WHERE BOMID = :id"), {"id": bom_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Bill of Material not found")
+    if (row["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Deletion not possible!")
+    edit_rules.assert_editable(conn, DOC_ID_BOM, doc_date=row["BOMDate"], authorised=row["Authorised"])
     conn.execute(text("DELETE FROM MstDtlBOM WHERE BOMID = :id"), {"id": bom_id})
     conn.execute(text("DELETE FROM MstHdrBOM WHERE BOMID = :id"), {"id": bom_id})
     audit.record(conn, entity="Bill of Material", entity_id=bom_id, action="D", user_code=user_code)

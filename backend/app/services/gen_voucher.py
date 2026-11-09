@@ -6,7 +6,7 @@ One parametrised implementation instead of three copies: `SPECS` names the per-d
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from fastapi import HTTPException, status
@@ -43,6 +43,7 @@ class VoucherLine:
     ac_led_id: int
     dr_amt: float = 0.0
     cr_amt: float = 0.0
+    adjustments: list = field(default_factory=list)  # bill-wise adjustments (services.bill_adjust)
 
 
 @dataclass
@@ -102,7 +103,7 @@ def create(conn: Connection, spec: Spec, *, data: VoucherInput, fy: FinancialYea
     ledger.post(
         conn, doc_type=spec.doc_type, trn_id=vid, trn_no=doc_no, trn_date=data.voucher_date, due_date=data.voucher_date,
         narration=narration,
-        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt, adjustments=getattr(l, "adjustments", None) or []) for l in data.lines],
     )
     audit.record(conn, entity=spec.name, entity_id=vid, action="A", user_code=user_code, details=doc_no)
     return {"voucher_id": vid, "voucher_no": doc_no, "amount": total_dr}
@@ -143,6 +144,7 @@ def delete(conn: Connection, spec: Spec, *, voucher_id: int, user_code: str) -> 
     edit_rules.assert_editable(conn, spec.doc_id, doc_date=row["VDate"], authorised=row["Authorised"])
     ledger.delete_posting(conn, doc_type=spec.doc_type, trn_no=row["NO"], trn_id=voucher_id)
     conn.execute(text(f"DELETE FROM TrnDtl{s} WHERE {s}ID = :id"), {"id": voucher_id})
+    voucher_rules.delete_bill_det(conn, f"TrnDtl{s}", f"{s}ID", voucher_id)
     conn.execute(text(f"DELETE FROM TrnHdr{s} WHERE {s}ID = :id"), {"id": voucher_id})
     audit.record(conn, entity=spec.name, entity_id=voucher_id, action="D", user_code=user_code)
 
@@ -175,6 +177,7 @@ def update(conn: Connection, spec: Spec, *, voucher_id: int, data: VoucherInput,
 
     ledger.delete_posting(conn, doc_type=spec.doc_type, trn_no=old["NO"], trn_id=voucher_id)
     conn.execute(text(f"DELETE FROM TrnDtl{s} WHERE {s}ID = :id"), {"id": voucher_id})
+    voucher_rules.delete_bill_det(conn, f"TrnDtl{s}", f"{s}ID", voucher_id)
     for i, l in enumerate(data.lines, start=1):
         insert_row(
             conn,
@@ -184,7 +187,7 @@ def update(conn: Connection, spec: Spec, *, voucher_id: int, data: VoucherInput,
         )
     ledger.post(
         conn, doc_type=spec.doc_type, trn_id=voucher_id, trn_no=old["NO"], trn_date=data.voucher_date, due_date=data.voucher_date, narration=narration,
-        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt, adjustments=getattr(l, "adjustments", None) or []) for l in data.lines],
     )
     audit.record(conn, entity=spec.name, entity_id=voucher_id, action="E", user_code=user_code, details=old["NO"])
     return {"voucher_id": voucher_id, "voucher_no": old["NO"], "amount": total_dr}

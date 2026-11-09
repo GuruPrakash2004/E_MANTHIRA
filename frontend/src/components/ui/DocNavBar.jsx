@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { scrollEntryToTop } from '../../utils/scrollTop'
 import { ActionIcon, Badge, Button, Group, Modal, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core'
-import { Ban, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, FolderOpen, List, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react'
+import { Ban, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, FolderOpen, List, Pencil, Plus, Save, Printer, Search, Trash2, X } from 'lucide-react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useQuery } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
@@ -21,7 +22,7 @@ import { AlertifyMark } from '../../features/alertify/AlertifyLogo'
  *   onNew()    - go back to a blank entry
  *   search     - async (text) => [{ id, label, sub }] used by Find
  */
-export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, onEdit, onCancelEdit, onSave, saving = false, editing = false, showNew = true, search, prefix = '', extraOptions = [], onCancelDoc, onDelete, lastSaved = null, alertify = null }) {
+export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, onEdit, onCancelEdit, onSave, saving = false, editing = false, showNew = true, search, prefix = '', extraOptions = [], onCancelDoc, onDelete, lastSaved = null, alertify = null, entryMode = false, newOnly = false, onSavePrint, onCancelEntry, onClose, onPrint, printFormats = [], onPrintFormat, cancelEditLabel = 'Cancel edit' }) {
   const [findOpen, setFindOpen] = useState(false)
   const [listOpen, setListOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -52,14 +53,33 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
     </Tooltip>
   )
 
+  // entryMode = a new entry being typed (legacy Add mode); newOnly = nothing open (an entry was cancelled).
+  // Both show the whole ribbon: Save / Save & Print / Cancel appear here, and the record buttons wait for a record.
+  const fresh = entryMode || newOnly
+
   return (
     <>
       <div className="vt-action-bar">
-        <Group justify="space-between" gap="xs" p="sm" className="vt-action-bar-card">
-          <Group gap="xs">
-            {showNew && rights.add && (
-              <Button color="kumkum" leftSection={<Plus size={16} />} onClick={onNew}>
+        <Group justify="space-between" gap="xs" p="sm" wrap="nowrap" className={`vt-action-bar-card${fresh ? " vt-bar-compact" : ""}`}>
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+            {entryMode && onSave && rights.add && (
+              <Button color="kumkum" leftSection={<Save size={16} />} loading={saving} onClick={onSave} aria-keyshortcuts="Alt+S" title="Save only, nothing is printed (Alt+S)">
+                Save
+              </Button>
+            )}
+            {entryMode && onSavePrint && rights.add && rights.print && (
+              <Button variant="outline" color="kumkum" leftSection={<Printer size={16} />} disabled={saving} onClick={onSavePrint} aria-keyshortcuts="F10" title="Save and print straight away (F10)">
+                Save &amp; Print
+              </Button>
+            )}
+            {(showNew || newOnly) && rights.add && (
+              <Button color="kumkum" leftSection={<Plus size={16} />} onClick={() => { onNew?.(); scrollEntryToTop() }}>
                 New
+              </Button>
+            )}
+            {entryMode && onCancelEntry && (
+              <Button variant="default" leftSection={<X size={16} />} onClick={onCancelEntry}>
+                Cancel
               </Button>
             )}
             {editing && onSave && rights.edit && (
@@ -69,11 +89,11 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
             )}
             {editing && onCancelEdit && (
               <Button variant="default" onClick={onCancelEdit}>
-                Cancel edit
+                {cancelEditLabel}
               </Button>
             )}
-            {currentId && onEdit && !editing && rights.edit && (
-              <Button variant="light" color="kumkum" leftSection={<Pencil size={16} />} onClick={onEdit}>
+            {(currentId || newOnly) && onEdit && !editing && rights.edit && (
+              <Button variant="light" color="kumkum" leftSection={<Pencil size={16} />} disabled={!currentId} onClick={onEdit}>
                 Edit
               </Button>
             )}
@@ -82,15 +102,27 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
                 Cancel
               </Button>
             )}
-            {currentId && !editing && onDelete && rights.del && (
-              <Button variant="light" color="red" leftSection={<Trash2 size={16} />} onClick={onDelete}>
+            {(currentId || newOnly) && !editing && onDelete && rights.del && (
+              <Button variant="light" color="red" leftSection={<Trash2 size={16} />} disabled={!currentId} onClick={onDelete}>
                 Delete
               </Button>
             )}
-            <Button variant="default" leftSection={<List size={16} />} onClick={() => setListOpen(true)}>
-              List
-            </Button>
-            {alertify?.enabled && (
+            {!entryMode && !editing && onPrint && rights.print && (
+              <Button variant="light" color="kumkum" leftSection={<Printer size={16} />} disabled={!currentId} onClick={onPrint}>
+                Print
+              </Button>
+            )}
+            {!entryMode && onClose && (
+              <Button variant="outline" color="kumkum" leftSection={<X size={16} />} onClick={onClose}>
+                Close
+              </Button>
+            )}
+            {!entryMode && (
+              <Button variant="default" leftSection={<List size={16} />} onClick={() => setListOpen(true)}>
+                List
+              </Button>
+            )}
+            {!entryMode && alertify?.enabled && (
               <Tooltip label={alertify.ready ? 'Create an Alertify reminder from this bill' : (alertify.hint || 'Fill the bill details first')} withArrow>
                 <Button
                   variant="default"
@@ -104,7 +136,7 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
                 </Button>
               </Tooltip>
             )}
-            {!currentId && lastSaved?.id && (
+            {!entryMode && !currentId && lastSaved?.id && (
               <Button variant="light" color="kumkum" leftSection={<FolderOpen size={16} />} onClick={() => onLoad(lastSaved.id)}>
                 Open last saved{lastSaved.label ? `: ${lastSaved.label}` : ''}
               </Button>
@@ -113,20 +145,22 @@ export default function DocNavBar({ docId, currentId, viewLabel, onLoad, onNew, 
               <Badge size="lg" variant="light" color="gray" tt="none">
                 {editing ? 'Editing' : 'View'}: {viewLabel || currentId}
               </Badge>
-            ) : (
+            ) : !fresh && (
               <Text size="xs" c="dimmed" visibleFrom="sm">
                 New entry. Use the arrows to look through saved records.
               </Text>
             )}
           </Group>
+          {!entryMode && (
           <Group gap={6} wrap="nowrap">
-            <DocOptionsMenu docId={docId} recordId={currentId} extra={extraOptions} />
+            <DocOptionsMenu docId={docId} recordId={currentId} extra={extraOptions} printFormats={rights.print ? printFormats : []} onPrintFormat={onPrintFormat} />
             {btn('First record (Ctrl+Shift+F)', <ChevronFirst size={18} />, () => go('first'))}
             {btn('Previous record (Shift+Left)', <ChevronLeft size={18} />, () => go('prev'))}
             {btn('Find (Ctrl+Shift+S)', <Search size={17} />, () => setFindOpen(true))}
             {btn('Next record (Shift+Right)', <ChevronRight size={18} />, () => go('next'))}
             {btn('Last record (Ctrl+Shift+L)', <ChevronLast size={18} />, () => go('last'))}
           </Group>
+          )}
         </Group>
       </div>
 

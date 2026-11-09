@@ -69,9 +69,16 @@ export default function DocDetailGrid({ docId, rows, setRows, values = {}, error
         <Table>
           <Table.Thead>
             <Table.Tr>
-              {cols.map((f) => (
-                <Table.Th key={f.FldCode}>{f.FldCaption || f.FldCode}</Table.Th>
-              ))}
+              {cols.map((f) => {
+                // red caption = mandatory, driven by the Designer's flag / condition (same meaning as the captions of the form fields)
+                const must = isFieldMandatory(f, values)
+                return (
+                  <Table.Th key={f.FldCode} style={must ? { color: 'var(--vt-required-ink)' } : undefined}>
+                    {f.FldCaption || f.FldCode}
+                    {must ? ' *' : ''}
+                  </Table.Th>
+                )
+              })}
               <Table.Th w={48} aria-label="Remove" />
             </Table.Tr>
           </Table.Thead>

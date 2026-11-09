@@ -68,6 +68,18 @@ def create_donation(
         return donation_service.create(conn, data=data, fy=fy, user_code=user.user_code)
 
 
+@router.put("/{donrec_id}")
+def update_donation(
+    donrec_id: int,
+    body: DonationCreateRequest,
+    fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(donation_service.DOC_ID, RIGHT_EDIT)),
+):
+    data = donation_service.DonationInput(prefix=body.prefix, doc_date=body.doc_date, fields=body.fields, lines=body.lines, split=to_parts(body.split_payments))
+    with with_transaction() as conn:
+        return donation_service.update(conn, donrec_id=donrec_id, data=data, fy=fy, user_code=user.user_code)
+
+
 @router.get("/donor/lookup")
 def lookup_donor(
     contact_no: str, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(donation_service.DOC_ID, RIGHT_VIEW))

@@ -334,7 +334,16 @@ namespace RptBridge
                                 var ms = new MemoryStream();
                                 s.CopyTo(ms);
                                 foreach (var kv in PaperFacts(doc)) ctx.Response.AddHeader(kv.Key, kv.Value);
-                                if (widenedTo > 0)
+                                NamedWiden nw;
+                                if (widenedTo > 0 && WidenedNamed.TryGetValue(doc, out nw))
+                                {
+                                    ctx.Response.Headers["X-Paper-Kind"] = "Named";
+                                    ctx.Response.Headers["X-Paper-Name"] = nw.Name;
+                                    ctx.Response.Headers["X-Orientation"] = nw.Orientation;
+                                    ctx.Response.AddHeader("X-Orig-Page-Pt", nw.OrigW.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "x" + nw.OrigH.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
+                                    ctx.Response.AddHeader("X-Widened-Right-Pt", widenedTo.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
+                                }
+                                else if (widenedTo > 0)
                                 {
                                     ctx.Response.Headers["X-Paper-Kind"] = "Custom"; // it is still the roll receipt; only the preview's page was widened
                                     ctx.Response.AddHeader("X-Widened-Right-Pt", widenedTo.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
@@ -540,7 +549,12 @@ namespace RptBridge
             {
                 object known;
                 if (Widened.TryGetValue(doc, out known)) return (double)known;
-                if (Enum.IsDefined(typeof(CrystalDecisions.Shared.PaperSize), doc.PrintOptions.PaperSize)) return 0; // a named paper: untouched
+                if (Enum.IsDefined(typeof(CrystalDecisions.Shared.PaperSize), doc.PrintOptions.PaperSize))
+                {
+                    double named = WidenNamedPaper(doc);
+                    Widened.Add(doc, (object)named);
+                    return named;
+                }
                 double right = 0;
                 foreach (ReportObject o in doc.ReportDefinition.ReportObjects) right = Math.Max(right, (o.Left + o.Width) / 20.0);
                 double content = doc.PrintOptions.PageContentWidth / 20.0;
@@ -557,7 +571,56 @@ namespace RptBridge
             catch (Exception ex) { Console.Out.WriteLine("[paper] widen skipped: " + ex.Message); return 0; }
         }
 
-        // What the report itself says about its page. "Custom" = a paper size Windows has no name for (the 3-inch roll receipts);
+        // A report on a named paper (A4...) whose objects run past the page's right margin (RptDtlCompDaySmry: the Grand Total column)
+        // is clipped by the PDF export, while the Crystal viewer of the desktop shows it whole. For the PREVIEW the next larger
+        // named paper is used; the backend then cuts the page box back to the original paper's height and to the right-most object
+        // (X-Orig-Page-Pt, X-Widened-Right-Pt). The .rpt is not changed and direct printing does not come through here.
+        private sealed class NamedWiden { public string Name; public string Orientation; public double OrigW, OrigH; }
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ReportDocument, NamedWiden> WidenedNamed =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<ReportDocument, NamedWiden>();
+
+        private static bool NamedSize(CrystalDecisions.Shared.PaperSize p, out double w, out double h, out CrystalDecisions.Shared.PaperSize next)
+        {
+            next = CrystalDecisions.Shared.PaperSize.PaperA3;
+            switch (p)
+            {
+                case CrystalDecisions.Shared.PaperSize.PaperA5: w = 420; h = 595; next = CrystalDecisions.Shared.PaperSize.PaperA4; return true;
+                case CrystalDecisions.Shared.PaperSize.PaperA4: w = 595; h = 842; return true;
+                case CrystalDecisions.Shared.PaperSize.PaperLetter: w = 612; h = 792; return true;
+                case CrystalDecisions.Shared.PaperSize.PaperLegal: w = 612; h = 1008; return true;
+            }
+            w = h = 0;
+            return false;
+        }
+
+        private static double WidenNamedPaper(ReportDocument doc)
+        {
+            try
+            {
+                double w, h; CrystalDecisions.Shared.PaperSize next;
+                if (!NamedSize(doc.PrintOptions.PaperSize, out w, out h, out next)) return 0;
+                bool landscape = doc.PrintOptions.PaperOrientation == PaperOrientation.Landscape;
+                double pageW = landscape ? h : w, pageH = landscape ? w : h;
+                var margins = doc.PrintOptions.PageMargins;
+                double right = 0;
+                foreach (ReportObject o in doc.ReportDefinition.ReportObjects) right = Math.Max(right, (o.Left + o.Width) / 20.0);
+                double content = doc.PrintOptions.PageContentWidth / 20.0;
+                if (right <= content + 3) return 0; // fits (a hairline past the margin is not a clip)
+                if (string.IsNullOrEmpty(_previewPrinter) || !PrinterExists(_previewPrinter)) return 0;
+                var info = new NamedWiden { Name = doc.PrintOptions.PaperSize.ToString(), Orientation = doc.PrintOptions.PaperOrientation.ToString(), OrigW = pageW, OrigH = pageH };
+                doc.PrintOptions.PrinterName = _previewPrinter;
+                doc.PrintOptions.PaperSize = next;
+                doc.PrintOptions.PaperOrientation = landscape ? PaperOrientation.Landscape : PaperOrientation.Portrait;
+                try { doc.PrintOptions.ApplyPageMargins(margins); } catch { }
+                WidenedNamed.Add(doc, info);
+                double pageRight = margins.leftMargin / 20.0 + right; // objects are measured from the left margin
+                Console.Out.WriteLine("[paper] " + info.Name + " page widened for preview: objects end at " + pageRight.ToString("0.#") + "pt of " + pageW.ToString("0.#") + "pt");
+                return pageRight;
+            }
+            catch (Exception ex) { Console.Out.WriteLine("[paper] named widen skipped: " + ex.Message); return 0; }
+        }
+
+        // What the report itself says about its page. "Custom" =a paper size Windows has no name for (the 3-inch roll receipts);
         // the backend trims such pages to the end of the content. Nothing here changes the report.
         private static Dictionary<string, string> PaperFacts(ReportDocument doc)
         {

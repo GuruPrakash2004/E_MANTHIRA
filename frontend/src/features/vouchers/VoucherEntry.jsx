@@ -1,4 +1,5 @@
-import VoucherLinesTable, { appendLine, linesFromSaved, newVoucherLines } from '../../components/ui/VoucherLinesTable'
+import VoucherLinesTable, { adjustedTotal, appendLine, linesFromSaved, newVoucherLines } from '../../components/ui/VoucherLinesTable'
+import BillAdjustModal from '../../components/ui/BillAdjustModal'
 import DocNoDate from '../../components/ui/DocNoDate'
 import { historyParams } from '../../lib/history'
 import { useEffect, useState } from 'react'
@@ -6,14 +7,15 @@ import { ActionIcon, Badge, Button, Group, NumberInput, Select, Stack, Table, Te
 import { DateInput } from '../../components/ui/AppDates'
 import { Copy, Plus, Trash2 } from 'lucide-react'
 import { useHotkeys } from 'react-hotkeys-hook'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as voucherApi from '../../api/endpoints/voucher'
 import LookupSelect from '../../components/LookupSelect'
 import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
-import { handleAfterSave } from '../../lib/printing'
+import usePrintFormats from '../../hooks/usePrintFormats'
+import { pickFormat } from '../../lib/printing'
 import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import usePrefixes from '../../hooks/usePrefixes'
 import useDocFields from '../../hooks/useDocFields'
@@ -40,6 +42,7 @@ const COMPUTED_CODES = ['TOTDR', 'TOTCR', 'AMTINWORDS']
 export default function VoucherEntry({ cfg }) {
   const rowNo = cfg.rowNoKey || `Print${cfg.headerPrefix}NO`
   const confirm = useConfirm()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [values, setValues] = useState({})
   const [resetKey, setResetKey] = useState(0)
@@ -53,11 +56,13 @@ export default function VoucherEntry({ cfg }) {
   const [viewId, setViewId] = useState(null) // a saved voucher being looked at (read-only)
   const [viewNo, setViewNo] = useState('')
   const [copyOpen, setCopyOpen] = useState(false)
+  const [adjIdx, setAdjIdx] = useState(null) // the line whose Bill wise Adjustment window is open
   const [params] = useSearchParams()
+  const [idle, setIdle] = useState(() => !Number(params.get('open'))) // opens empty and locked (also after Cancel) until New is pressed
   const rules = useDocRules(cfg.docId) // UtlTransactions switches (Copy From, authorisation, document-date lock ...)
   const [editing, setEditing] = useState(false)
   const [stamp, setStamp] = useState(null) // legacy CANCELLED / AUTHORISED label of the voucher being viewed
-  const readOnly = Boolean(viewId) && !editing
+  const readOnly = (Boolean(viewId) && !editing) || idle
 
   const { fields } = useDocFields(cfg.docId)
   const { user } = useAuth()
@@ -96,9 +101,11 @@ export default function VoucherEntry({ cfg }) {
     Object.values(headErrors)[0] ||
     (prefix === null ? 'No document-number prefix configured' : null) ||
     (lines.some((l) => !l.ac_led_id) ? 'Every line needs an account head' : null) ||
+    (lines.some((l) => l.ac_led_id && !(Number(l.dr_amt) || Number(l.cr_amt))) ? 'Please Enter Amount Greater than 0' : null) ||
+    (lines.some((l) => adjustedTotal(l) - (Number(l.dr_amt) || Number(l.cr_amt) || 0) > 0.005) ? 'A line amount was changed after its bills were adjusted. Adjust the bills again.' : null) || // legacy validFlds: a line with a head needs an amount
     (!balanced ? 'Debit and Credit totals are NOT matching!' : null)
 
-  async function onSave(mode) {
+  async function onSave(mode = 'save') {
     if (readOnly) return
     setAttempted(true)
     if (firstError) {
@@ -118,7 +125,10 @@ export default function VoucherEntry({ cfg }) {
         fields: fieldsPayload,
         lines: lines
           .filter((l) => Number(l.dr_amt) || Number(l.cr_amt))
-          .map((l) => ({ ac_led_id: Number(l.ac_led_id), dr_amt: Number(l.dr_amt) || 0, cr_amt: Number(l.cr_amt) || 0 })),
+          .map((l) => ({
+            ac_led_id: Number(l.ac_led_id), dr_amt: Number(l.dr_amt) || 0, cr_amt: Number(l.cr_amt) || 0,
+            adjustments: (l.adjustments || []).map((a) => ({ adj_acc_id: a.adj_acc_id, amount: a.amount, side: a.side, adj_type: a.adj_type, new_ref_no: a.new_ref_no || '' })),
+          })),
       }
       if (editing && viewId && cfg.update) {
         await cfg.update(viewId, body)
@@ -132,16 +142,14 @@ export default function VoucherEntry({ cfg }) {
       }
       const result = await cfg.create(body)
       setLastSaved(result)
-      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      // Save only saves (the preview opens from Print / the Options menu); F10 = save and print at once
       if (mode === 'print') directPrint(result[cfg.idKey])
-      else if (mode !== 'save') handleAfterSave({ docId: cfg.docId, recordId: result[cfg.idKey], openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setValues({})
-      setResetKey((k) => k + 1)
-      setLines(newVoucherLines(rules.first_row_type))
       setAttempted(false)
       queryClient.invalidateQueries({ queryKey: [cfg.queryKey] })
       refetch()
+      // the saved voucher stays on screen (read-only) so it can be checked before printing; New starts the next one
+      await viewRecord(result[cfg.idKey])
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Save failed', color: 'red' })
     } finally {
@@ -170,7 +178,9 @@ export default function VoucherEntry({ cfg }) {
       setLines(linesFromSaved(r.lines))
       const yes = (v) => String(v || 'N').trim().toUpperCase() === 'Y'
       setStamp(yes(h.Cancelled) ? { text: 'CANCELLED', color: 'red' } : rules.auth_req ? (yes(h.Authorised) ? { text: 'AUTHORISED', color: 'green' } : { text: 'NOT AUTHORISED', color: 'orange' }) : null)
+      setIdle(false) // a record is open: leave the "cancelled, nothing open" state
       setViewId(id)
+      setEditing(false)
       setViewNo(h[`Print${cfg.headerPrefix}NO`] || h[`${cfg.headerPrefix}NO`])
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not open that voucher', color: 'red' })
@@ -201,7 +211,7 @@ export default function VoucherEntry({ cfg }) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not copy that voucher', color: 'red' })
     }
   }
-  useHotkeys('ctrl+alt+f', (e) => { e.preventDefault(); if (!viewId && rules.allow_copy_from) setCopyOpen(true) }, { enableOnFormTags: true }, [viewId, rules.allow_copy_from])
+  useHotkeys('ctrl+alt+f', (e) => { e.preventDefault(); if (!viewId && !idle && rules.allow_copy_from) setCopyOpen(true) }, { enableOnFormTags: true }, [viewId, idle, rules.allow_copy_from])
 
   // `?open=<id>` shows that saved voucher (e.g. a Hall Booking receipt opened from Receipt Info)
   const openId = Number(params.get('open')) || 0
@@ -239,13 +249,27 @@ export default function VoucherEntry({ cfg }) {
       notifications.show({ message: r.message, color: 'teal' })
       queryClient.invalidateQueries({ queryKey: [cfg.queryKey] })
       refetch()
-      startNew()
+      cancelEntry(true) // back to the locked, empty screen (not a new entry)
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not delete the document', color: 'red' })
     }
   }
 
+  // Cancel a new entry: an empty, locked form with only New in the ribbon
+  async function cancelEntry(silent) {
+    if (!idle && silent !== true && !(await confirm({ title: 'Discard this entry?', message: 'What you have typed will be cleared.', confirmLabel: 'Discard' }))) return
+    setViewId(null)
+    setEditing(false)
+    setStamp(null)
+    setViewNo('')
+    setValues({}) // no resetKey bump: the Designer defaults come back only when New is pressed
+    setLines(newVoucherLines(rules.first_row_type))
+    setAttempted(false)
+    setLastSaved(null)
+    setIdle(true)
+  }
   function startNew() {
+    setIdle(false)
     setEditing(false)
     setStamp(null)
     setViewId(null)
@@ -262,13 +286,16 @@ export default function VoucherEntry({ cfg }) {
   }
 
   const directPrint = useDirectPrint(cfg.docId, setPrintFor)
+  const { printFormats, printWithFormat, printOption, clearPrintOption } = usePrintFormats(cfg.docId, { viewId, setPrintFor, noun: 'voucher' })
   useDocShortcuts({
-    onSave: () => !readOnly && onSave('save'),
-    onPrint: () => lastSaved && setPrintFor(lastSaved[cfg.idKey]),
-    onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
+    onSave: () => !idle && (!viewId || editing) && onSave('save'),
+    onNew: () => (viewId || idle) && startNew(),
+    onPrint: () => (viewId ? printWithFormat(pickFormat(printFormats)) : lastSaved && setPrintFor(lastSaved[cfg.idKey])),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : !idle && onSave('print')),
   })
 
-  const common = { docId: cfg.docId, values, setValue, setValues, resetKey, errors: attempted ? headErrors : {}, computed, readOnly }
+  const { data: adjHead } = useQuery({ queryKey: ['account-head', adjIdx !== null ? lines[adjIdx]?.ac_led_id : null], queryFn: () => voucherApi.getAccountHead(lines[adjIdx].ac_led_id), enabled: adjIdx !== null && Boolean(lines[adjIdx]?.ac_led_id), staleTime: 10_000 })
+  const common = { docId: cfg.docId, values, setValue, setValues, resetKey, seedDefaults: !idle, errors: attempted ? headErrors : {}, computed, readOnly }
   const Icon = cfg.icon
 
   return (
@@ -287,7 +314,7 @@ export default function VoucherEntry({ cfg }) {
           </div>
         </Group>
         <Group gap="xs" align="flex-end">
-          {rules.allow_copy_from && !viewId && (
+          {rules.allow_copy_from && !viewId && !idle && (
             <Button variant="light" color="kumkum" leftSection={<Copy size={16} />} onClick={() => setCopyOpen(true)}>
               Copy From
             </Button>
@@ -329,6 +356,8 @@ export default function VoucherEntry({ cfg }) {
                 balanceCol={rules.balance_col}
                 firstType={rules.first_row_type}
                 attempted={attempted}
+                billWise={Boolean(rules.bill_wise)}
+                onAdjust={setAdjIdx}
                 totalsLabel={`${caption('TOTDR', 'Total Dr')} / ${caption('TOTCR', 'Total Cr')}`}
               />
               {!balanced && (totalDr > 0 || totalCr > 0) && (
@@ -357,9 +386,7 @@ export default function VoucherEntry({ cfg }) {
               words={amount}
               warning={balanced || (totalDr === 0 && totalCr === 0) ? null : 'Debit and Credit totals are NOT matching!'}
               saving={saving}
-              onSave={readOnly ? undefined : () => onSave('save')}
-              onSavePrint={readOnly || editing ? undefined : () => onSave('print')}
-              saveDisabled={readOnly}
+              hideActions // Save lives in the ribbon below (no separate Save & Print)
             />
             {lastSaved && <SavedPanel lines={[`Voucher ${lastSaved[cfg.noKey]}`]} onPrint={() => setPrintFor(lastSaved[cfg.idKey])} />}
             <RecentCard
@@ -377,11 +404,30 @@ export default function VoucherEntry({ cfg }) {
                 printLabel: `Print ${v[rowNo]}`,
                 onPrint: () => setPrintFor(v[cfg.rowId]),
               })}
+              onLoad={viewRecord}
             />
           </>
         }
       />
 
+      {adjIdx !== null && lines[adjIdx] && (
+        <BillAdjustModal
+          opened
+          onClose={() => setAdjIdx(null)}
+          onApply={(rows) => {
+            setLines((ls) => ls.map((l, i) => (i === adjIdx ? { ...l, adjustments: rows } : l)))
+            setAdjIdx(null)
+          }}
+          partyName={adjHead?.label || ''}
+          balanceText={adjHead?.found ? (adjHead.balance_side ? `${Number(adjHead.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${adjHead.balance_side}` : '0.00') : ''}
+          docId={cfg.docId}
+          voucherId={viewId || 0}
+          acLedId={Number(lines[adjIdx].ac_led_id)}
+          side={lines[adjIdx].side || (Number(lines[adjIdx].dr_amt) ? 'DR' : 'CR')}
+          amount={Number(lines[adjIdx].dr_amt) || Number(lines[adjIdx].cr_amt) || 0}
+          existing={lines[adjIdx].adjustments || []}
+        />
+      )}
       <CopyFromDialog opened={copyOpen} onClose={() => setCopyOpen(false)} docName={cfg.title} search={findVouchers} onLoad={copyFrom} allowReversal />
       {cfg.nav && (
         <DocNavBar
@@ -390,13 +436,25 @@ export default function VoucherEntry({ cfg }) {
           viewLabel={viewNo}
           onLoad={viewRecord}
           onNew={startNew}
+          showNew={Boolean(viewId) && !editing}
+          entryMode={!viewId && !idle}
+          newOnly={idle}
+          cancelEditLabel="Cancel"
+          onCancelEntry={cancelEntry}
+          onClose={() => navigate('/')}
+          onSave={() => onSave('save')}
+          onPrint={() => printWithFormat(pickFormat(printFormats))}
+          printFormats={printFormats}
+          onPrintFormat={printWithFormat}
+          saving={saving}
+          editing={editing}
           search={findVouchers}
-          {...(cfg.update ? { onEdit: startEdit, onCancelEdit: cancelEdit, onSave: () => onSave('save'), saving, editing } : {})}
+          {...(cfg.update ? { onEdit: startEdit, onCancelEdit: cancelEdit } : {})}
           {...(cfg.cancel ? { onCancelDoc: cancelDocument } : {})}
           {...(cfg.remove ? { onDelete: deleteDocument } : {})}
         />
       )}
-      <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={cfg.docId} recordId={printFor} title={cfg.title} />
+      <PrintPickerModal opened={Boolean(printFor)} onClose={() => { setPrintFor(null); clearPrintOption() }} docId={cfg.docId} recordId={printFor} title={cfg.title} initialOption={printOption} />
     </Stack>
   )
 }

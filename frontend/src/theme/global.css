@@ -162,6 +162,29 @@ body {
 .vt-fld-readonly .mantine-Input-input { color: var(--vt-readonly-ink); }
 .vt-field-required .mantine-InputWrapper-label { color: var(--vt-required-ink); }
 
+/* Saved / locked values (disabled or read-only inputs) must stay clearly readable, not faded, on every page. */
+.mantine-Input-input[data-disabled],
+.mantine-Input-input:disabled,
+.mantine-Input-input[readonly],
+.mantine-Textarea-input[data-disabled],
+.mantine-Textarea-input:disabled {
+  opacity: 1;
+  color: var(--vt-badge-ink);
+  -webkit-text-fill-color: var(--vt-badge-ink);
+  font-weight: 600;
+  background: var(--vt-gold-chip);
+  border: 1px solid var(--vt-line);
+  cursor: default;
+}
+.mantine-Input-wrapper[data-disabled] .mantine-Input-section,
+.mantine-InputWrapper-root[data-disabled] .mantine-Input-section,
+.mantine-Input-input[data-disabled] ~ .mantine-Input-section { opacity: 1; color: var(--vt-badge-ink); }
+.mantine-Input-input[data-disabled]::placeholder,
+.mantine-Input-input:disabled::placeholder { color: var(--vt-line); -webkit-text-fill-color: var(--vt-line); font-weight: 400; }
+/* Read-only fields keep the blue colour convention (legacy: blue = read-only). */
+.vt-fld-readonly .mantine-Input-input[data-disabled],
+.vt-fld-readonly .mantine-Input-input:disabled { color: var(--vt-readonly-ink); -webkit-text-fill-color: var(--vt-readonly-ink); }
+
 /* Dropdown lists (Select / Autocomplete / Combobox): an opaque surface with a visible border and shadow, in both themes. */
 .mantine-Select-dropdown,
 .mantine-Autocomplete-dropdown,
@@ -241,4 +264,29 @@ body {
   .mantine-AppShell-header, .mantine-AppShell-navbar, .vt-action-bar, .vt-action-bar-card { display: none !important; }
   .mantine-AppShell-main { padding: 0 !important; }
   body { background: #fff !important; }
+}
+
+/* New-entry ribbon carries every button, so it is set a little tighter to stay on one line. */
+.vt-bar-compact .mantine-Button-root { height: 34px; padding-inline: 12px; font-size: 14px; }
+.vt-bar-compact .mantine-ActionIcon-root { width: 34px; height: 34px; min-width: 34px; min-height: 34px; }
+.vt-bar-compact .mantine-Button-root, .vt-bar-compact .mantine-ActionIcon-root { flex-shrink: 0; }
+
+/* Date pickers (components/ui/AppDates.jsx): today's cell is a gold chip with a ring, and the day is spelled out under the month grid.
+   --vt-today-text is set from JS ("Today: Monday, 09/11/2026") and renewed at midnight. */
+.mantine-Popover-dropdown [data-today][data-highlight-today]:not([data-selected]):not([data-in-range]) {
+  background: var(--vt-gold-chip);
+  color: var(--vt-accent);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 2px var(--vt-accent);
+}
+.mantine-Popover-dropdown:has(.mantine-DatePickerInput-month, .mantine-DateInput-month)::after {
+  content: var(--vt-today-text, '');
+  display: block;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--vt-line);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vt-accent);
 }

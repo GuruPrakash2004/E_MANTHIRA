@@ -14,7 +14,7 @@ import { applyTextRules, dateBounds, fieldDefault, fieldListOptions, inputAlignm
  * "no negative" and number / date ranges, and "refill" (type a new value or pick one used before).
  * `required` is passed in by the caller (already resolved via `isFieldMandatory`, which may be a live condition).
  */
-function FieldWidget({ docId, field, value, onChange, required, locked = false, error, ctx, onBlur, noSeed = false, compact = false, allowedValues, noAddressLines = false }) {
+function FieldWidget({ docId, field, value, onChange, required, locked = false, error, ctx, onBlur, noSeed = false, compact = false, allowedValues, noAddressLines = false, singleAddress = false }) {
   // compact = a grid cell: no caption above, the caption becomes the accessible name
   const label = compact ? undefined : field.FldCaption
   const aria = compact ? field.FldCaption : undefined
@@ -58,6 +58,11 @@ function FieldWidget({ docId, field, value, onChange, required, locked = false, 
   function body() {
     if (isCombo) {
       return <LookupSelect docId={docId} field={field.FldCode} label={label} ariaLabel={aria} required={isRequired} disabled={readOnly} value={value ?? ''} onChange={onChange} error={error} ctx={ctx} onBlur={onBlur} allowedValues={allowedValues} />
+    }
+    // singleAddress (the Donation screen): one box instead of stacked lines. It grows with the text, so an address that has several
+    // lines from the old EXE stays fully visible; it is still stored as one value.
+    if (!compact && singleAddress && !noAddressLines && /^ADDRESS?$/i.test(field.FldCode) && field.FldDataType !== 'Numeric' && field.FldDataType !== 'Date') {
+      return <Textarea {...common} autosize minRows={1} maxRows={3} maxLength={maxLength} placeholder="Address" value={value ?? ''} onChange={(e) => onChange(e.currentTarget.value)} />
     }
     // An address column (Seva ADDRES, Donation / Hall / Asset ADDRESS): stacked address lines, stored as one multi-line value.
     if (!compact && !noAddressLines && /^ADDRESS?$/i.test(field.FldCode) && field.FldDataType !== 'Numeric' && field.FldDataType !== 'Date') {

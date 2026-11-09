@@ -50,6 +50,8 @@ export default function DocFieldsForm({
   rowGroups = [],
   fieldFilters = {},
   inlineLabels,
+  seedDefaults = true,
+  singleAddress = false, // one address box instead of stacked lines (Donation)
 }) {
   const { fields, isLoading } = useDocFields(docId)
   const queryClient = useQueryClient()
@@ -95,7 +97,7 @@ export default function DocFieldsForm({
 
   // Apply the Designer's static defaults (FldUseDefault / FldDefStdDefault) once per (re)start of an entry.
   useEffect(() => {
-    if (!fields.length) return
+    if (!fields.length || !seedDefaults) return
     let cancelled = false
     ;(async () => {
       const defaults = {}
@@ -132,7 +134,7 @@ export default function DocFieldsForm({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docId, fields, resetKey, section])
+  }, [docId, fields, resetKey, section, seedDefaults])
 
   // A changed field may drive others: clear dependent lookups, then run any pick-up that follows this field.
   async function onChange(code, value) {
@@ -196,6 +198,7 @@ export default function DocFieldsForm({
               locked={readOnly || isReadOnlyByCondition(f, shown)}
               noSeed
               noAddressLines={fields.some((x) => /^ADD[2-4]$/i.test(x.FldCode))} // the designer already splits the address into lines
+              singleAddress={singleAddress}
               error={errors[f.FldCode]}
               ctx={ctx}
               allowedValues={rashiAllowed[f.FldCode] || fieldFilters[f.FldCode]}

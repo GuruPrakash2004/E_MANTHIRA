@@ -4,8 +4,12 @@ import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
 import { ActionIcon, Grid, NumberInput, Select, Stack, Table, Text, Button } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
-import { Plus, Receipt, Save, Trash2 } from 'lucide-react'
+import { Plus, Receipt, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
+import { useNavigate } from 'react-router-dom'
+import PrintPickerModal from '../../components/PrintPickerModal'
+import usePrintFormats from '../../hooks/usePrintFormats'
+import { pickFormat } from '../../lib/printing'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as inventoryApi from '../../api/endpoints/inventory'
 import LookupSelect from '../../components/LookupSelect'
@@ -34,6 +38,7 @@ const EMPTY_LINES = newVoucherLines('DR')
 export default function PurchaseVoucherPage() {
   const confirm = useConfirm()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [voucherDate, setVoucherDate] = useState(new Date())
   const [values, setValues] = useState({}) // Designer fields keyed by FldCode (rendered by DocFieldsForm)
   const [resetKey, setResetKey] = useState(0)
@@ -44,6 +49,10 @@ export default function PurchaseVoucherPage() {
   const [lastSaved, setLastSaved] = useState(null)
   const [viewId, setViewId] = useState(null) // a saved voucher being looked at (read-only)
   const [viewInfo, setViewInfo] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [idle, setIdle] = useState(true) // opens empty and locked (also after Cancel) until New is pressed
+  const [printFor, setPrintFor] = useState(null)
+  const readOnly = (Boolean(viewId) && !editing) || idle
 
   const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['purchase-vouchers', 'recent'], queryFn: () => inventoryApi.listPurchaseVouchers(historyParams()) })
   const { data: bills } = useQuery({ queryKey: ['purchase-bills', 'unvouchered'], queryFn: () => inventoryApi.listPurchaseBills({ top: 100 }) })
@@ -82,13 +91,51 @@ export default function PurchaseVoucherPage() {
       setValues(next)
       setPbId('')
       setLines(linesFromSaved(r.lines))
+      setIdle(false) // a record is open: leave the "cancelled, nothing open" state
       setViewId(id)
+      setEditing(false)
       setViewInfo({ no: h.PrintPURVCHNO || h.PURVCHNO, trnType: h.TRNTYPE, trnId: h.TRNID })
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not open that voucher', color: 'red' })
     }
   }
+  async function startEdit() {
+    await viewRecord(viewId) // show what is saved right now
+    setEditing(true)
+  }
+  async function cancelEdit() {
+    await viewRecord(viewId)
+    setEditing(false)
+  }
+  async function deleteVoucher() {
+    if (!(await confirm({ title: 'Delete this voucher?', message: `Purchase Voucher ${viewInfo?.no || ''} and its ledger posting will be deleted.`, confirmLabel: 'Delete' }))) return
+    try {
+      const r = await inventoryApi.deletePurchaseVoucher(viewId)
+      notifications.show({ message: r?.message || 'Deleted Successfully!', color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: ['purchase-vouchers'] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-bills'] })
+      refetch()
+      cancelEntry(true) // back to the locked, empty screen (not a new entry)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not delete the voucher', color: 'red' })
+    }
+  }
+  // Cancel a new entry: an empty, locked form with only New in the ribbon
+  async function cancelEntry(silent) {
+    if (!idle && silent !== true && !(await confirm({ title: 'Discard this entry?', message: 'What you have typed will be cleared.', confirmLabel: 'Discard' }))) return
+    setViewId(null)
+    setViewInfo(null)
+    setEditing(false)
+    setValues({}) // no resetKey bump: the Designer defaults come back only when New is pressed
+    setPbId('')
+    setAttempted(false)
+    setLastSaved(null)
+    setLines(newVoucherLines(rules.first_row_type))
+    setIdle(true)
+  }
   function startNew() {
+    setIdle(false)
+    setEditing(false)
     setViewId(null)
     setViewInfo(null)
     setVoucherDate(new Date())
@@ -105,7 +152,7 @@ export default function PurchaseVoucherPage() {
   }
 
   async function onSave() {
-    if (viewId) return
+    if (readOnly) return
     setAttempted(true)
     const firstErr = Object.values(headErrors)[0]
     if (firstErr) {
@@ -134,17 +181,23 @@ export default function PurchaseVoucherPage() {
           .filter((l) => Number(l.dr_amt) || Number(l.cr_amt))
           .map((l) => ({ ac_led_id: Number(l.ac_led_id), dr_amt: Number(l.dr_amt) || 0, cr_amt: Number(l.cr_amt) || 0 })),
       }
+      if (editing && viewId) {
+        await inventoryApi.updatePurchaseVoucher(viewId, body)
+        notifications.show({ message: 'Updated successfully!', color: 'teal' })
+        setAttempted(false)
+        queryClient.invalidateQueries({ queryKey: ['purchase-vouchers'] })
+        refetch()
+        await viewRecord(viewId)
+        return
+      }
       const result = await inventoryApi.createPurchaseVoucher(body)
       setLastSaved(result)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setLines(newVoucherLines(rules.first_row_type))
-      setPbId('')
-      setValues({})
-      setResetKey((k) => k + 1)
       setAttempted(false)
       queryClient.invalidateQueries({ queryKey: ['purchase-vouchers'] })
       queryClient.invalidateQueries({ queryKey: ['purchase-bills'] })
       refetch()
+      await viewRecord(result.purvch_id) // the saved voucher stays on screen (read-only); New starts the next one
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Save failed', color: 'red' })
     } finally {
@@ -152,20 +205,32 @@ export default function PurchaseVoucherPage() {
     }
   }
 
-  useDocShortcuts({ onSave })
+  const { printFormats, printWithFormat, printOption, clearPrintOption } = usePrintFormats(DOC_ID, { viewId, setPrintFor, noun: 'voucher' })
+  useDocShortcuts({
+    onSave: () => !idle && (!viewId || editing) && onSave(),
+    onNew: () => (viewId || idle) && startNew(),
+    onPrint: () => viewId && printWithFormat(pickFormat(printFormats)),
+  })
 
   return (
     <Stack gap="lg" className="vt-rise">
-      <PageHeader title="Purchase Voucher" subtitle="Post the accounting for a purchase, optionally linked to a bill" right={<DocNoDate docId={DOC_ID} viewNo={viewInfo?.no || ''} date={voucherDate} onDate={setVoucherDate} dateDisabled={Boolean(viewId)} dateLabel="Voucher Date" />} />
+      <PageHeader title="Purchase Voucher" subtitle="Post the accounting for a purchase, optionally linked to a bill" right={<DocNoDate docId={DOC_ID} viewNo={viewInfo?.no || ''} date={voucherDate} onDate={setVoucherDate} dateDisabled={readOnly} dateLabel="Voucher Date" />} />
 
       <EntryLayout
-        viewing={Boolean(viewId)}
+        viewing={readOnly}
         main={
           <Stack gap="lg">
             {viewInfo && (
               <SectionCard title="Header Info" hint="How this voucher was created.">
                 <Grid>
                   <Grid.Col span={{ base: 12, sm: 4 }}><Text size="xs" c="dimmed">Voucher No</Text><Text fw={600}>{viewInfo.no}</Text></Grid.Col>
+                  {String(viewInfo.trnType || '').trim() === 'PB' && (
+                    <Grid.Col span={12}>
+                      <Text size="sm" c="dimmed">
+                        Generated from Purchase Bill {(bills || []).find((b) => String(b.PBID) === String(Number(viewInfo.trnId)))?.PrintPBNO || `(id ${Number(viewInfo.trnId)})`}. Change the bill to change this voucher.
+                      </Text>
+                    </Grid.Col>
+                  )}
                   <Grid.Col span={{ base: 12, sm: 4 }}><Text size="xs" c="dimmed">TRN Type</Text><Text fw={600} style={{ color: 'var(--vt-readonly-ink)' }}>{viewInfo.trnType}</Text></Grid.Col>
                   <Grid.Col span={{ base: 12, sm: 4 }}><Text size="xs" c="dimmed">TRN ID</Text><Text fw={600} style={{ color: 'var(--vt-readonly-ink)' }}>{viewInfo.trnId}</Text></Grid.Col>
                 </Grid>
@@ -181,6 +246,7 @@ export default function PurchaseVoucherPage() {
                     data={unvoucheredBills.map((b) => ({ value: String(b.PBID), label: `${b.PrintPBNO} \u00b7 ${b.PartyName}` }))}
                     value={pbId || null}
                     onChange={(v) => setPbId(v || '')}
+                    disabled={readOnly || editing}
                   />
                 </Grid.Col>
               </Grid>
@@ -191,9 +257,10 @@ export default function PurchaseVoucherPage() {
                 setValue={setValue}
                 setValues={setValues}
                 resetKey={resetKey}
+                seedDefaults={!idle}
                 errors={attempted ? headErrors : {}}
                 skip={COMPUTED_CODES}
-                readOnly={Boolean(viewId)}
+                readOnly={readOnly}
               />
             </SectionCard>
 
@@ -201,16 +268,18 @@ export default function PurchaseVoucherPage() {
               title="Account heads"
               hint="Pick the ledger for each line and enter either a debit or a credit. Totals must match."
               action={
-                <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
-                  Add line
-                </Button>
+                !readOnly && (
+                  <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addLine}>
+                    Add line
+                  </Button>
+                )
               }
             >
               <VoucherLinesTable
                 docId={DOC_ID}
                 lines={lines}
                 setLines={setLines}
-                readOnly={Boolean(viewId)}
+                readOnly={readOnly}
                 balanceCol={rules.balance_col}
                 firstType={rules.first_row_type}
                 attempted={attempted}
@@ -235,11 +304,8 @@ export default function PurchaseVoucherPage() {
               total={formatINR(totalDr)}
               words={totalDr}
               warning={balanced || (totalDr === 0 && totalCr === 0) ? null : 'Debit and Credit totals are NOT matching!'}
-              saveLabel="Save"
-              saveIcon={Save}
               saving={saving}
-              onSave={viewId ? undefined : onSave}
-              saveDisabled={Boolean(viewId)}
+              hideActions // Save lives in the ribbon below
             />
             {lastSaved && <SavedPanel lines={[`Voucher ${lastSaved.purvch_no}`]} />}
             <RecentCard
@@ -250,12 +316,14 @@ export default function PurchaseVoucherPage() {
               rows={recent || []}
               emptyTitle="No purchase vouchers yet"
               emptyHint="Saved documents will be listed here."
-              renderRow={(r) => ({ key: r.PURVCHID, title: r.PrintPURVCHNO, subtitle: `Credit period ${r.CRPERIOD} days` })}
+              renderRow={(r) => ({ key: r.PURVCHID, title: r.PrintPURVCHNO, subtitle: `Credit period ${r.CRPERIOD} days`, printLabel: `Print ${r.PrintPURVCHNO}`, onPrint: () => setPrintFor(r.PURVCHID) })}
+              onLoad={viewRecord}
             />
           </>
         }
       />
-      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewInfo?.no} onLoad={viewRecord} onNew={startNew} search={findVouchers} />
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewInfo?.no} lastSaved={lastSaved ? { id: lastSaved.purvch_id, label: lastSaved.purvch_no } : null} onLoad={viewRecord} onNew={startNew} showNew={Boolean(viewId) && !editing} entryMode={!viewId && !idle} newOnly={idle} cancelEditLabel="Cancel" onCancelEntry={cancelEntry} onDelete={deleteVoucher} onClose={() => navigate('/')} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={onSave} onPrint={() => printWithFormat(pickFormat(printFormats))} printFormats={printFormats} onPrintFormat={printWithFormat} saving={saving} editing={editing} search={findVouchers} />
+      <PrintPickerModal opened={Boolean(printFor)} onClose={() => { setPrintFor(null); clearPrintOption() }} docId={DOC_ID} recordId={printFor} title="Purchase Voucher" initialOption={printOption} />
     </Stack>
   )
 }

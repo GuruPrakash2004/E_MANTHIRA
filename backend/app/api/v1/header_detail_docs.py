@@ -45,6 +45,11 @@ def _register(spec: hdd.Spec) -> None:
         with with_transaction() as conn:
             return hdd.create(conn, spec, fields=body.fields, lines=body.lines, doc_date=body.doc_date, fy=fy, user_code=user.user_code)
 
+    @router.put(base + "/{row_id}", name=f"update_{spec.short}")
+    def _update(row_id: int, body: CreateRequest, fy: FinancialYear = Depends(get_user_fy), user: CurrentUser = Depends(require_right(spec.doc_id, RIGHT_EDIT))):
+        with with_transaction() as conn:
+            return hdd.update(conn, spec, row_id=row_id, fields=body.fields, lines=body.lines, doc_date=body.doc_date, fy=fy, user_code=user.user_code)
+
     @router.post(base + "/{row_id}/cancel", name=f"cancel_{spec.short}")
     def _cancel(row_id: int, body: CancelRequest, user: CurrentUser = Depends(require_right(spec.doc_id, RIGHT_EDIT))):
         with with_transaction() as conn:

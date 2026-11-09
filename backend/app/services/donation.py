@@ -84,6 +84,52 @@ def validate(data: DonationInput, fy: FinancialYear, rows: list[dict], values: d
     return total
 
 
+def _legacy_blanks(cols: dict) -> None:
+    """The EXE stores a single space for a blank text column (DATALENGTH 1 on every legacy row) and NULL for "no cheque date"."""
+    for k, v in list(cols.items()):
+        if isinstance(v, str) and v == "" and k.upper() != "CHEQUEDATE":
+            cols[k] = " "
+    if not str(cols.get("CHEQUEDATE") or "").strip() or str(cols["CHEQUEDATE"]).startswith("1900-01-01"):
+        cols["CHEQUEDATE"] = None
+
+
+def _write_lines(conn: Connection, donrec_id: int, rows: list[dict], lines: list[dict]) -> None:
+    detail = [r for r in rows if r.get("FldSection") == "Detail"]
+    for i, line in enumerate(lines, start=1):
+        lv = doc_rules.effective_values(detail, line)
+        dcols = doc_rules.column_values(detail, lv, table("TrnDtlDONREC"))
+        seva_id = int(line.get("SEVAID") or 0)  # may be a hidden column filled by "Show Donor"
+        seva_name = str(lv.get("SEVANME") or "").strip()
+        if not seva_name:
+            seva_name = (conn.execute(text("SELECT SVACODE FROM MstSVA WHERE SVAID = :id"), {"id": seva_id}).scalar() if seva_id else None) or "DONATION"
+        dcols.update(
+            {"DONRECID": donrec_id, "SlNo": i, "ItemSlNO": i, "ShortClosed": "N", "ShortClosedBy": 0, "AMOUNT": _line_amount(line), "SEVAID": seva_id, "SEVANME": seva_name}
+        )
+        insert_row(conn, "TrnDtlDONREC", dcols)
+
+
+def _post_receipt(conn: Connection, *, values: dict, data: DonationInput, fy: FinancialYear, amount: float, print_no: str, user_code: str) -> str | None:
+    """The receipt voucher + GL posting needs the income ledger and the cash/bank account: they exist only when this
+    temple's Designer defines the LEDGER / LEDID fields (some temples keep their accounts elsewhere)."""
+    income, cash_bank = int(values.get("LEDGER") or 0), int(values.get("LEDID") or 0)
+    if not (income and cash_bank):
+        return None
+    r = receipt_service.create_receipt(
+        conn,
+        fy=fy,
+        prefix=data.prefix,
+        receipt_date=data.doc_date,
+        amount=amount,
+        vch_type=str(values.get("PAYMNTMODE") or "").strip() or "Cash",  # the EXE copies the payment mode verbatim (CASH / UPI / CARD / CHEQUE), 22/22 legacy rows
+        narration=print_no,  # the EXE puts the PRINT number (26/NMM/DR/00010) in the receipt's NARR, not DONRECNO
+        cr_led_id=income,
+        dr_led_id=cash_bank,
+        user_code=user_code,
+        dr_parts=split_payment.dr_parts(data.split),  # one debit line per payment part (None = the usual single cash / bank line)
+    )
+    return r.receipt_no
+
+
 def create(conn: Connection, *, data: DonationInput, fy: FinancialYear, user_code: str) -> dict:
     if not edit_rules.doc_date_editable(conn, DOC_ID):
         data.doc_date = date.today()  # AllowEditDocDate = 'N': the legacy form locks the date to the system date
@@ -126,50 +172,78 @@ def create(conn: Connection, *, data: DonationInput, fy: FinancialYear, user_cod
             "ShowRec": "Y",
         }
     )
-    # The EXE stores a single space for a blank text column (DATALENGTH 1 on every legacy row) and NULL for "no cheque date".
-    for k, v in list(cols.items()):
-        if isinstance(v, str) and v == "" and k.upper() != "CHEQUEDATE":
-            cols[k] = " "
-    if not str(cols.get("CHEQUEDATE") or "").strip() or str(cols["CHEQUEDATE"]).startswith("1900-01-01"):
-        cols["CHEQUEDATE"] = None
+    _legacy_blanks(cols)
     donrec_id = insert_row(conn, TABLE, cols, returning="DONRECID")
     if data.split:
         split_payment.save(conn, "DONREC", donrec_id, data.split, user_code)
 
-    detail = [r for r in rows if r.get("FldSection") == "Detail"]
-    for i, line in enumerate(data.lines, start=1):
-        lv = doc_rules.effective_values(detail, line)
-        dcols = doc_rules.column_values(detail, lv, table("TrnDtlDONREC"))
-        seva_id = int(line.get("SEVAID") or 0)  # may be a hidden column filled by "Show Donor"
-        seva_name = str(lv.get("SEVANME") or "").strip()
-        if not seva_name:
-            seva_name = (conn.execute(text("SELECT SVACODE FROM MstSVA WHERE SVAID = :id"), {"id": seva_id}).scalar() if seva_id else None) or "DONATION"
-        dcols.update(
-            {"DONRECID": donrec_id, "SlNo": i, "ItemSlNO": i, "ShortClosed": "N", "ShortClosedBy": 0, "AMOUNT": _line_amount(line), "SEVAID": seva_id, "SEVANME": seva_name}
-        )
-        insert_row(conn, "TrnDtlDONREC", dcols)
-
-    # The receipt voucher + GL posting needs the income ledger and the cash/bank account: they exist only when this
-    # temple's Designer defines the LEDGER / LEDID fields (some temples keep their accounts elsewhere).
-    receipt_no = None
-    income, cash_bank = int(values.get("LEDGER") or 0), int(values.get("LEDID") or 0)
-    if income and cash_bank:
-        r = receipt_service.create_receipt(
-            conn,
-            fy=fy,
-            prefix=data.prefix,
-            receipt_date=data.doc_date,
-            amount=amount,
-            vch_type=str(values.get("PAYMNTMODE") or "").strip() or "Cash",  # the EXE copies the payment mode verbatim (CASH / UPI / CARD / CHEQUE), 22/22 legacy rows
-            narration=print_no,  # the EXE puts the PRINT number (26/NMM/DR/00010) in the receipt's NARR, not DONRECNO
-            cr_led_id=income,
-            dr_led_id=cash_bank,
-            user_code=user_code,
-            dr_parts=split_payment.dr_parts(data.split),  # one debit line per payment part (None = the usual single cash / bank line)
-        )
-        receipt_no = r.receipt_no
+    _write_lines(conn, donrec_id, rows, data.lines)
+    receipt_no = _post_receipt(conn, values=values, data=data, fy=fy, amount=amount, print_no=print_no, user_code=user_code)
 
     audit.record(conn, entity="Donation Receipt Entry", entity_id=donrec_id, action="A", user_code=user_code, details=doc_no)
+    return {"donrec_id": donrec_id, "donrec_no": doc_no, "print_no": print_no, "total_amt": amount, "receipt_no": receipt_no}
+
+
+def update(conn: Connection, *, donrec_id: int, data: DonationInput, fy: FinancialYear, user_code: str) -> dict:
+    """
+    Edit a saved donation receipt, the same way Seva's edit works: the document number (DONRECNO / Prefix / PrintDONRECNO) and who/when
+    it was added stay as they are; the header, the lines, the split payment and the receipt voucher + GL are rewritten for the new
+    values, all in the caller's one transaction.
+    """
+    old = conn.execute(
+        text("SELECT DONRECNO, PrintDONRECNO, Prefix, Cancelled, DONRECDate, Authorised FROM TrnHdrDONREC WHERE DONRECID = :id"), {"id": donrec_id}
+    ).mappings().first()
+    if old is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Donation Receipt not found")
+    if (old["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=old["DONRECDate"], authorised=old["Authorised"])
+    if not edit_rules.doc_date_editable(conn, DOC_ID):
+        data.doc_date = old["DONRECDate"].date() if isinstance(old["DONRECDate"], datetime) else old["DONRECDate"]  # date stays as saved
+    data.prefix = old["Prefix"] if old["Prefix"] is not None else data.prefix  # the number was issued under this prefix
+
+    rows = doc_rules.load_fields(conn, DOC_ID)
+    if not rows:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Donation Receipt has no fields configured in the Doc Designer")
+    if data.split:
+        split_payment.apply_main(conn, "DONREC", data.split, data.fields)
+    values = doc_rules.effective_values(rows, {k: v for k, v in data.fields.items() if k not in SYSTEM_CODES})
+    amount = validate(data, fy, rows, values)
+    if data.split:
+        data.split = split_payment.validate(conn, "DONREC", data.split, amount, int(values.get("LEDGER") or 0))
+
+    doc_no = old["DONRECNO"]
+    print_no = old["PrintDONRECNO"] or doc_no
+    head = [r for r in rows if (r.get("FldSection") or "Header") in HEADER_SECTIONS]
+    cols = doc_rules.column_values(head, values, table(TABLE))
+    # not touched on edit: the number, who added it and when, who issued it, and whether it shows in Show Donor
+    for keep in (NO_COLUMN, "Prefix", "PrintDONRECNO", "AddedBy", "AddedOn", "ISSUEDBY", "ShowRec", "Cancelled"):
+        cols.pop(keep, None)
+    cols.update(
+        {
+            "DONRECDate": data.doc_date,
+            "ChangedBy": user_code,
+            "ChangedOn": datetime.now(),
+            "TOTAMT": amount,
+            "AMTINWORDS": amount_in_words(amount, "Rupees", "Paise"),
+        }
+    )
+    if edit_rules.auth_required(conn, DOC_ID):
+        cols["Authorised"] = "N"  # an edited document goes back for authorisation (legacy: Authorised = 'N' on edit)
+    _legacy_blanks(cols)
+    update_row(conn, TABLE, "DONRECID", donrec_id, cols)  # columns this database does not have are skipped by update_row
+
+    conn.execute(text("DELETE FROM TrnDtlDONREC WHERE DONRECID = :id"), {"id": donrec_id})
+    _write_lines(conn, donrec_id, rows, data.lines)
+
+    if data.split:
+        split_payment.save(conn, "DONREC", donrec_id, data.split, user_code)
+    else:
+        split_payment.delete(conn, "DONREC", donrec_id)  # the clerk turned the split off
+    receipt_service.delete_receipt_by_narr(conn, _receipt_narr(conn, old))  # reverses the old GL posting; the new one is posted below
+    receipt_no = _post_receipt(conn, values=values, data=data, fy=fy, amount=amount, print_no=print_no, user_code=user_code)
+
+    audit.record(conn, entity="Donation Receipt Entry", entity_id=donrec_id, action="E", user_code=user_code, details=doc_no)
     return {"donrec_id": donrec_id, "donrec_no": doc_no, "print_no": print_no, "total_amt": amount, "receipt_no": receipt_no}
 
 

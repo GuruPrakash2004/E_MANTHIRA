@@ -16,10 +16,14 @@ from app.services import gen_voucher as gv
 router = APIRouter(tags=["vouchers"])
 
 
+from app.api.v1.vouchers import AdjustmentRequest
+
+
 class LineRequest(BaseModel):
     ac_led_id: int
     dr_amt: float = 0.0
     cr_amt: float = 0.0
+    adjustments: list[AdjustmentRequest] = []
 
 
 class CreateRequest(BaseModel):
@@ -47,7 +51,7 @@ def _register(spec: gv.Spec) -> None:
     def _create(body: CreateRequest, fy: FinancialYear = Depends(get_user_fy), user: CurrentUser = Depends(require_right(spec.doc_id, RIGHT_ADD))):
         data = gv.VoucherInput(
             prefix=body.prefix, voucher_date=body.voucher_date, fields=body.fields,
-            lines=[gv.VoucherLine(l.ac_led_id, l.dr_amt, l.cr_amt) for l in body.lines],
+            lines=[gv.VoucherLine(l.ac_led_id, l.dr_amt, l.cr_amt, [a.model_dump() for a in l.adjustments]) for l in body.lines],
         )
         with with_transaction() as conn:
             return gv.create(conn, spec, data=data, fy=fy, user_code=user.user_code)
@@ -56,7 +60,7 @@ def _register(spec: gv.Spec) -> None:
     def _update(voucher_id: int, body: CreateRequest, fy: FinancialYear = Depends(get_user_fy), user: CurrentUser = Depends(require_right(spec.doc_id, RIGHT_EDIT))):
         data = gv.VoucherInput(
             prefix=body.prefix, voucher_date=body.voucher_date, fields=body.fields,
-            lines=[gv.VoucherLine(l.ac_led_id, l.dr_amt, l.cr_amt) for l in body.lines],
+            lines=[gv.VoucherLine(l.ac_led_id, l.dr_amt, l.cr_amt, [a.model_dump() for a in l.adjustments]) for l in body.lines],
         )
         with with_transaction() as conn:
             return gv.update(conn, spec, voucher_id=voucher_id, data=data, fy=fy, user_code=user.user_code)

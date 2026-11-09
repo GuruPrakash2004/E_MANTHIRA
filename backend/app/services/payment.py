@@ -10,7 +10,7 @@ matching!" balance rule the legacy form enforces.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from fastapi import HTTPException, status
@@ -35,6 +35,7 @@ class VoucherLine:
     ac_led_id: int
     dr_amt: float = 0.0
     cr_amt: float = 0.0
+    adjustments: list = field(default_factory=list)  # bill-wise adjustments (services.bill_adjust)
 
 
 @dataclass
@@ -126,7 +127,7 @@ def create(conn: Connection, *, data: PaymentVoucherInput, fy: FinancialYear, us
         due_date=data.voucher_date,
         narration=narration,
         lines=[
-            ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
+            ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt, adjustments=getattr(l, "adjustments", None) or [])
             for l in data.lines
         ],
     )
@@ -168,6 +169,7 @@ def delete(conn: Connection, *, pmtvch_id: int, user_code: str) -> None:
     edit_rules.assert_editable(conn, DOC_ID, doc_date=row["PMTVCHDate"], authorised=row["Authorised"])
     ledger.delete_posting(conn, doc_type="PMTVCH", trn_no=row["PMTVCHNO"], trn_id=pmtvch_id)
     conn.execute(text("DELETE FROM TrnDtlPMTVCH WHERE PMTVCHID = :id"), {"id": pmtvch_id})
+    voucher_rules.delete_bill_det(conn, "TrnDtlPMTVCH", "PMTVCHID", pmtvch_id)
     conn.execute(text("DELETE FROM TrnHdrPMTVCH WHERE PMTVCHID = :id"), {"id": pmtvch_id})
     audit.record(conn, entity="Payment Voucher", entity_id=pmtvch_id, action="D", user_code=user_code)
 
@@ -204,6 +206,7 @@ def update(conn: Connection, *, pmtvch_id: int, data: PaymentVoucherInput, fy: F
 
     ledger.delete_posting(conn, doc_type="PMTVCH", trn_no=old["PMTVCHNO"], trn_id=pmtvch_id)
     conn.execute(text("DELETE FROM TrnDtlPMTVCH WHERE PMTVCHID = :id"), {"id": pmtvch_id})
+    voucher_rules.delete_bill_det(conn, "TrnDtlPMTVCH", "PMTVCHID", pmtvch_id)
     for i, line in enumerate(data.lines, start=1):
         insert_row(
             conn,
@@ -213,7 +216,7 @@ def update(conn: Connection, *, pmtvch_id: int, data: PaymentVoucherInput, fy: F
         )
     ledger.post(
         conn, doc_type="PMTVCH", trn_id=pmtvch_id, trn_no=old["PMTVCHNO"], trn_date=data.voucher_date, due_date=data.voucher_date, narration=narration,
-        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt, adjustments=getattr(l, "adjustments", None) or []) for l in data.lines],
     )
     audit.record(conn, entity="Payment Voucher", entity_id=pmtvch_id, action="E", user_code=user_code, details=old["PMTVCHNO"])
     return {"pmtvch_id": pmtvch_id, "pmtvch_no": old["PMTVCHNO"], "amount": total_dr}

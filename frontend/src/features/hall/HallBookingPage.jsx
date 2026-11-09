@@ -9,7 +9,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as hallApi from '../../api/endpoints/hall'
 import useDirectPrint from '../../hooks/useDirectPrint'
 import PrintPickerModal from '../../components/PrintPickerModal'
-import { handleAfterSave } from '../../lib/printing'
+import usePrintFormats from '../../hooks/usePrintFormats'
+import { pickFormat } from '../../lib/printing'
 import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import useDocFields from '../../hooks/useDocFields'
 import HallPaymentPanel from './HallPaymentPanel'
@@ -66,7 +67,8 @@ export default function HallBookingPage() {
   const rules = useDocRules(DOC_ID) // UtlTransactions switches: authorisation, document-date lock ...
   const confirm = useConfirm()
   const navigate = useNavigate()
-  const readOnly = Boolean(viewId) && !editing
+  const [idle, setIdle] = useState(true) // opens empty and locked (also after Cancel) until New is pressed
+  const readOnly = (Boolean(viewId) && !editing) || idle
   const [sideOpen, setSideOpen] = useState(readSideOpen)
   function toggleSide() {
     setSideOpen((o) => {
@@ -106,7 +108,8 @@ export default function HallBookingPage() {
     anchors: startIso ? [startIso] : [], timingCaption: /start.*time|time.*from|^time$/i, defaultDir: 'before', valid: !firstError && Boolean(startIso), hint: firstError || (startIso ? '' : 'Choose the booking start date first'),
   })
 
-  async function onSave(mode) {
+  async function onSave(mode = 'save') {
+    if (readOnly) return
     setAttempted(true)
     if (firstError) {
       notifications.show({ message: firstError, color: 'red' })
@@ -132,15 +135,14 @@ export default function HallBookingPage() {
       const result = await hallApi.createBooking({ fields: fieldsPayload, doc_date: isoDate(docDate) })
       setLastSaved(result)
       alertify.afterSave({ 'Doc No': result.print_no || result.hb_no }) // the Alertify reminder asked for before saving; it never blocks the bill
-      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      // Save only saves (the preview opens from Print / the Options menu); F10 = save and print at once
       if (mode === 'print') directPrint(result.hb_id)
-      else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.hb_id, openDialog: setPrintFor })
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setValues({})
       setAttempted(false)
-      setResetKey((k) => k + 1)
       queryClient.invalidateQueries({ queryKey: ['hall-bookings'] })
       refetch()
+      // the saved booking stays on screen (read-only) so it can be checked before printing; New starts the next one
+      await viewRecord(result.hb_id)
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Save failed', color: 'red' })
     } finally {
@@ -165,7 +167,9 @@ export default function HallBookingPage() {
       if (b.HBDate) setDocDate(new Date(b.HBDate))
       const yes = (v) => String(v || 'N').trim().toUpperCase() === 'Y'
       setStamp(yes(b.Cancelled) ? { text: 'CANCELLED', color: 'red' } : rules.auth_req ? (yes(b.Authorised) ? { text: 'AUTHORISED', color: 'green' } : { text: 'NOT AUTHORISED', color: 'orange' }) : null)
+      setIdle(false) // a record is open: leave the "cancelled, nothing open" state
       setViewId(id)
+      setEditing(false)
       setViewNo(b.PrintHBNO || b.HBNO)
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not open that record', color: 'red' })
@@ -200,13 +204,26 @@ export default function HallBookingPage() {
       notifications.show({ message: r.message, color: 'teal' })
       queryClient.invalidateQueries({ queryKey: ['hall-bookings'] })
       refetch()
-      startNew()
+      cancelEntry(true) // back to the locked, empty screen (not a new entry)
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not delete the booking', color: 'red' })
     }
   }
 
+  // Cancel a new entry: an empty, locked form with only New in the ribbon
+  async function cancelEntry(silent) {
+    if (!idle && silent !== true && !(await confirm({ title: 'Discard this entry?', message: 'What you have typed will be cleared.', confirmLabel: 'Discard' }))) return
+    setViewId(null)
+    setEditing(false)
+    setStamp(null)
+    setViewNo('')
+    setValues({}) // no resetKey bump: the Designer defaults come back only when New is pressed
+    setAttempted(false)
+    setLastSaved(null)
+    setIdle(true)
+  }
   function startNew() {
+    setIdle(false)
     setViewId(null)
     setEditing(false)
     setStamp(null)
@@ -222,10 +239,12 @@ export default function HallBookingPage() {
   }
 
   const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+  const { printFormats, printWithFormat, printOption, clearPrintOption } = usePrintFormats(DOC_ID, { viewId, setPrintFor, noun: 'booking' })
   useDocShortcuts({
-    onSave: () => !viewId && onSave('save'),
-    onPrint: () => lastSaved && setPrintFor(lastSaved.hb_id),
-    onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
+    onSave: () => !idle && (!viewId || editing) && onSave('save'),
+    onNew: () => (viewId || idle) && startNew(),
+    onPrint: () => (viewId ? printWithFormat(pickFormat(printFormats)) : lastSaved && setPrintFor(lastSaved.hb_id)),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : !idle && onSave('print')),
   })
 
   // The Options button of the open booking (legacy svtBtnCtrl): Receipt Info and Donation for <prefix>, from the same list as the Recent bookings menu
@@ -277,9 +296,11 @@ export default function HallBookingPage() {
                   setValue={setValue}
                   setValues={setValues}
                   resetKey={resetKey}
+                  seedDefaults={!idle}
                   errors={attempted ? errors : {}}
                   skip={COMPUTED_CODES}
                   readOnly={readOnly}
+                  singleAddress
                 />
               </DetailsStrip>
             )}
@@ -301,9 +322,7 @@ export default function HallBookingPage() {
               words={net}
               warning={firstError || null}
               saving={saving}
-              saveDisabled={readOnly}
-              onSave={() => onSave('save')}
-              onSavePrint={() => onSave('print')}
+              hideActions // Save lives in the ribbon below (no separate Save & Print)
             />
             {lastSaved && (
               <SavedPanel
@@ -364,15 +383,16 @@ export default function HallBookingPage() {
                   </Menu>
                 ),
               })}
+              onLoad={viewRecord}
             />
             )}
           </>
         }
       />
 
-      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.hb_id, label: lastSaved.print_no || lastSaved.hb_no } : null} onLoad={viewRecord} onNew={startNew} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('save')} saving={saving} editing={editing} onCancelDoc={cancelDocument} onDelete={deleteDocument} search={findBookings} extraOptions={navOptions} alertify={alertify.nav} />
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.hb_id, label: lastSaved.print_no || lastSaved.hb_no } : null} onLoad={viewRecord} onNew={startNew} showNew={Boolean(viewId) && !editing} entryMode={!viewId && !idle} newOnly={idle} cancelEditLabel="Cancel" onCancelEntry={cancelEntry} onClose={() => navigate('/')} onPrint={() => printWithFormat(pickFormat(printFormats))} printFormats={printFormats} onPrintFormat={printWithFormat} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('save')} saving={saving} editing={editing} onCancelDoc={cancelDocument} onDelete={deleteDocument} search={findBookings} extraOptions={navOptions} alertify={alertify.nav} />
       {alertify.modal}
-      <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Hall Booking Receipt" />
+      <PrintPickerModal opened={Boolean(printFor)} onClose={() => { setPrintFor(null); clearPrintOption() }} docId={DOC_ID} recordId={printFor} title="Hall Booking Receipt" initialOption={printOption} />
       <HallPaymentPanel hbId={paymentFor} onClose={() => setPaymentFor(null)} />
     </Stack>
   )

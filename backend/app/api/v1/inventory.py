@@ -10,7 +10,7 @@ from sqlalchemy.engine import Connection
 from app.core.db import get_conn, with_transaction
 from app.core.fy import FinancialYear, get_user_fy, get_history_fy
 from app.core.security import CurrentUser, get_current_user, require_right, require_right_for_form
-from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_VIEW
+from app.meta.menu import RIGHT_ADD, RIGHT_DELETE, RIGHT_EDIT, RIGHT_VIEW
 from app.services import inventory as inv
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -52,6 +52,23 @@ def create_stock_adjustment(
     data = inv.StockAdjustmentInput(**values, lines=lines)
     with with_transaction() as conn:
         return inv.create_stock_adjustment(conn, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.put("/stock-adjustments/{sa_id}")
+def update_stock_adjustment(
+    sa_id: int, body: StockAdjustmentCreateRequest, fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(inv.DOC_ID_SA, RIGHT_EDIT)),
+):
+    values = body.model_dump()
+    lines = [inv.StockAdjustmentLine(**l) for l in values.pop("lines")]
+    data = inv.StockAdjustmentInput(**values, lines=lines)
+    with with_transaction() as conn:
+        return inv.update_stock_adjustment(conn, sa_id=sa_id, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.get("/stock-adjustments/{sa_id}")
+def get_stock_adjustment(sa_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(inv.DOC_ID_SA, RIGHT_VIEW))):
+    return inv.get_stock_adjustment(conn, sa_id=sa_id)
 
 
 @router.delete("/stock-adjustments/{sa_id}")
@@ -97,6 +114,23 @@ def create_store_issue(
         return inv.create_store_issue(conn, data=data, fy=fy, user_code=user.user_code)
 
 
+@router.put("/store-issues/{iss_id}")
+def update_store_issue(
+    iss_id: int, body: StoreIssueCreateRequest, fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(inv.DOC_ID_ISS, RIGHT_EDIT)),
+):
+    values = body.model_dump()
+    lines = [inv.StoreIssueLine(**l) for l in values.pop("lines")]
+    data = inv.StoreIssueInput(**values, lines=lines)
+    with with_transaction() as conn:
+        return inv.update_store_issue(conn, iss_id=iss_id, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.get("/store-issues/{iss_id}")
+def get_store_issue(iss_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(inv.DOC_ID_ISS, RIGHT_VIEW))):
+    return inv.get_store_issue(conn, iss_id=iss_id)
+
+
 @router.delete("/store-issues/{iss_id}")
 def delete_store_issue(iss_id: int, user: CurrentUser = Depends(require_right(inv.DOC_ID_ISS, RIGHT_DELETE))):
     with with_transaction() as conn:
@@ -139,6 +173,18 @@ def create_purchase_bill(
     data = inv.PurchaseBillInput(**values, lines=lines)
     with with_transaction() as conn:
         return inv.create_purchase_bill(conn, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.put("/purchase-bills/{pb_id}")
+def update_purchase_bill(
+    pb_id: int, body: PurchaseBillCreateRequest, fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(inv.DOC_ID_PB, RIGHT_EDIT)),
+):
+    values = body.model_dump()
+    lines = [inv.PurchaseBillLine(**l) for l in values.pop("lines")]
+    data = inv.PurchaseBillInput(**values, lines=lines)
+    with with_transaction() as conn:
+        return inv.update_purchase_bill(conn, pb_id=pb_id, data=data, fy=fy, user_code=user.user_code)
 
 
 @router.get("/purchase-bills/next-no")
@@ -207,6 +253,18 @@ def create_purchase_voucher(
         return inv.create_purchase_voucher(conn, data=data, fy=fy, user_code=user.user_code)
 
 
+@router.put("/purchase-vouchers/{purvch_id}")
+def update_purchase_voucher(
+    purvch_id: int, body: PurchaseVoucherCreateRequest, fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(inv.DOC_ID_PURVCH, RIGHT_EDIT)),
+):
+    values = body.model_dump()
+    lines = [inv.PurchaseVoucherLine(**l) for l in values.pop("lines")]
+    data = inv.PurchaseVoucherInput(**values, lines=lines)
+    with with_transaction() as conn:
+        return inv.update_purchase_voucher(conn, purvch_id=purvch_id, data=data, fy=fy, user_code=user.user_code)
+
+
 @router.delete("/purchase-vouchers/{purvch_id}")
 def delete_purchase_voucher(purvch_id: int, user: CurrentUser = Depends(require_right(inv.DOC_ID_PURVCH, RIGHT_DELETE))):
     with with_transaction() as conn:
@@ -242,6 +300,20 @@ def create_bom(body: BomCreateRequest, fy: FinancialYear = Depends(get_user_fy),
     data = inv.BomInput(**values, components=components)
     with with_transaction() as conn:
         return inv.create_bom(conn, data=data, fy=fy, user_code=user.user_code)
+
+
+@router.get("/boms/{bom_id}")
+def get_bom(bom_id: int, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(require_right(inv.DOC_ID_BOM, RIGHT_VIEW))):
+    return inv.get_bom(conn, bom_id=bom_id)
+
+
+@router.put("/boms/{bom_id}")
+def update_bom(bom_id: int, body: BomCreateRequest, fy: FinancialYear = Depends(get_user_fy), user: CurrentUser = Depends(require_right(inv.DOC_ID_BOM, RIGHT_EDIT))):
+    values = body.model_dump()
+    components = [inv.BomComponent(**c) for c in values.pop("components")]
+    data = inv.BomInput(**values, components=components)
+    with with_transaction() as conn:
+        return inv.update_bom(conn, bom_id=bom_id, data=data, fy=fy, user_code=user.user_code)
 
 
 @router.delete("/boms/{bom_id}")

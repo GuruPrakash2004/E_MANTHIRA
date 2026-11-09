@@ -91,11 +91,62 @@ def _trim_width(pdf: bytes, right_pt: float) -> tuple[bytes, Page]:
         return data, Page(round(out[-1].rect.width, 2), round(out[-1].rect.height, 2), True)
 
 
-def fit_pdf(pdf: bytes, *, paper_kind: str, bottom_margin_pt: float = 0.0, widened_right_pt: float = 0.0) -> tuple[bytes, Page]:
+_ROLL_MAX_PT = 300.0
+_SLACK_PT = 20.0 # a roll page only loses width when more than this much is blank on the right
+
+
+def _roll_width_pt(pdf: bytes) -> float | None:
+    """Width a roll receipt needs: its right-most ink plus the same blank margin it has on the left. Only used when the bridge PC's
+    printer (say an A4 inkjet instead of the roll printer) gave the roll a page far wider than the receipt."""
+    left, right, width = None, 0.0, 0.0
+    with fitz.open(stream=pdf, filetype="pdf") as doc:
+        for page in doc:
+            pix = page.get_pixmap(matrix=fitz.Matrix(_ZOOM, _ZOOM), colorspace=fitz.csGRAY, alpha=False)
+            w, h, s = pix.width, pix.height, pix.samples
+            width = max(width, page.rect.width)
+            cols = [min(s[x::w]) < _WHITE for x in range(w)]
+            if True not in cols:
+                continue
+            first, last = cols.index(True), w - 1 - cols[::-1].index(True)
+            left = first / _ZOOM if left is None else min(left, first / _ZOOM)
+            right = max(right, (last + 1) / _ZOOM)
+    if left is None:
+        return None
+    need = right + left
+    # a real roll is at most ~230 pt wide: only a page wider than that came from the printer, not from the report
+    return need if width > _ROLL_MAX_PT and need < width - _SLACK_PT else None
+
+
+def _back_to_named(pdf: bytes, orig: tuple[float, float], right_pt: float) -> tuple[bytes, Page]:
+    """A named paper the bridge rendered on the next larger size so its right-most objects are not clipped: every page goes back
+    to the original paper's height (top kept) and keeps the original width, or more when the objects need it. Only the page box changes."""
+    ow, oh = orig
+    with fitz.open(stream=pdf, filetype="pdf") as doc:
+        for page in doc:
+            mb = page.mediabox
+            width = min(mb.width, max(ow, right_pt + 2.0))
+            height = min(mb.height, oh)
+            box = f"[{mb.x0:g} {mb.y1 - height:g} {mb.x0 + width:g} {mb.y1:g}]"
+            doc.xref_set_key(page.xref, "MediaBox", box)
+            doc.xref_set_key(page.xref, "CropBox", box)
+        data = doc.tobytes(garbage=3, deflate=True)
+    with fitz.open(stream=data, filetype="pdf") as out:
+        return data, Page(round(out[-1].rect.width, 2), round(out[-1].rect.height, 2), True)
+
+
+def fit_pdf(
+    pdf: bytes, *, paper_kind: str, bottom_margin_pt: float = 0.0, widened_right_pt: float = 0.0, orig_page_pt: tuple[float, float] | None = None
+) -> tuple[bytes, Page]:
     """(pdf, page) - `page` is the size of the LAST page after fitting. Named paper sizes come back byte-for-byte."""
+    if orig_page_pt and widened_right_pt > 0 and paper_kind.strip().lower() != "custom":
+        return _back_to_named(pdf, orig_page_pt, widened_right_pt)
     fitted, page = _fit_height(pdf, paper_kind=paper_kind, bottom_margin_pt=bottom_margin_pt)
-    if widened_right_pt > 0 and paper_kind.strip().lower() == "custom":
-        return _trim_width(fitted, widened_right_pt)
+    if paper_kind.strip().lower() == "custom":
+        if widened_right_pt > 0:
+            return _trim_width(fitted, widened_right_pt)
+        need = _roll_width_pt(fitted)
+        if need is not None:
+            return _trim_width(fitted, need - 2.0)  # _trim_width adds its own 2 pt
     return fitted, page
 
 

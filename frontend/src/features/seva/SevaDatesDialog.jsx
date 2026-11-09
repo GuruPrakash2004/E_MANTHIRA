@@ -38,8 +38,9 @@ export default function SevaDatesDialog({ opened, onClose, dates, dateText, onAp
 
   useEffect(() => {
     if (!opened) return
-    setList(dates.map((d) => ({ perform_date: d.perform_date, remarks: d.remarks || '' })))
-    setText(dateText || '')
+    // starts empty: only the dates picked in this dialog are listed (OK replaces the entry's dates with them)
+    setList([])
+    setText('')
     setYear(today.year())
     setSel(null)
     setMonthOf(today.format('YYYY-MM'))
@@ -198,7 +199,12 @@ export default function SevaDatesDialog({ opened, onClose, dates, dateText, onAp
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} size="min(1240px, 98vw)" radius="lg" padding={0} withCloseButton={false} centered styles={{ body: { background: 'var(--vt-surface)' } }}>
+    <Modal opened={opened} onClose={onClose} size="min(1240px, 98vw)" radius="lg" padding={0} withCloseButton={false} centered
+      // a fixed-height column: header and the OK / Close bar stay put, only the middle scrolls
+      styles={{
+        content: { maxHeight: 'calc(100dvh - 32px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+        body: { background: 'var(--vt-surface)', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' },
+      }}>
       <div className="vt-sd">
         <header className="vt-sd-head">
           <div>
@@ -328,9 +334,10 @@ export default function SevaDatesDialog({ opened, onClose, dates, dateText, onAp
 }
 
 const CSS = `
-.vt-sd-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 18px; background:linear-gradient(160deg,var(--vt-g1),var(--vt-g3)); color:#FBF6EC; border-radius:var(--mantine-radius-lg) var(--mantine-radius-lg) 0 0; flex-wrap:wrap; }
+.vt-sd { display:flex; flex-direction:column; flex:1; min-height:0; }
+.vt-sd-head { flex:0 0 auto; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 18px; background:linear-gradient(160deg,var(--vt-g1),var(--vt-g3)); color:#FBF6EC; border-radius:var(--mantine-radius-lg) var(--mantine-radius-lg) 0 0; flex-wrap:wrap; }
 .vt-sd-title { font-family:Marcellus,Georgia,serif; font-size:20px; color:#F4E1A6; }
-.vt-sd-body { padding:14px 18px 6px; display:flex; flex-direction:column; gap:12px; }
+.vt-sd-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:14px 18px 10px; display:flex; flex-direction:column; gap:12px; }
 .vt-sd-cal { border:1px solid var(--vt-line); border-radius:12px; background:var(--vt-sandal); }
 .vt-sd-months { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; padding:10px; }
 .vt-sd-month { background:var(--vt-surface); border:1px solid var(--vt-line); border-radius:12px; padding:8px 8px 10px; transition:box-shadow .15s ease,border-color .15s ease; }
@@ -360,6 +367,6 @@ const CSS = `
 .vt-sd-evt b { font-size:13px; }
 .vt-sd-evt em { font-size:11px; font-style:normal; color:var(--mantine-color-dimmed); }
 .vt-sd-sep { height:1px; background:var(--vt-line); margin:10px 0; }
-.vt-sd-foot { display:flex; justify-content:space-between; align-items:center; padding:10px 18px 14px; }
+.vt-sd-foot { flex:0 0 auto; display:flex; justify-content:space-between; align-items:center; padding:10px 18px 12px; border-top:1px solid var(--vt-line); background:var(--vt-surface); border-radius:0 0 var(--mantine-radius-lg) var(--mantine-radius-lg); }
 @media (max-width: 1000px) { .vt-sd-panels { grid-template-columns:1fr; } }
 `

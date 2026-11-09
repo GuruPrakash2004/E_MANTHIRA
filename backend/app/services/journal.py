@@ -10,7 +10,7 @@ matching!" balance rule the legacy form enforces.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from fastapi import HTTPException, status
@@ -35,6 +35,7 @@ class VoucherLine:
     ac_led_id: int
     dr_amt: float = 0.0
     cr_amt: float = 0.0
+    adjustments: list = field(default_factory=list)  # bill-wise adjustments (services.bill_adjust)
 
 
 @dataclass
@@ -126,7 +127,7 @@ def create(conn: Connection, *, data: JournalVoucherInput, fy: FinancialYear, us
         due_date=data.voucher_date,
         narration=narration,
         lines=[
-            ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
+            ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt, adjustments=getattr(l, "adjustments", None) or [])
             for l in data.lines
         ],
     )
@@ -168,6 +169,7 @@ def delete(conn: Connection, *, jnrvch_id: int, user_code: str) -> None:
     edit_rules.assert_editable(conn, DOC_ID, doc_date=row["JNRVCHDate"], authorised=row["Authorised"])
     ledger.delete_posting(conn, doc_type="JNRVCH", trn_no=row["JNRVCHNO"], trn_id=jnrvch_id)
     conn.execute(text("DELETE FROM TrnDtlJNRVCH WHERE JNRVCHID = :id"), {"id": jnrvch_id})
+    voucher_rules.delete_bill_det(conn, "TrnDtlJNRVCH", "JNRVCHID", jnrvch_id)
     conn.execute(text("DELETE FROM TrnHdrJNRVCH WHERE JNRVCHID = :id"), {"id": jnrvch_id})
     audit.record(conn, entity="Journal Voucher", entity_id=jnrvch_id, action="D", user_code=user_code)
 
@@ -199,6 +201,7 @@ def update(conn: Connection, *, jnrvch_id: int, data: JournalVoucherInput, fy: F
 
     ledger.delete_posting(conn, doc_type="JNRVCH", trn_no=old["JNRVCHNO"], trn_id=jnrvch_id)
     conn.execute(text("DELETE FROM TrnDtlJNRVCH WHERE JNRVCHID = :id"), {"id": jnrvch_id})
+    voucher_rules.delete_bill_det(conn, "TrnDtlJNRVCH", "JNRVCHID", jnrvch_id)
     for i, line in enumerate(data.lines, start=1):
         insert_row(
             conn,
@@ -208,7 +211,7 @@ def update(conn: Connection, *, jnrvch_id: int, data: JournalVoucherInput, fy: F
         )
     ledger.post(
         conn, doc_type="JNRVCH", trn_id=jnrvch_id, trn_no=old["JNRVCHNO"], trn_date=data.voucher_date, due_date=data.voucher_date, narration=narration,
-        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in data.lines],
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt, adjustments=getattr(l, "adjustments", None) or []) for l in data.lines],
     )
     audit.record(conn, entity="Journal Voucher", entity_id=jnrvch_id, action="E", user_code=user_code, details=old["JNRVCHNO"])
     return {"jnrvch_id": jnrvch_id, "jnrvch_no": old["JNRVCHNO"], "amount": total_dr}

@@ -30,3 +30,5 @@ export const deleteGenVoucher = (kind, id) => del(`/vouchers/${kind}/${id}`)
 // Account heads for a voucher line (legacy frmTrnVch): the groups the document allows for that side, + one head's balance / checks
 export const getAccountHeads = (docId, side, search) => get('/vouchers/account-heads', { params: { doc_id: docId, side, search: search || '' } })
 export const getAccountHead = (id) => get(`/vouchers/account-heads/${id}`)
+// Pending bills of a party for the Bill wise Adjustment window (legacy mSP_GetPendBills)
+export const getPendingBills = (params) => get('/vouchers/pending-bills', { params })

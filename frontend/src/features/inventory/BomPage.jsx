@@ -3,8 +3,13 @@ import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
 import { ActionIcon, Grid, NumberInput, Stack, Table, TextInput, Button } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
-import { Layers, Plus, Save, Trash2 } from 'lucide-react'
+import { Layers, Plus, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
+import { useNavigate } from 'react-router-dom'
+import DocNavBar from '../../components/ui/DocNavBar'
+import PrintPickerModal from '../../components/PrintPickerModal'
+import usePrintFormats from '../../hooks/usePrintFormats'
+import { pickFormat } from '../../lib/printing'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as inventoryApi from '../../api/endpoints/inventory'
 import MasterOptionsSelect from './MasterOptionsSelect'
@@ -33,6 +38,7 @@ const EMPTY_COMPONENT = { item_id: '', qty: 0 }
 export default function BomPage() {
   const confirm = useConfirm()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [bomItemId, setBomItemId] = useState('')
   const [effFrom, setEffFrom] = useState(new Date())
   const [effTo, setEffTo] = useState(null)
@@ -40,6 +46,12 @@ export default function BomPage() {
   const [components, setComponents] = useState([{ ...EMPTY_COMPONENT }])
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
+  const [viewId, setViewId] = useState(null) // a saved BOM being looked at (read-only until Edit)
+  const [viewNo, setViewNo] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [idle, setIdle] = useState(true) // opens empty and locked (also after Cancel) until New is pressed
+  const [printFor, setPrintFor] = useState(null)
+  const readOnly = (Boolean(viewId) && !editing) || idle
 
   const { data: recent, isLoading: recentLoading, refetch } = useQuery({ queryKey: ['boms', 'recent'], queryFn: () => inventoryApi.listBoms(historyParams()) })
   const { byCode: fieldMeta } = useDocFields(DOC_ID)
@@ -59,6 +71,7 @@ export default function BomPage() {
   }
 
   async function onSave() {
+    if (readOnly) return
     if (!bomItemId) {
       notifications.show({ message: 'Finished Item is mandatory', color: 'red' })
       return
@@ -72,12 +85,20 @@ export default function BomPage() {
         remarks,
         components: components.map((c) => ({ item_id: Number(c.item_id), qty: Number(c.qty) })),
       }
+      if (editing && viewId) {
+        await inventoryApi.updateBom(viewId, body)
+        notifications.show({ message: 'Updated successfully!', color: 'teal' })
+        queryClient.invalidateQueries({ queryKey: ['boms'] })
+        refetch()
+        await viewRecord(viewId)
+        return
+      }
       const result = await inventoryApi.createBom(body)
       setLastSaved(result)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setComponents([{ ...EMPTY_COMPONENT }])
       queryClient.invalidateQueries({ queryKey: ['boms'] })
       refetch()
+      await viewRecord(result.bom_id) // the saved BOM stays on screen (read-only); New starts the next one
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Save failed', color: 'red' })
     } finally {
@@ -85,13 +106,85 @@ export default function BomPage() {
     }
   }
 
-  useDocShortcuts({ onSave })
+  async function viewRecord(id) {
+    try {
+      const r = await inventoryApi.getBom(id)
+      const h = r.header
+      setBomItemId(h.BOMItemID ?? '')
+      setEffFrom(h.EffFrom ? new Date(h.EffFrom) : new Date())
+      setEffTo(h.EffTo ? new Date(h.EffTo) : null)
+      setRemarks(String(h.HRMKS || '').trim())
+      setComponents((r.lines || []).length ? r.lines.map((l) => ({ item_id: l.ITEMID, qty: Number(l.Qty) || 0 })) : [{ ...EMPTY_COMPONENT }])
+      setIdle(false) // a record is open: leave the "cancelled, nothing open" state
+      setViewId(id)
+      setEditing(false)
+      setViewNo(h.PrintBOMNO || h.BOMNO)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not open that record', color: 'red' })
+    }
+  }
+  function clearForm() {
+    setBomItemId('')
+    setEffFrom(new Date())
+    setEffTo(null)
+    setRemarks('')
+    setComponents([{ ...EMPTY_COMPONENT }])
+  }
+  function startNew() {
+    setIdle(false)
+    setEditing(false)
+    setViewId(null)
+    setViewNo('')
+    clearForm()
+  }
+  // Cancel a new entry: an empty, locked form with only New in the ribbon
+  async function cancelEntry(silent) {
+    if (!idle && silent !== true && !(await confirm({ title: 'Discard this entry?', message: 'What you have typed will be cleared.', confirmLabel: 'Discard' }))) return
+    setViewId(null)
+    setEditing(false)
+    setViewNo('')
+    clearForm()
+    setLastSaved(null)
+    setIdle(true)
+  }
+  async function startEdit() {
+    await viewRecord(viewId) // show what is saved right now
+    setEditing(true)
+  }
+  async function cancelEdit() {
+    await viewRecord(viewId)
+    setEditing(false)
+  }
+  async function deleteBom() {
+    if (!(await confirm({ title: 'Delete this BOM?', message: `Bill of Material ${viewNo} will be deleted.`, confirmLabel: 'Delete' }))) return
+    try {
+      const r = await inventoryApi.deleteBom(viewId)
+      notifications.show({ message: r?.message || 'Deleted Successfully!', color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: ['boms'] })
+      refetch()
+      cancelEntry(true) // back to the locked, empty screen (not a new entry)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not delete the BOM', color: 'red' })
+    }
+  }
+  async function findBoms(q) {
+    const rows = await inventoryApi.listBoms({ top: 200, days: 0 })
+    const needle = String(q || '').trim().toLowerCase()
+    return rows.filter((r) => !needle || String(r.PrintBOMNO || r.BOMNO || '').toLowerCase().includes(needle)).map((r) => ({ id: r.BOMID, label: r.PrintBOMNO || r.BOMNO, sub: dayjs(r.EffFrom).format('DD-MMM-YYYY') }))
+  }
+  const { printFormats, printWithFormat, printOption, clearPrintOption } = usePrintFormats(DOC_ID, { viewId, setPrintFor, noun: 'BOM' })
+  useDocShortcuts({
+    onSave: () => !idle && (!viewId || editing) && onSave(),
+    onNew: () => (viewId || idle) && startNew(),
+    onPrint: () => viewId && printWithFormat(pickFormat(printFormats)),
+  })
 
   return (
     <Stack gap="lg" className="vt-rise">
       <PageHeader title="Bill of Material" subtitle="Define the components that make up one unit of a finished item" />
 
       <EntryLayout
+        viewing={readOnly}
         main={
           <Stack gap="lg">
             <SectionCard title="Finished item" hint="What is being made and the dates this recipe applies.">
@@ -99,18 +192,18 @@ export default function BomPage() {
                 {!hidden('BOMItemID') && (
                   <Grid.Col span={{ base: 12, sm: 12, xl: 4 }}>
                     {/* Always required regardless of metadata, the save endpoint itself rejects a blank Finished Item. */}
-                    <MasterOptionsSelect docId={ITEM_DOC_ID} label={caption('BOMItemID', 'Finished Item')} required value={bomItemId} onChange={setBomItemId} />
+                    <MasterOptionsSelect docId={ITEM_DOC_ID} label={caption('BOMItemID', 'Finished Item')} required value={bomItemId} onChange={setBomItemId} disabled={readOnly} />
                   </Grid.Col>
                 )}
                 <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <DateInput label="Effective From" valueFormat="DD-MMM-YYYY" value={effFrom} onChange={setEffFrom} />
+                  <DateInput label="Effective From" valueFormat="DD-MMM-YYYY" value={effFrom} onChange={setEffFrom} disabled={readOnly} />
                 </Grid.Col>
                 <Grid.Col span={{ base: 12, sm: 6, xl: 4 }}>
-                  <DateInput label="Effective To" valueFormat="DD-MMM-YYYY" clearable value={effTo} onChange={setEffTo} />
+                  <DateInput label="Effective To" valueFormat="DD-MMM-YYYY" clearable value={effTo} onChange={setEffTo} disabled={readOnly} />
                 </Grid.Col>
                 {!hidden('HRMKS') && (
                   <Grid.Col span={12}>
-                    <TextInput label={caption('HRMKS', 'Remarks')} required={mandatory('HRMKS')} value={remarks} onChange={(e) => setRemarks(e.currentTarget.value)} />
+                    <TextInput label={caption('HRMKS', 'Remarks')} required={mandatory('HRMKS')} value={remarks} onChange={(e) => setRemarks(e.currentTarget.value)} disabled={readOnly} />
                   </Grid.Col>
                 )}
               </Grid>
@@ -120,9 +213,11 @@ export default function BomPage() {
               title="Components"
               hint="Quantity of each component needed for one unit."
               action={
-                <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addComponent}>
-                  Add component
-                </Button>
+                !readOnly && (
+                  <Button size="xs" variant="light" color="kumkum" leftSection={<Plus size={14} />} onClick={addComponent}>
+                    Add component
+                  </Button>
+                )
               }
             >
               <Table.ScrollContainer minWidth={480}>
@@ -138,10 +233,10 @@ export default function BomPage() {
                     {components.map((c, i) => (
                       <Table.Tr key={i}>
                         <Table.Td>
-                          <MasterOptionsSelect ariaLabel={`Component item, line ${i + 1}`} docId={ITEM_DOC_ID} value={c.item_id} onChange={(v) => updateComponent(i, { item_id: v })} />
+                          <MasterOptionsSelect ariaLabel={`Component item, line ${i + 1}`} docId={ITEM_DOC_ID} value={c.item_id} onChange={(v) => updateComponent(i, { item_id: v })} disabled={readOnly} />
                         </Table.Td>
                         <Table.Td>
-                          <NumberInput aria-label={`Quantity, line ${i + 1}`} value={c.qty} onChange={(v) => updateComponent(i, { qty: v })} decimalScale={2} />
+                          <NumberInput aria-label={`Quantity, line ${i + 1}`} value={c.qty} onChange={(v) => updateComponent(i, { qty: v })} decimalScale={2} disabled={readOnly} />
                         </Table.Td>
                         <Table.Td>
                           <ActionIcon
@@ -149,7 +244,7 @@ export default function BomPage() {
                             variant="subtle"
                             size={36}
                             aria-label={`Remove component ${i + 1}`}
-                            disabled={components.length <= 1}
+                            disabled={readOnly || components.length <= 1}
                             onClick={async () => {
                               if (await confirm({ title: 'Remove this component?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) removeComponent(i)
                             }}
@@ -174,10 +269,8 @@ export default function BomPage() {
               ]}
               totalLabel="Components"
               total={components.length}
-              saveLabel="Save"
-              saveIcon={Save}
               saving={saving}
-              onSave={onSave}
+              hideActions // Save lives in the ribbon below
             />
             {lastSaved && <SavedPanel lines={[`BOM ${lastSaved.bom_no}`]} />}
             <RecentCard
@@ -188,11 +281,15 @@ export default function BomPage() {
               rows={recent || []}
               emptyTitle="No BOMs yet"
               emptyHint="Saved documents will be listed here."
-              renderRow={(r) => ({ key: r.BOMID, title: r.PrintBOMNO, subtitle: `Effective from ${dayjs(r.EffFrom).format('DD-MMM-YYYY')}` })}
+              renderRow={(r) => ({ key: r.BOMID, title: r.PrintBOMNO, subtitle: `Effective from ${dayjs(r.EffFrom).format('DD-MMM-YYYY')}`, printLabel: `Print ${r.PrintBOMNO}`, onPrint: () => setPrintFor(r.BOMID) })}
+              onLoad={viewRecord}
             />
           </>
         }
       />
+
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.bom_id, label: lastSaved.bom_no } : null} onLoad={viewRecord} onNew={startNew} showNew={Boolean(viewId) && !editing} entryMode={!viewId && !idle} newOnly={idle} cancelEditLabel="Cancel" onCancelEntry={cancelEntry} onDelete={deleteBom} onClose={() => navigate('/')} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={onSave} onPrint={() => printWithFormat(pickFormat(printFormats))} printFormats={printFormats} onPrintFormat={printWithFormat} saving={saving} editing={editing} search={findBoms} />
+      <PrintPickerModal opened={Boolean(printFor)} onClose={() => { setPrintFor(null); clearPrintOption() }} docId={DOC_ID} recordId={printFor} title="Bill of Material" initialOption={printOption} />
     </Stack>
   )
 }

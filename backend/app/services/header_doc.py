@@ -15,7 +15,7 @@ from sqlalchemy.engine import Connection
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
 from app.legacy.tables import insert_row, update_row
-from app.meta import doc_rules
+from app.meta import doc_rules, edit_rules
 from app.meta.numbering import next_doc_no, resolve_prefix
 
 
@@ -85,6 +85,28 @@ def cancel(conn: Connection, spec: Spec, *, row_id: int, reason: str, user_code:
 
 def delete(conn: Connection, spec: Spec, *, row_id: int, user_code: str) -> None:
     s = spec.short
-    get(conn, spec, row_id)
+    old = get(conn, spec, row_id)
+    if (old.get("Cancelled") or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Deletion not possible!")
+    edit_rules.assert_editable(conn, spec.doc_id, doc_date=old[f"{s}Date"], authorised=old.get("Authorised"))
     conn.execute(text(f"DELETE FROM TrnHdr{s} WHERE {s}ID = :id"), {"id": row_id})
     audit.record(conn, entity=spec.name, entity_id=row_id, action="D", user_code=user_code)
+
+
+def update(conn: Connection, spec: Spec, *, row_id: int, fields: dict, doc_date: date, fy: FinancialYear, user_code: str) -> dict:
+    """Edit a saved document (legacy Mode "M"): number, prefix and who/when it was added stay; the header is rewritten for the new values."""
+    s = spec.short
+    old = get(conn, spec, row_id)
+    if (old.get("Cancelled") or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+    edit_rules.assert_editable(conn, spec.doc_id, doc_date=old[f"{s}Date"], authorised=old.get("Authorised"))
+    assert_date_in_fy(doc_date, fy)
+    cols, _values = doc_rules.header_columns(conn, spec.doc_id, f"TrnHdr{s}", fields, fy=fy)
+    for keep in (f"{s}NO", "Prefix", f"Print{s}NO", "AddedBy", "AddedOn", "Cancelled", "Authorised"):
+        cols.pop(keep, None)
+    cols.update({f"{s}Date": doc_date, "ChangedBy": user_code, "ChangedOn": datetime.now()})
+    if edit_rules.auth_required(conn, spec.doc_id):
+        cols["Authorised"] = "N"  # an edited document goes back for authorisation
+    update_row(conn, f"TrnHdr{s}", f"{s}ID", row_id, cols)
+    audit.record(conn, entity=spec.name, entity_id=row_id, action="E", user_code=user_code, details=old[f"{s}NO"])
+    return {"id": row_id, "no": old[f"{s}NO"]}

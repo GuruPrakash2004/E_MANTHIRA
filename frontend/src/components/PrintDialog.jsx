@@ -17,7 +17,7 @@ const SERVER = 'server'
  * rows point at). Right: a live preview of THIS record rendered by the print bridge from the original Crystal report.
  * Keyboard: Up/Down choose the format, Enter prints (the Print button has focus on open), Esc closes.
  */
-export default function PrintDialog({ opened, onClose, docId, recordId, title }) {
+export default function PrintDialog({ opened, onClose, docId, recordId, title, initialOption = null }) {
   const [selected, setSelected] = useState(null) // option_name
   const [target, setTarget] = useState(null) // 'browser' | 'server' | 'pc:<printer>'
   const [targetTouched, setTargetTouched] = useState(false)
@@ -55,10 +55,13 @@ export default function PrintDialog({ opened, onClose, docId, recordId, title })
     }
   }, [opened])
 
-  // pre-select: this user's last choice beats the designer default
+  // pre-select: the format the screen asked for (e.g. clicked in its Options menu), else this user's last choice, else the designer default
   useEffect(() => {
-    if (opened && formats?.length && !selected) setSelected(pickFormat(formats)?.option_name || null)
-  }, [opened, formats, selected])
+    if (opened && formats?.length && !selected) {
+      const asked = initialOption ? formats.find((f) => f.option_name === initialOption && f.available !== false) : null
+      setSelected((asked || pickFormat(formats))?.option_name || null)
+    }
+  }, [opened, formats, selected, initialOption])
 
   // reset when closed
   useEffect(() => {

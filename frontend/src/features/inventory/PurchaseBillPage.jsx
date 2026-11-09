@@ -2,6 +2,11 @@ import { historyParams } from '../../lib/history'
 import DocNoDate from '../../components/ui/DocNoDate'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import PrintPickerModal from '../../components/PrintPickerModal'
+import useDirectPrint from '../../hooks/useDirectPrint'
+import usePrintFormats from '../../hooks/usePrintFormats'
+import { pickFormat } from '../../lib/printing'
 import { ActionIcon, Badge, Button, Collapse, Group, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
 import { ChevronDown, ChevronUp, Pencil, Plus, Receipt, Save, SlidersHorizontal, Trash2 } from 'lucide-react'
@@ -38,8 +43,13 @@ export default function PurchaseBillPage() {
   const [lines, setLines] = useState([])
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
+  const navigate = useNavigate()
+  const [printFor, setPrintFor] = useState(null)
   const [viewId, setViewId] = useState(null) // a saved bill being looked at (read-only); null = new entry
   const [viewNo, setViewNo] = useState('')
+  const [editing, setEditing] = useState(false) // a saved bill opened for changes (Edit in the ribbon)
+  const [voucher, setVoucher] = useState(null) // the Purchase Voucher generated for the bill on screen ({id, no, print_no}), from the settings of the temple
+  const [idle, setIdle] = useState(true) // the screen opens empty and locked (also after Cancel) until New is pressed
   const [detailsOpen, setDetailsOpen] = useState(true)
   const [dialog, setDialog] = useState({ open: false, index: null })
 
@@ -63,7 +73,7 @@ export default function PurchaseBillPage() {
     )
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }))
-  const readOnly = Boolean(viewId)
+  const readOnly = (Boolean(viewId) && !editing) || idle
   const totalQty = lines.reduce((s, l) => s + (Number(l.qty) || 0), 0)
   const totalValue = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0)
 
@@ -77,13 +87,39 @@ export default function PurchaseBillPage() {
 
   function startNew() {
     refetchNextNo()
+    setIdle(false)
     setViewId(null)
+    setEditing(false)
+    setVoucher(null)
     setViewNo('')
     setForm({ supp_id: '', doc_date: new Date() })
     setLines([])
     setValues({})
-    setResetKey((k) => k + 1)
+    setResetKey((k) => k + 1) // re-applies the Designer defaults
     setAttempted(false)
+  }
+  // Cancel a new entry: an empty, locked form with only New in the ribbon
+  async function cancelEntry(silent) {
+    if (!idle && silent !== true && !(await confirm({ title: 'Discard this entry?', message: 'What you have typed will be cleared.', confirmLabel: 'Discard' }))) return
+    setViewId(null)
+    setEditing(false)
+    setVoucher(null)
+    setViewNo('')
+    setForm({ supp_id: '', doc_date: new Date() })
+    setLines([])
+    setValues({}) // no resetKey bump here: the Designer defaults come back only when New is pressed
+    setAttempted(false)
+    setLastSaved(null)
+    setIdle(true)
+  }
+  async function startEdit() {
+    // the screen must show what is saved right now, not what was loaded a while ago
+    await viewRecord(viewId)
+    setEditing(true)
+  }
+  async function cancelEdit() {
+    await viewRecord(viewId)
+    setEditing(false)
   }
   async function viewRecord(id) {
     try {
@@ -98,7 +134,10 @@ export default function PurchaseBillPage() {
       setValues(next)
       setForm({ supp_id: h.SUPPID, doc_date: h.PBDate ? new Date(h.PBDate) : new Date() })
       setLines(r.lines.map((l) => ({ item_id: l.ITEMID, item_code: l.ITEMCODE, item_name: l.ITEMNAME, uom_id: l.UOMID, uom_code: l.UOMCODE, qty: Number(l.PBQty), rate: Number(l.PBRate) })))
+      setIdle(false) // a record is open: leave the "cancelled, nothing open" state
       setViewId(id)
+      setEditing(false)
+      setVoucher(r.voucher || null)
       setViewNo(h.PrintPBNO || h.PBNO)
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not open that bill', color: 'red' })
@@ -119,18 +158,19 @@ export default function PurchaseBillPage() {
       notifications.show({ message: 'Deleted Successfully!', color: 'teal' })
       queryClient.invalidateQueries({ queryKey: ['purchase-bills'] })
       refetch()
-      startNew()
+      cancelEntry(true) // back to the locked, empty screen (not a new entry)
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Could not delete', color: 'red' })
     }
   }
 
-  async function onSave() {
-    if (viewId) return
+  // mode 'save' = just save (the preview opens only from Print / Options); 'print' = save and print at once (F10)
+  async function onSave(mode = 'save') {
+    if (readOnly) return
     setAttempted(true)
     const firstErr = Object.values(headErrors)[0] || (!form.supp_id ? 'Supplier is mandatory' : null) || (!lines.length ? 'Please add at least one item line' : null)
     if (firstErr) {
-      notifications.show({ message: firstErr, color: 'red' })
+      notifications.show({ title: 'Cannot save yet', message: firstErr, color: 'red' })
       return
     }
     setSaving(true)
@@ -141,13 +181,27 @@ export default function PurchaseBillPage() {
         doc_date: isoDate(form.doc_date),
         lines: lines.map((l) => ({ item_id: Number(l.item_id), uom_id: Number(l.uom_id), qty: Number(l.qty), rate: Number(l.rate) })),
       }
+      if (editing && viewId) {
+        const done = await inventoryApi.updatePurchaseBill(viewId, body)
+        setLastSaved(done)
+        notifications.show({ message: 'Changes saved successfully!', color: 'teal' })
+        setAttempted(false)
+        queryClient.invalidateQueries({ queryKey: ['purchase-bills'] })
+        refetch()
+        await viewRecord(viewId)
+        if (mode === 'print') directPrint(viewId)
+        return
+      }
       const result = await inventoryApi.createPurchaseBill(body)
       setLastSaved(result)
+      if (mode === 'print') directPrint(result.pb_id)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      startNew()
+      setAttempted(false)
       queryClient.invalidateQueries({ queryKey: ['purchase-bills'] })
       refetch()
       refetchNextNo()
+      // the saved bill stays on screen (read-only) so it can be checked before printing; New starts the next one
+      await viewRecord(result.pb_id)
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Save failed', color: 'red' })
     } finally {
@@ -155,7 +209,15 @@ export default function PurchaseBillPage() {
     }
   }
 
-  useDocShortcuts({ onSave })
+  const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+  const { printFormats, printWithFormat, printOption, clearPrintOption } = usePrintFormats(DOC_ID, { viewId, setPrintFor, noun: 'purchase bill' })
+  useDocShortcuts({
+    onSave: () => !idle && (!viewId || editing) && onSave('save'),
+    onNew: () => (viewId || idle) && startNew(),
+    onEdit: () => viewId && !editing && startEdit(),
+    onPrint: () => lastSaved && setPrintFor(lastSaved.pb_id),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : !idle && onSave('print')),
+  })
 
   return (
     <Stack gap="md" className="vt-rise">
@@ -176,8 +238,8 @@ export default function PurchaseBillPage() {
               </Group>
               <Collapse in={detailsOpen}>
                 <div style={{ marginTop: 12, maxHeight: 320, overflow: 'auto', border: '1px solid var(--vt-line)', borderRadius: 12, padding: 12, background: 'var(--vt-sandal)' }}>
-                  <DocFieldsForm docId={DOC_ID} section="Header" values={values} setValue={setValue} setValues={setValues} resetKey={resetKey} errors={attempted ? headErrors : {}} skip={COMPUTED_CODES} readOnly={readOnly} />
-                  <DocFieldsForm docId={DOC_ID} section="Footer" values={values} setValue={setValue} setValues={setValues} resetKey={resetKey} errors={attempted ? headErrors : {}} skip={COMPUTED_CODES} readOnly={readOnly} />
+                  <DocFieldsForm docId={DOC_ID} section="Header" values={values} setValue={setValue} setValues={setValues} resetKey={resetKey} seedDefaults={!idle} errors={attempted ? headErrors : {}} skip={COMPUTED_CODES} readOnly={readOnly} />
+                  <DocFieldsForm docId={DOC_ID} section="Footer" values={values} setValue={setValue} setValues={setValues} resetKey={resetKey} seedDefaults={!idle} errors={attempted ? headErrors : {}} skip={COMPUTED_CODES} readOnly={readOnly} />
                 </div>
               </Collapse>
             </div>
@@ -254,6 +316,7 @@ export default function PurchaseBillPage() {
               rows={[
                 { label: 'Lines', value: lines.length },
                 { label: 'Total qty', value: totalQty.toLocaleString('en-IN') },
+                ...(viewId && voucher ? [{ label: 'Purchase Voucher', value: voucher.print_no || voucher.no }] : []),
               ]}
               totalLabel="Bill value"
               total={formatINR(totalValue)}
@@ -261,10 +324,11 @@ export default function PurchaseBillPage() {
               saveLabel="Save"
               saveIcon={Save}
               saving={saving}
-              onSave={viewId ? undefined : onSave}
-              saveDisabled={Boolean(viewId)}
+              onSave={() => onSave('save')}
+              saveDisabled={readOnly}
+              hideActions // Save lives in the ribbon below (no separate Save & Print)
             />
-            {lastSaved && <SavedPanel lines={[`Bill ${lastSaved.pb_no}`]} />}
+            {lastSaved && <SavedPanel lines={[`Bill ${lastSaved.pb_no}`, ...(lastSaved.voucher_no ? [`Purchase Voucher ${lastSaved.voucher_no} generated`] : [])]} onPrint={() => setPrintFor(lastSaved.pb_id)} />}
             <RecentCard
               docId={DOC_ID}
               title="Recent bills"
@@ -274,6 +338,7 @@ export default function PurchaseBillPage() {
               emptyTitle="No purchase bills yet"
               emptyHint="Saved documents will be listed here."
               renderRow={(r) => ({ key: r.PBID, title: r.PrintPBNO, subtitle: `${r.PartyName} · ${formatINR(r.PBVALUE)}` })}
+              onLoad={viewRecord}
             />
           </>
         }
@@ -289,7 +354,31 @@ export default function PurchaseBillPage() {
         rateCaption={caption('PBRATE', 'Rate')}
       />
 
-      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} onLoad={viewRecord} onNew={startNew} onDelete={onDelete} search={findBills} lastSaved={lastSaved ? { id: lastSaved.pb_id, label: lastSaved.pb_no } : null} />
+      <DocNavBar
+        docId={DOC_ID}
+        currentId={viewId}
+        viewLabel={viewNo}
+        lastSaved={lastSaved ? { id: lastSaved.pb_id, label: lastSaved.pb_no } : null}
+        onLoad={viewRecord}
+        onNew={startNew}
+        showNew={Boolean(viewId) && !editing}
+        entryMode={!viewId && !idle}
+        newOnly={idle}
+        cancelEditLabel="Cancel"
+        onCancelEntry={cancelEntry}
+        onDelete={onDelete}
+        onClose={() => navigate('/')}
+        onEdit={startEdit}
+        onCancelEdit={cancelEdit}
+        onSave={() => onSave('save')}
+        onPrint={() => printWithFormat(pickFormat(printFormats))}
+        printFormats={printFormats}
+        onPrintFormat={printWithFormat}
+        saving={saving}
+        editing={editing}
+        search={findBills}
+      />
+      <PrintPickerModal opened={Boolean(printFor)} onClose={() => { setPrintFor(null); clearPrintOption() }} docId={DOC_ID} recordId={printFor} title="Purchase Bill" initialOption={printOption} />
     </Stack>
   )
 }

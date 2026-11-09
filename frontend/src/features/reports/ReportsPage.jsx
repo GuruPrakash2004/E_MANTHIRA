@@ -6,7 +6,8 @@ import CustomReportsPanel from './CustomReportsPanel'
 import SubsidiaryCatalogPanel from './SubsidiaryCatalogPanel'
 import { CATALOG_FORM_TAB } from './catalogTabs'
 import { useSearchParams } from 'react-router-dom'
-import { Badge, Button, Card, Checkbox, Grid, Group, Select, SimpleGrid, Skeleton, Stack, Table, Tabs, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
+import { Badge, Button, Card, Checkbox, Grid, Group, Radio, Select, SimpleGrid, Skeleton, Stack, Table, Tabs, Text, TextInput, Title, UnstyledButton } from '@mantine/core'
+import { TimeInput } from '@mantine/dates'
 import { DateInput } from '../../components/ui/AppDates'
 import { BookOpen, Coins, ClipboardList, Download, FileSearch, LayoutList, Play } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -119,14 +120,21 @@ function RunButtons({ loading, onRun, canExport, onExport, runDisabled, extra })
 }
 
 /** Shared shell: date range + optional Sannidhi/Seva filters, Run + Export, summary tiles, result table. */
-function ReportPanel({ runFn, columns, filename, title, withSevaFilters = true, extraSummary, pdfFn }) {
+function ReportPanel({ runFn, columns, filename, title, withSevaFilters = true, extraSummary, pdfFn, dayOptions = false }) {
   const [fromDate, setFromDate] = useState(dayjs().startOf('month').toDate())
   const [toDate, setToDate] = useState(new Date())
   const [sannidhis, setSannidhis] = useState([]) // "Selected Sannidhi / Selected Seva / Selected User": ticked from a checklist window
   const [sevas, setSevas] = useState([])
   const [users, setUsers] = useState([])
+  // Complete Day (legacy frmRptCompDay): Detailed / Summary choose the report file, and the entry time can be limited ( >= from, <= to )
+  const [reportType, setReportType] = useState('detailed')
+  const [useTimeFrom, setUseTimeFrom] = useState(false)
+  const [useTimeTo, setUseTimeTo] = useState(false)
+  const [timeFrom, setTimeFrom] = useState('09:00')
+  const [timeTo, setTimeTo] = useState('17:00')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+  const [ranWith, setRanWith] = useState(null) // filters of the last Run; Preview/Print stay off until Run, and again once a filter changes
 
   const buildFilters = () => {
     const filters = {
@@ -138,6 +146,11 @@ function ReportPanel({ runFn, columns, filename, title, withSevaFilters = true, 
       if (sevas.length) filters.seva_ids = sevas.map(Number)
       if (users.length) filters.users = users
     }
+    if (dayOptions) {
+      filters.report_type = reportType
+      if (useTimeFrom && timeFrom) filters.time_from = timeFrom
+      if (useTimeTo && timeTo) filters.time_to = timeTo
+    }
     return filters
   }
 
@@ -147,12 +160,15 @@ function ReportPanel({ runFn, columns, filename, title, withSevaFilters = true, 
       const filters = buildFilters()
       const data = await runFn(filters)
       setResult(data)
+      setRanWith(JSON.stringify(filters))
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Report failed', color: 'red' })
     } finally {
       setLoading(false)
     }
   }
+
+  const notRun = ranWith === null || ranWith !== JSON.stringify(buildFilters())
 
   return (
     <Stack gap="lg">
@@ -163,7 +179,7 @@ function ReportPanel({ runFn, columns, filename, title, withSevaFilters = true, 
             onExport={() => downloadXls(filename, result.rows, columns)}
             extra={pdfFn ? (
               // reports that have their own .rpt print from it, with the filters as set on the screen
-              <RptPdfButtons title={title || filename} load={() => pdfFn(buildFilters())} hotkey />
+              <RptPdfButtons title={title || filename} load={() => pdfFn(buildFilters())} disabled={notRun} hotkey />
             ) : (
               <ReportPrintButtons
                 title={title || filename.replace(/\.xls$/, '')}
@@ -171,11 +187,32 @@ function ReportPanel({ runFn, columns, filename, title, withSevaFilters = true, 
                 filters={[sannidhis.length && `${sannidhis.length} sannidhi(s)`, sevas.length && `${sevas.length} seva(s)`, users.length && `Users: ${users.join(', ')}`].filter(Boolean).join('  |  ')}
                 columns={columns}
                 rows={result?.rows || []}
+                disabled={notRun}
                 hotkey
               />
             )}
           />}>
         <DateRange from={fromDate} to={toDate} onFrom={setFromDate} onTo={setToDate} />
+        {dayOptions && (
+          <Grid.Col span={12}>
+            <Group gap="xl" align="flex-end" wrap="wrap">
+              <Radio.Group value={reportType} onChange={setReportType} aria-label="Report type">
+                <Group gap="lg">
+                  <Radio color="kumkum" value="detailed" label="Detailed" />
+                  <Radio color="kumkum" value="summary" label="Summary" />
+                </Group>
+              </Radio.Group>
+              <Group gap="xs" align="center" wrap="nowrap">
+                <Checkbox color="kumkum" label="Time from (>=)" checked={useTimeFrom} onChange={(e) => setUseTimeFrom(e.currentTarget.checked)} />
+                <TimeInput aria-label="Time from" size="xs" w={110} value={timeFrom} onChange={(e) => setTimeFrom(e.currentTarget.value)} disabled={!useTimeFrom} />
+              </Group>
+              <Group gap="xs" align="center" wrap="nowrap">
+                <Checkbox color="kumkum" label="Time to (<=)" checked={useTimeTo} onChange={(e) => setUseTimeTo(e.currentTarget.checked)} />
+                <TimeInput aria-label="Time to" size="xs" w={110} value={timeTo} onChange={(e) => setTimeTo(e.currentTarget.value)} disabled={!useTimeTo} />
+              </Group>
+            </Group>
+          </Grid.Col>
+        )}
         {withSevaFilters && (
           <Grid.Col span={12}>
             <Group gap="xl" wrap="wrap">
@@ -559,16 +596,16 @@ export default function ReportsPage() {
 
       <Tabs value={activeTab} color="kumkum" keepMounted={false}>
         <Tabs.Panel value="complete-day">
-          <ReportPanel runFn={reportsApi.runCompleteDay} columns={collectionColumns} filename="complete-day.xls" title="Complete Day Report" pdfFn={reportsApi.completeDayPdf} extraSummary={(r) => <CollectionSummary result={r} />} />
+          <ReportPanel runFn={reportsApi.runCompleteDay} columns={collectionColumns} filename="complete-day.xls" title="Complete Day Report" dayOptions pdfFn={reportsApi.completeDayPdf} extraSummary={(r) => <CollectionSummary result={r} />} />
         </Tabs.Panel>
         <Tabs.Panel value="collection">
-          <ReportPanel runFn={reportsApi.runCollection} columns={collectionColumns} filename="detailed-collection.xls" title="Detailed Collection Report" extraSummary={(r) => <CollectionSummary result={r} />} />
+          <ReportPanel runFn={reportsApi.runCollection} columns={collectionColumns} filename="detailed-collection.xls" title="Detailed Collection Report" pdfFn={reportsApi.collectionPdf} extraSummary={(r) => <CollectionSummary result={r} />} />
         </Tabs.Panel>
         <Tabs.Panel value="seva-issue">
           <ReportPanel runFn={reportsApi.runSevaIssue} columns={sevaIssueColumns} filename="seva-issue.xls" title="Seva Issue / Schedule Report" />
         </Tabs.Panel>
         <Tabs.Panel value="donations">
-          <ReportPanel runFn={reportsApi.runDonations} columns={donationColumns} filename="donations.xls" title="Kanike / Donation Report" withSevaFilters={false} />
+          <ReportPanel runFn={reportsApi.runDonations} columns={donationColumns} filename="donations.xls" title="Kanike / Donation Report" withSevaFilters={false} pdfFn={reportsApi.donationsPdf} />
         </Tabs.Panel>
         <Tabs.Panel value="general-ledger">
           <PartyGLPanel />

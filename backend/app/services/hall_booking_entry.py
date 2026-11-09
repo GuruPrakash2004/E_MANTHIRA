@@ -27,8 +27,8 @@ from sqlalchemy.engine import Connection
 
 from app.core import audit
 from app.core.fy import FinancialYear, assert_date_in_fy
-from app.legacy.tables import insert_row, table
-from app.meta import doc_rules
+from app.legacy.tables import insert_row, table, update_row
+from app.meta import doc_rules, edit_rules
 from app.meta.numbering import next_doc_no, print_doc_no, resolve_prefix
 from app.utils.amount_in_words import amount_in_words
 
@@ -62,6 +62,23 @@ def _num(v) -> float:
 
 
 def create_hbe(conn: Connection, *, data: HbeInput, fy: FinancialYear, user_code: str) -> dict:
+    return _save(conn, data=data, fy=fy, user_code=user_code)
+
+
+def update_hbe(conn: Connection, *, hbe_id: int, data: HbeInput, fy: FinancialYear, user_code: str) -> dict:
+    """Edit a saved entry (legacy Mode "M"): number, prefix and who/when it was added stay; header and lines are rewritten."""
+    return _save(conn, data=data, fy=fy, user_code=user_code, hbe_id=hbe_id)
+
+
+def _save(conn: Connection, *, data: HbeInput, fy: FinancialYear, user_code: str, hbe_id: int | None = None) -> dict:
+    old = None
+    if hbe_id is not None:
+        old = conn.execute(text(f"SELECT {NO_COLUMN}, HBEDate, Cancelled, Authorised FROM {TABLE} WHERE HBEID = :id"), {"id": hbe_id}).mappings().first()
+        if old is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Hall Booking Entry not found")
+        if (old["Cancelled"] or "N").upper() == "Y":
+            raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Cannot edit!")
+        edit_rules.assert_editable(conn, DOC_ID, doc_date=old["HBEDate"], authorised=old["Authorised"])
     rows = doc_rules.load_fields(conn, DOC_ID)
     if not rows:
         raise HTTPException(status.HTTP_409_CONFLICT, "Hall Booking Entry has no fields configured in the Doc Designer")
@@ -83,14 +100,15 @@ def create_hbe(conn: Connection, *, data: HbeInput, fy: FinancialYear, user_code
         if _num(l.get("AMOUNT")) <= 0:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please Enter Amount Greater than 0")
 
-    prefixes = resolve_prefix(conn, doc_id=DOC_ID, field_values={k: str(v) for k, v in values.items()})
-    if not prefixes:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No document-number prefix configured for this booking")
-    prefix = prefixes[0]
-    doc_no = next_doc_no(
-        conn, table_name=TABLE, no_column=NO_COLUMN, prefix=prefix,
-        fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
-    )
+    if old is None:
+        prefixes = resolve_prefix(conn, doc_id=DOC_ID, field_values={k: str(v) for k, v in values.items()})
+        if not prefixes:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "No document-number prefix configured for this booking")
+        prefix = prefixes[0]
+        doc_no = next_doc_no(
+            conn, table_name=TABLE, no_column=NO_COLUMN, prefix=prefix,
+            fy_start_year=fy.start_year, fy_start_date=fy.start_date.isoformat(), fy_end_date=fy.end_date.isoformat(),
+        )
 
     # Totals come from the Designer's formulas (TOTAMT = SVTCOLSUM(#AMOUNT#), AMTAFTTAX, NETPAY, GST ...); where this
     # temple has no formula for one of them the plain arithmetic is used.
@@ -108,23 +126,35 @@ def create_hbe(conn: Connection, *, data: HbeInput, fy: FinancialYear, user_code
     values = final  # CGST / SGST may have come from their formula
 
     cols = doc_rules.column_values(head, values, table(TABLE), ALIASES)
-    cols.update(
-        {
-            NO_COLUMN: doc_no, "Prefix": prefix, "PrintHBENO": print_doc_no(conn, doc_id=DOC_ID, doc_no=doc_no, prefix=prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "HBEDate": datetime.now(),
-            "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(),
-            "TOTAMT": total_amt, "TOTGSTAMT": tot_gst_amt, "AMTAFTTAX": amt_after_tax, "NETPAY": net_pay,
-            "RCPDT": data.receipt_date or (doc_rules._to_date(start) if start else date.today()),
-            "ISSUEDBY": user_code, "AMTINWORDS": amt_in_words, "TOTAMTIWRDS": tot_words,
-        }
-    )
-    hbe_id = insert_row(conn, TABLE, cols, returning="HBEID")
+    totals = {
+        "TOTAMT": total_amt, "TOTGSTAMT": tot_gst_amt, "AMTAFTTAX": amt_after_tax, "NETPAY": net_pay,
+        "RCPDT": data.receipt_date or (doc_rules._to_date(start) if start else date.today()),
+        "ISSUEDBY": user_code, "AMTINWORDS": amt_in_words, "TOTAMTIWRDS": tot_words,
+    }
+    if old is None:
+        cols.update(
+            {
+                NO_COLUMN: doc_no, "Prefix": prefix, "PrintHBENO": print_doc_no(conn, doc_id=DOC_ID, doc_no=doc_no, prefix=prefix, fy_start_year=fy.start_year, fy_end_year=fy.end_year), "HBEDate": datetime.now(),
+                "Authorised": "Y", "Cancelled": "N", "AddedBy": user_code, "AddedOn": datetime.now(), **totals,
+            }
+        )
+        hbe_id = insert_row(conn, TABLE, cols, returning="HBEID")
+    else:
+        for keep in (NO_COLUMN, "Prefix", "PrintHBENO", "HBEDate", "AddedBy", "AddedOn", "Cancelled", "Authorised"):
+            cols.pop(keep, None)
+        cols.update({**totals, "ChangedBy": user_code, "ChangedOn": datetime.now()})
+        if edit_rules.auth_required(conn, DOC_ID):
+            cols["Authorised"] = "N"  # an edited document goes back for authorisation
+        update_row(conn, TABLE, "HBEID", hbe_id, cols)
+        conn.execute(text("DELETE FROM TrnDtlHBE WHERE HBEID = :id"), {"id": hbe_id})
+        doc_no = old[NO_COLUMN]
     for i, l in enumerate(data.lines, start=1):
         lv = doc_rules.effective_values(detail, l)
         dcols = doc_rules.column_values(detail, lv, table("TrnDtlHBE"))
         dcols.update({"HBEID": hbe_id, "SlNo": i, "ItemSlNO": i, "ShortClosed": "N", "ShortClosedBy": 0, "AMOUNT": _num(l.get("AMOUNT"))})
         insert_row(conn, "TrnDtlHBE", dcols)
 
-    audit.record(conn, entity="Hall Booking Entry", entity_id=hbe_id, action="A", user_code=user_code, details=doc_no)
+    audit.record(conn, entity="Hall Booking Entry", entity_id=hbe_id, action="A" if old is None else "E", user_code=user_code, details=doc_no)
     return {"hbe_id": hbe_id, "hbe_no": doc_no, "total_amt": total_amt, "net_pay": net_pay}
 
 
@@ -157,9 +187,12 @@ def get_hbe(conn: Connection, *, hbe_id: int) -> dict:
 
 
 def delete_hbe(conn: Connection, *, hbe_id: int, user_code: str) -> None:
-    row = conn.execute(text(f"SELECT {NO_COLUMN} FROM {TABLE} WHERE HBEID = :id"), {"id": hbe_id}).mappings().first()
+    row = conn.execute(text(f"SELECT {NO_COLUMN}, HBEDate, Cancelled, Authorised FROM {TABLE} WHERE HBEID = :id"), {"id": hbe_id}).mappings().first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Hall Booking Entry not found")
+    if (row["Cancelled"] or "N").upper() == "Y":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Current record is cancelled. Deletion not possible!")
+    edit_rules.assert_editable(conn, DOC_ID, doc_date=row["HBEDate"], authorised=row["Authorised"])
     conn.execute(text("DELETE FROM TrnDtlHBE WHERE HBEID = :id"), {"id": hbe_id})
     conn.execute(text(f"DELETE FROM {TABLE} WHERE HBEID = :id"), {"id": hbe_id})
     audit.record(conn, entity="Hall Booking Entry", entity_id=hbe_id, action="D", user_code=user_code)

@@ -34,6 +34,7 @@ class VoucherLine:
     ac_led_id: int
     dr_amt: float = 0.0
     cr_amt: float = 0.0
+    adjustments: list = field(default_factory=list)  # bill-wise adjustments (services.bill_adjust)
 
 
 def _check_lines(conn: Connection, fy: FinancialYear, voucher_date: date, lines: list) -> None:
@@ -131,7 +132,7 @@ def create_receipt_voucher(
         due_date=receipt_date,
         narration=narration,
         lines=[
-            ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt)
+            ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt, adjustments=getattr(l, "adjustments", None) or [])
             for l in lines
         ],
     )
@@ -348,6 +349,6 @@ def update_receipt_voucher(
         )
     ledger.post(
         conn, doc_type="RCPTVCH", trn_id=receipt_id, trn_no=old["RCPTVCHNO"], trn_date=receipt_date, due_date=receipt_date, narration=narration,
-        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt) for l in lines],
+        lines=[ledger.JournalLine(ac_led_id=ledger.acled_id_for_line(conn, l.ac_led_id), dr_amt=l.dr_amt, cr_amt=l.cr_amt, adjustments=getattr(l, "adjustments", None) or []) for l in lines],
     )
     return ReceiptResult(receipt_id=receipt_id, receipt_no=old["RCPTVCHNO"])

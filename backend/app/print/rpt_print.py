@@ -152,6 +152,12 @@ def build_job(
 
     parameters = {name: _parameter_value(conn, source) for name, source in _split_pairs(opt["FormulasFld"], opt["FormulasVal"])}
     if voucher is not None:
+        # legacy frmTrnVch.prntCrpt passes the company header itself (gCompName, gCompAdd1..4 = MstComp) plus frmlVchName;
+        # whatever the print option names for the same parameter wins
+        comp = conn.execute(text("SELECT TOP 1 CompName, Address1, Address2, Address3, Address4 FROM MstComp")).mappings().first() or {}
+        for name, col in (("compname", "CompName"), ("add1", "Address1"), ("add2", "Address2"), ("add3", "Address3"), ("add4", "Address4")):
+            if not any(k.lower() == name for k in parameters):
+                parameters[name] = _clean(comp.get(col))
         parameters["frmlVchName"] = voucher.doc_name
 
     operation = _clean(opt["CtrlClickOperation"] if ctrl_click else opt["ClickOperation"]).upper() or "P"

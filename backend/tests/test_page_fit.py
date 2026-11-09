@@ -24,6 +24,18 @@ def test_custom_roll_is_cut_below_the_content_with_the_report_margin():
         assert "RECEIPT" in doc[0].get_text()
 
 
+def test_roll_on_a_wide_printer_page_is_cut_to_the_receipt_width():
+    # the bridge PC's printer is A4: the 204 pt receipt sits at the left of a 595 pt page; the blank right side goes
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=300)
+    page.insert_text((10, 30), "RECEIPT", fontsize=14)
+    page.draw_line((10, 100), (194, 100))
+    out, fitted = fit_pdf(doc.tobytes(), paper_kind="Custom", bottom_margin_pt=5)
+    assert 200 <= fitted.width_pt <= 210
+    with fitz.open(stream=out, filetype="pdf") as d:
+        assert "RECEIPT" in d[0].get_text()
+
+
 def test_named_paper_is_returned_unchanged():
     src = _pdf(595, 842)
     out, page = fit_pdf(src, paper_kind="Named", bottom_margin_pt=10)

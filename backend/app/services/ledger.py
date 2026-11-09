@@ -10,7 +10,7 @@ so no service ever hand-writes GL rows itself (CLAUDE.md rule 8).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from sqlalchemy import text
@@ -24,6 +24,7 @@ class JournalLine:
     ac_led_id: int
     dr_amt: float = 0.0
     cr_amt: float = 0.0
+    adjustments: list = field(default_factory=list)  # bill-wise adjustments of this line (services.bill_adjust)
 
 
 def acled_id_for_ledger(conn: Connection, led_id: int) -> int:
@@ -81,6 +82,14 @@ def post(
             "TrnDtlAcc",
             {"AccID": acc_id, "AcLedID": line.ac_led_id, "DrAmt": line.dr_amt, "CrAmt": line.cr_amt},
         )
+    if any(l.adjustments for l in lines):
+        from app.services import bill_adjust
+
+        for line in lines:
+            bill_adjust.write(
+                conn, doc_type=doc_type, voucher_id=trn_id, acc_id=acc_id, ac_led_id=line.ac_led_id,
+                line_amount=round(line.dr_amt or line.cr_amt, 2), adjustments=line.adjustments,
+            )
     return acc_id
 
 

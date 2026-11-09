@@ -1,7 +1,13 @@
 import { historyParams } from '../../lib/history'
 import DocNoDate from '../../components/ui/DocNoDate'
+import DocNavBar from '../../components/ui/DocNavBar'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import PrintPickerModal from '../../components/PrintPickerModal'
+import useDirectPrint from '../../hooks/useDirectPrint'
+import usePrintFormats from '../../hooks/usePrintFormats'
+import { pickFormat } from '../../lib/printing'
 import { ActionIcon, Button, Group, Stack, Text, Tooltip } from '@mantine/core'
 import { PackageMinus, Pencil, Plus, Save, Trash2 } from 'lucide-react'
 import { notifications } from '@mantine/notifications'
@@ -34,6 +40,12 @@ export default function StoreIssuePage() {
   const [lines, setLines] = useState([])
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
+  const navigate = useNavigate()
+  const [printFor, setPrintFor] = useState(null)
+  const [viewId, setViewId] = useState(null) // a saved issue note being looked at (read-only); null = new entry
+  const [viewNo, setViewNo] = useState('')
+  const [editing, setEditing] = useState(false) // a saved issue note opened for changes (Edit in the ribbon)
+  const [idle, setIdle] = useState(true) // the screen opens empty and locked (also after Cancel) until New is pressed
   const [dialog, setDialog] = useState({ open: false, index: null })
   const { data: rules } = useQuery({ queryKey: ['stock-rules'], queryFn: inventoryApi.stockRules, staleTime: 5 * 60_000 }) // Inventory > AllowNegative
 
@@ -57,6 +69,81 @@ export default function StoreIssuePage() {
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }))
   const locChosen = Number(values.LOCID) > 0 // the QOH shown in the dialog is that location's, so the location comes first
+  const readOnly = (Boolean(viewId) && !editing) || idle
+
+  function startNew() {
+    setIdle(false)
+    setViewId(null)
+    setEditing(false)
+    setViewNo('')
+    setForm({ doc_date: new Date() })
+    setLines([])
+    setValues({})
+    setResetKey((k) => k + 1) // re-applies the Designer defaults
+    setAttempted(false)
+  }
+  // Cancel a new entry: an empty, locked form with only New in the ribbon
+  async function cancelEntry(silent) {
+    if (!idle && silent !== true && !(await confirm({ title: 'Discard this entry?', message: 'What you have typed will be cleared.', confirmLabel: 'Discard' }))) return
+    setViewId(null)
+    setEditing(false)
+    setViewNo('')
+    setLines([])
+    setValues({}) // no resetKey bump here: the Designer defaults come back only when New is pressed
+    setAttempted(false)
+    setLastSaved(null)
+    setIdle(true)
+  }
+  async function startEdit() {
+    // the screen must show what is saved right now, not what was loaded a while ago
+    await viewRecord(viewId)
+    setEditing(true)
+  }
+  async function cancelEdit() {
+    await viewRecord(viewId)
+    setEditing(false)
+  }
+  async function viewRecord(id) {
+    try {
+      const r = await inventoryApi.getStoreIssue(id)
+      const h = r.header
+      const next = {}
+      for (const f of fields) {
+        if (COMPUTED_CODES.includes(f.FldCode)) continue
+        const v = h[f.FldCode]
+        next[f.FldCode] = v === null || v === undefined ? '' : f.FldDataType === 'Date' ? new Date(v) : f.FldBlnComboData === 'Y' ? Number(v) || '' : String(v).trim()
+      }
+      setValues(next)
+      setForm({ doc_date: h.ISSDate ? new Date(h.ISSDate) : new Date() })
+      setLines(r.lines.map((l) => ({ item_id: l.ITEMID, item_code: l.ITEMCODE, item_name: l.ITEMNAME, uom_id: l.UOMID, uom_code: l.UOMCODE, qty: Number(l.ISSQty), remarks: l.DRMKS || '' })))
+      setIdle(false) // a record is open: leave the "cancelled, nothing open" state
+      setViewId(id)
+      setEditing(false)
+      setViewNo(h.PrintISSNO || h.ISSNO)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not open that issue note', color: 'red' })
+    }
+  }
+  async function findRecords(q) {
+    const rows = await inventoryApi.listStoreIssues({ top: 200 })
+    const t = (q || '').toLowerCase()
+    return rows
+      .filter((r) => !t || String(r.PrintISSNO).toLowerCase().includes(t) || String(r.RMKS || '').toLowerCase().includes(t))
+      .map((r) => ({ id: r.ISSID, label: r.PrintISSNO, sub: `${r.RMKS || ''} · Qty ${r.TOTQTY}` }))
+  }
+  async function onDelete() {
+    if (!viewId) return
+    if (!(await confirm({ title: 'Delete this issue note?', message: `Issue note ${viewNo} and the stock it issued will be put back.`, confirmLabel: 'Delete' }))) return
+    try {
+      await inventoryApi.deleteStoreIssue(viewId)
+      notifications.show({ message: 'Deleted Successfully!', color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: ['store-issues'] })
+      refetch()
+      cancelEntry(true) // back to the locked, empty screen (not a new entry)
+    } catch (err) {
+      notifications.show({ message: err?.response?.data?.detail || 'Could not delete', color: 'red' })
+    }
+  }
 
   function onLineSaved(line) {
     setLines((ls) => (dialog.index == null ? [...ls, line] : ls.map((l, i) => (i === dialog.index ? line : l))))
@@ -66,11 +153,13 @@ export default function StoreIssuePage() {
     if (await confirm({ title: 'Remove this line?', message: 'It will be removed from this entry. You can add it again before saving.', confirmLabel: 'Remove' })) setLines((ls) => ls.filter((_, idx) => idx !== i))
   }
 
-  async function onSave() {
+  // mode 'save' = just save (the preview opens only from Print / Options); 'print' = save and print at once (F10)
+  async function onSave(mode = 'save') {
+    if (readOnly) return
     setAttempted(true)
     const firstErr = Object.values(headErrors)[0] || (!lines.length ? 'Please add at least one item line' : null)
     if (firstErr) {
-      notifications.show({ message: firstErr, color: 'red' })
+      notifications.show({ title: 'Cannot save yet', message: firstErr, color: 'red' })
       return
     }
     setSaving(true)
@@ -80,15 +169,26 @@ export default function StoreIssuePage() {
         doc_date: isoDate(form.doc_date),
         lines: lines.map((l) => ({ item_id: Number(l.item_id), uom_id: Number(l.uom_id), qty: Number(l.qty), remarks: l.remarks || '' })),
       }
+      if (editing && viewId) {
+        const done = await inventoryApi.updateStoreIssue(viewId, body)
+        setLastSaved(done)
+        notifications.show({ message: 'Changes saved successfully!', color: 'teal' })
+        setAttempted(false)
+        queryClient.invalidateQueries({ queryKey: ['store-issues'] })
+        refetch()
+        await viewRecord(viewId)
+        if (mode === 'print') directPrint(viewId)
+        return
+      }
       const result = await inventoryApi.createStoreIssue(body)
       setLastSaved(result)
+      if (mode === 'print') directPrint(result.iss_id)
       notifications.show({ message: 'Data saved successfully!', color: 'teal' })
-      setLines([])
-      setValues({})
-      setResetKey((k) => k + 1)
       setAttempted(false)
       queryClient.invalidateQueries({ queryKey: ['store-issues'] })
       refetch()
+      // the saved issue note stays on screen (read-only) so it can be checked before printing; New starts the next one
+      await viewRecord(result.iss_id)
     } catch (err) {
       notifications.show({ message: err?.response?.data?.detail || 'Save failed', color: 'red' })
     } finally {
@@ -99,13 +199,22 @@ export default function StoreIssuePage() {
   const totalQty = lines.reduce((s, l) => s + (Number(l.qty) || 0), 0)
   const fmtQty = (n) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 })
 
-  useDocShortcuts({ onSave })
+  const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+  const { printFormats, printWithFormat, printOption, clearPrintOption } = usePrintFormats(DOC_ID, { viewId, setPrintFor, noun: 'issue note' })
+  useDocShortcuts({
+    onSave: () => !idle && (!viewId || editing) && onSave('save'),
+    onNew: () => (viewId || idle) && startNew(),
+    onEdit: () => viewId && !editing && startEdit(),
+    onPrint: () => lastSaved && setPrintFor(lastSaved.iss_id),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : !idle && onSave('print')),
+  })
 
   return (
     <Stack gap="lg" className="vt-rise">
-      <PageHeader title="Store Issue Note" subtitle="Issue items out of stock" right={<DocNoDate docId={DOC_ID} date={form.doc_date} onDate={(v) => set('doc_date', v)} />} />
+      <PageHeader title="Store Issue Note" subtitle="Issue items out of stock" right={<DocNoDate docId={DOC_ID} viewNo={viewId ? viewNo : ''} date={form.doc_date} onDate={(v) => set('doc_date', v)} dateDisabled={readOnly} />} />
 
       <EntryLayout
+        viewing={readOnly}
         main={
           <Stack gap="lg">
             <SectionCard title="Issue details" hint="Which store the items leave from and who issued them.">
@@ -116,8 +225,10 @@ export default function StoreIssuePage() {
                 setValue={setValue}
                 setValues={setValues}
                 resetKey={resetKey}
+                seedDefaults={!idle}
                 errors={attempted ? headErrors : {}}
                 skip={COMPUTED_CODES}
+                readOnly={readOnly}
               />
               <DocFieldsForm
                 docId={DOC_ID}
@@ -127,8 +238,10 @@ export default function StoreIssuePage() {
                 setValue={setValue}
                 setValues={setValues}
                 resetKey={resetKey}
+                seedDefaults={!idle}
                 errors={attempted ? headErrors : {}}
                 skip={COMPUTED_CODES}
+                readOnly={readOnly}
               />
             </SectionCard>
 
@@ -136,11 +249,13 @@ export default function StoreIssuePage() {
               title="Store Issue Line Items"
               chips={[{ label: 'Items', value: lines.length }, { label: 'Total Qty', value: fmtQty(totalQty), color: 'gold' }]}
               action={
-                <Tooltip label="Select the location first" disabled={locChosen} withArrow>
-                  <Button color="kumkum" leftSection={<Plus size={16} />} disabled={!locChosen} onClick={() => locChosen && setDialog({ open: true, index: null })}>
-                    Add Item
-                  </Button>
-                </Tooltip>
+                !readOnly && (
+                  <Tooltip label="Select the location first" disabled={locChosen} withArrow>
+                    <Button color="kumkum" leftSection={<Plus size={16} />} disabled={!locChosen} onClick={() => locChosen && setDialog({ open: true, index: null })}>
+                      Add Item
+                    </Button>
+                  </Tooltip>
+                )
               }
             >
               <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13, minWidth: 640 }}>
@@ -153,7 +268,7 @@ export default function StoreIssuePage() {
                     <th style={{ ...th, textAlign: 'right' }}>QOH</th>
                     <th style={{ ...th, textAlign: 'right' }}>{caption('ISSQTY', 'Qty')}</th>
                     <th style={th}>{caption('DRMKS', 'Remarks')}</th>
-                    <th style={{ ...th, width: 84 }} aria-label="Actions" />
+                    {!readOnly && <th style={{ ...th, width: 84 }} aria-label="Actions" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -166,16 +281,18 @@ export default function StoreIssuePage() {
                       <td style={{ ...td, textAlign: 'right', fontWeight: 600 }} className="vt-num" aria-label={`Quantity on hand, line ${i + 1}`}>{fmtQoh(qohMap, l.item_id)}</td>
                       <td style={{ ...td, textAlign: 'right', fontWeight: 700 }} className="vt-num">{fmtQty(Number(l.qty) || 0)}</td>
                       <td style={td}>{l.remarks}</td>
-                      <td style={td}>
-                        <Group gap={2} wrap="nowrap">
-                          <ActionIcon variant="subtle" color="kumkum" aria-label={`Edit line ${i + 1}`} onClick={() => setDialog({ open: true, index: i })}>
-                            <Pencil size={15} />
-                          </ActionIcon>
-                          <ActionIcon variant="subtle" color="red" aria-label={`Remove line ${i + 1}`} onClick={() => removeLine(i)}>
-                            <Trash2 size={15} />
-                          </ActionIcon>
-                        </Group>
-                      </td>
+                      {!readOnly && (
+                        <td style={td}>
+                          <Group gap={2} wrap="nowrap">
+                            <ActionIcon variant="subtle" color="kumkum" aria-label={`Edit line ${i + 1}`} onClick={() => setDialog({ open: true, index: i })}>
+                              <Pencil size={15} />
+                            </ActionIcon>
+                            <ActionIcon variant="subtle" color="red" aria-label={`Remove line ${i + 1}`} onClick={() => removeLine(i)}>
+                              <Trash2 size={15} />
+                            </ActionIcon>
+                          </Group>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -197,7 +314,9 @@ export default function StoreIssuePage() {
               saveLabel="Save"
               saveIcon={Save}
               saving={saving}
-              onSave={onSave}
+              onSave={() => onSave('save')}
+              saveDisabled={readOnly}
+              hideActions // Save lives in the ribbon below (no separate Save & Print)
             />
             {lastSaved && <SavedPanel lines={[`Issue note ${lastSaved.iss_no}`]} />}
             <RecentCard
@@ -209,10 +328,37 @@ export default function StoreIssuePage() {
               emptyTitle="No issue notes yet"
               emptyHint="Saved documents will be listed here."
               renderRow={(r) => ({ key: r.ISSID, title: r.PrintISSNO, subtitle: `${r.RMKS} · Qty ${r.TOTQTY}` })}
+              onLoad={viewRecord}
             />
           </>
         }
       />
+
+      <DocNavBar
+        docId={DOC_ID}
+        currentId={viewId}
+        viewLabel={viewNo}
+        lastSaved={lastSaved ? { id: lastSaved.iss_id, label: lastSaved.iss_no } : null}
+        onLoad={viewRecord}
+        onNew={startNew}
+        showNew={Boolean(viewId) && !editing}
+        entryMode={!viewId && !idle}
+        newOnly={idle}
+        cancelEditLabel="Cancel"
+        onCancelEntry={cancelEntry}
+        onDelete={onDelete}
+        onClose={() => navigate('/')}
+        onEdit={startEdit}
+        onCancelEdit={cancelEdit}
+        onSave={() => onSave('save')}
+        onPrint={() => printWithFormat(pickFormat(printFormats))}
+        printFormats={printFormats}
+        onPrintFormat={printWithFormat}
+        saving={saving}
+        editing={editing}
+        search={findRecords}
+      />
+      <PrintPickerModal opened={Boolean(printFor)} onClose={() => { setPrintFor(null); clearPrintOption() }} docId={DOC_ID} recordId={printFor} title="Store Issue Note" initialOption={printOption} />
 
       <AddLineItemDialog
         opened={dialog.open}

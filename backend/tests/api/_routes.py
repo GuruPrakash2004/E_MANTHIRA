@@ -26,7 +26,7 @@ EXPECTED_PUBLIC = {
     ("POST", "/db-settings/test"),
     ("GET", "/display/today-sevas"),
     ("GET", "/print/agent"),
-    ("GET", "/welcome/video"),
+    ("GET", "/welcome/video/{vid}"),  # the welcome clips: a <video> tag cannot send the Authorization header (branding assets, not data)
     ("GET", "/health"),
     # the built web app (frontend/dist) is served by the backend itself: static files + the SPA fallback, present only once the frontend is built
     ("GET", "/{path:path}"),

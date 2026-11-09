@@ -1,5 +1,6 @@
 import { historyParams } from '../../lib/history'
 import DocNoDate from '../../components/ui/DocNoDate'
+import { useNavigate } from 'react-router-dom'
 import { useConfirm } from '../../components/ui/ConfirmProvider'
 import { useEffect, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
@@ -8,7 +9,7 @@ import GroupSevaModal from './GroupSevaModal'
 import DocNavBar from '../../components/ui/DocNavBar'
 import { Badge, Button, Card, Checkbox, Group, NumberInput, Stack, Table, Text, TextInput, Title, ActionIcon } from '@mantine/core'
 import { DateInput } from '../../components/ui/AppDates'
-import { Plus, Trash2, Search, Receipt, CalendarPlus, CalendarRange, Landmark, Users, Copy } from 'lucide-react'
+import { Trash2, Search, Receipt, CalendarPlus, CalendarRange, Users, Copy } from 'lucide-react'
 import dayjs from 'dayjs'
 import { notifications } from '@mantine/notifications'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,7 +18,7 @@ import * as mastersApi from '../../api/endpoints/masters'
 import useDirectPrint from '../../hooks/useDirectPrint'
 import ExtraSevas from './ExtraSevas'
 import PrintPickerModal from '../../components/PrintPickerModal'
-import { handleAfterSave } from '../../lib/printing'
+import { handleAfterSave, loadFormats, pickFormat, printErrorMessage, printNow, rememberFormat } from '../../lib/printing'
 import SplitPaymentPanel, { refRequiredModes, splitError, splitFromSaved, splitPayload } from '../../components/ui/SplitPaymentPanel'
 import DocFieldsForm, { docFieldErrors } from '../../components/DocFieldsForm'
 import CopyFromDialog from '../../components/ui/CopyFromDialog'
@@ -29,9 +30,7 @@ import EmptyState from '../../components/ui/EmptyState'
 import { EntryLayout, SummaryCard, SavedPanel, RecentCard } from '../../components/ui/EntryParts'
 import { formatINR, isoDate } from '../../utils/format'
 import usePanchangaMonth from '../panchanga/usePanchangaMonth'
-import SannidhiShortlistModal from './SannidhiShortlistModal'
 import SevaDatesDialog from './SevaDatesDialog'
-import useShortlist from '../../hooks/useShortlist'
 import { useAuth } from '../../hooks/useAuth'
 import useBillAlertify from '../alertify/useBillAlertify'
 
@@ -46,7 +45,6 @@ const GOPURAM_MARK = '/illustrations/gopuram-mark.svg'
 // a code the temple's Designer does not have is simply not shown, and the server ignores it.
 const DEVOTEE_CODES = ['KNAME', 'NAMEINKAN', 'GOTHRAID', 'NAKSHATRAID', 'RASHIID', 'SECKNAME', 'SECNAKSHATRAID', 'SECRASHIID']
 // Cleared after each save so the next devotee starts fresh (the rest — sannidhi, payment mode — carries over).
-const PER_DEVOTEE_CODES = [...DEVOTEE_CODES, 'MOBNUM', 'RMKS', 'REFNO', 'CHQNO', 'CHQDATE', 'BANKNAME', 'ADDRES']
 // The nakshatra, gothra and rashi are read together, so they share one row of the form.
 const ROW_GROUPS = [['GOTHRAID', 'NAKSHATRAID', 'RASHIID']]
 // A new entry starts with today as its seva date (the user can change or remove it).
@@ -59,6 +57,7 @@ const errorText = (err, fallback) => {
 
 export default function SevaEntryPage() {
   const confirm = useConfirm()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   // Every Designer field lives here keyed by its FldCode; the form is rendered from UtlDocDsgrFlds (DocFieldsForm).
   const [values, setValues] = useState({})
@@ -68,9 +67,9 @@ export default function SevaEntryPage() {
   const [amountEdit, setAmountEdit] = useState(null) // the Amount box when typed: { svaid, days, rate, value }; it stops applying as soon as the Seva, the number of dates or the Rate change (legacy recalculates)
   const [rateEdit, setRateEdit] = useState({ svaid: 0, value: '' }) // the Rate box when the counter changed it (open-rate sevas have a master amount of 0); only valid for the Seva it was typed for
   const [attempted, setAttempted] = useState(false)
-  const [dateError, setDateError] = useState('')
-  const [dates, setDates] = useState(todayDates)
-  const [newDate, setNewDate] = useState(new Date())
+  const [dates, setDates] = useState([]) // empty until New (todayDates)
+  // false = the dates are just today's (nothing chosen yet): the grid stays hidden. True once Dates selection, a saved bill or Copy From supplied dates.
+  const [datesPicked, setDatesPicked] = useState(false)
   const [saving, setSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState(null)
   const [extraSevas, setExtraSevas] = useState([]) // more sevas for this devotee: [{ id, label, rate }], each saved as its own bill
@@ -86,26 +85,19 @@ export default function SevaEntryPage() {
   const [viewMonth, setViewMonth] = useState(new Date())
   const [viewNo, setViewNo] = useState('')
   const [printFor, setPrintFor] = useState(null)
+  const [printOption, setPrintOption] = useState(null) // the Options-menu format the preview should open on (null = the user's last / the default)
   const [regular, setRegular] = useState(false) // legacy "Regular Devotee" tick (TrnHdrSEVA.RegularD)
   const rules = useDocRules(DOC_ID)
   const [stamp, setStamp] = useState(null) // legacy CANCELLED / AUTHORISED labels of the record being viewed
 
-  const readOnly = Boolean(viewId) && !editing
+  const [idle, setIdle] = useState(true) // the screen opens empty and locked (also after Cancel) until New is pressed
+  const readOnly = (Boolean(viewId) && !editing) || idle
   const { user } = useAuth()
-  // the Sannidhis this user works with (chosen in "My Sannidhis"); none chosen = all of them
-  const [sannidhis, setSannidhis] = useShortlist('sannidhi', user?.user_code)
-  const [shortlistOpen, setShortlistOpen] = useState(false)
   const { fields } = useDocFields(DOC_ID)
   const panchanga = usePanchangaMonth(viewMonth)
   // the calendars report the month they show; only a different month is news (a new Date object every time would re-render forever)
   const changeMonth = (d) => setViewMonth((cur) => (d && !dayjs(cur).isSame(d, 'month') ? d : cur))
 
-  // A new entry starts on the first Sannidhi this user works with (the Designer's default applies when none are chosen).
-  useEffect(() => {
-    if (viewId || !sannidhis.length) return
-    setValues((cur) => (cur.SANNIDHIID ? cur : { ...cur, SANNIDHIID: sannidhis[0] }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sannidhis, resetKey, viewId])
   const has = (code) => fields.some((f) => f.FldCode === code && !isFieldHidden(f, values))
   const setValue = (code, v) => setValues((cur) => ({ ...cur, [code]: v }))
   const dateCodes = new Set(fields.filter((f) => f.FldDataType === 'Date').map((f) => f.FldCode))
@@ -179,26 +171,12 @@ export default function SevaEntryPage() {
     }
   }
 
-  function addDate() {
-    if (!newDate) {
-      setDateError('Pick a date first')
-      return
-    }
-    const iso = isoDate(newDate)
-    if (dates.some((d) => d.perform_date === iso)) {
-      setDateError(`${dayjs(iso).format('DD-MMM-YYYY')} is already added`)
-      return
-    }
-    setDateError('')
-    setDates((d) => [...d, { perform_date: iso, remarks: '' }].sort((a, b) => a.perform_date.localeCompare(b.perform_date)))
-  }
-
   // the Dates Selection dialog hands back the whole list and its Date Text
   function applyDatesDialog({ dates: picked, daysText: text }) {
     setDates(picked)
+    setDatesPicked(true)
     setDaysText(text)
     setDaysTextFor(JSON.stringify(picked.map((d) => d.perform_date)))
-    setDateError('')
     notifications.show({ message: `${picked.length} date${picked.length === 1 ? '' : 's'} selected`, color: 'teal' })
   }
 
@@ -210,8 +188,17 @@ export default function SevaEntryPage() {
     setDates((ds) => ds.map((x, i) => (i === idx ? { ...x, perform_date: iso } : x)).sort((a, b) => a.perform_date.localeCompare(b.perform_date)))
   }
 
+  // Any row can be removed, the first included. Taking out the last one puts the bill back on today (nothing chosen, grid hidden).
   function removeDate(idx) {
-    setDates((d) => d.filter((_, i) => i !== idx))
+    const left = dates.filter((_, i) => i !== idx)
+    if (left.length === 0) {
+      setDates(todayDates())
+      setDatesPicked(false)
+      setDaysText('')
+      setDaysTextFor('')
+      return
+    }
+    setDates(left)
   }
 
   // Select Sevakartharu: copy the chosen regular devotee's details into this entry (legacy fillSevaDetails)
@@ -241,6 +228,7 @@ export default function SevaEntryPage() {
       if (l.SEVADate) setDocDate(new Date(l.SEVADate))
       const loaded = (l.dates || []).map((d) => ({ perform_date: dayjs(d.PDate).format('YYYY-MM-DD'), remarks: d.PRemarks || '' }))
       setDates(loaded)
+      setDatesPicked(true)
       setDaysText(String(l.DaysPrintText || '').trim())
       setDaysTextFor(JSON.stringify(loaded.map((d) => d.perform_date)))
     }
@@ -265,6 +253,7 @@ export default function SevaEntryPage() {
       fillFromSeva(l, { withDates: true })
       setSplitParts(splitFromSaved(l.split_payments))
       setSplitOn((l.split_payments || []).length > 1)
+      setIdle(false) // a record is open: leave the "cancelled, nothing open" state
       setViewId(id)
       setEditing(false)
       setViewNo(l.PrintSEVANO || l.SEVANO)
@@ -273,16 +262,20 @@ export default function SevaEntryPage() {
     }
   }
   function startNew() {
+    setIdle(false)
     setViewId(null)
     setEditing(false)
     setSplitOn(false)
     setSplitParts([])
     setViewNo('')
     setDates(todayDates())
+    setDatesPicked(false)
     setDaysText('')
     setDaysTextFor('')
     setAttempted(false)
-    setValues({})
+    // legacy AddProc: clearFlds() blanks every field, then only the Designer defaults are applied (resetKey below);
+    // the one value carried over is the Sannidhi
+    setValues((cur) => (cur.SANNIDHIID ? { SANNIDHIID: cur.SANNIDHIID } : {}))
     setExtraSevas([])
     setBatch([])
     setRegular(false)
@@ -291,6 +284,45 @@ export default function SevaEntryPage() {
     setStamp(null)
     setResetKey((k) => k + 1) // re-applies the Designer defaults
     setDocDate(new Date())
+  }
+  // Cancel a new entry: back to the last saved bill when there is one, else a fully blank form
+  async function cancelEntry(silent) {
+    if (!idle && silent !== true && !(await confirm({ title: 'Discard this entry?', message: 'What you have typed will be cleared.', confirmLabel: 'Discard' }))) return
+    // clear everything (Sannidhi included) and show an empty, locked form with only New in the ribbon
+    setViewId(null)
+    setEditing(false)
+    setSplitOn(false)
+    setSplitParts([])
+    setViewNo('')
+    setDates([])
+    setDatesPicked(false)
+    setDaysText('')
+    setDaysTextFor('')
+    setAttempted(false)
+    setValues({}) // no resetKey bump here: the Designer defaults come back only when New is pressed
+    setExtraSevas([])
+    setBatch([])
+    setLastSaved(null)
+    setRegular(false)
+    setRateEdit({ svaid: 0, value: '' })
+    setAmountEdit(null)
+    setStamp(null)
+    setIdle(true)
+  }
+  async function deleteSeva() {
+    if (!(await confirm({ title: 'Delete this seva?', message: `Seva ${viewNo} and its receipt will be deleted.`, confirmLabel: 'Delete' }))) return
+    try {
+      const r = await sevaApi.deleteSeva(viewId)
+      notifications.show({ message: r?.message || 'Deleted Seva Entry Successfully!', color: 'teal' })
+      queryClient.invalidateQueries({ queryKey: ['sevas'] })
+      queryClient.invalidateQueries({ queryKey: ['seva-next-no'] })
+      refetch()
+      setLastSaved(null)
+      cancelEntry(true) // back to the locked, empty screen (not a new entry)
+      setValues({})
+    } catch (err) {
+      notifications.show({ message: errorText(err, 'Could not delete the seva'), color: 'red' })
+    }
   }
   async function startEdit() {
     // the screen must show what is saved right now, not what was loaded a while ago
@@ -311,6 +343,7 @@ export default function SevaEntryPage() {
       const l = await sevaApi.getSeva(id)
       fillFromSeva(l)
       setDates((l.dates || []).map((d) => ({ perform_date: dayjs(d.PDate).format('YYYY-MM-DD'), remarks: d.PRemarks || '' })))
+      setDatesPicked(true)
       notifications.show({ message: `Copied from ${l.PrintSEVANO || l.SEVANO}`, color: 'teal' })
     } catch (err) {
       notifications.show({ message: errorText(err, 'Could not copy that document'), color: 'red' })
@@ -355,26 +388,21 @@ export default function SevaEntryPage() {
       alertify.afterSave({ 'Doc No': (bills ? bills[0] : res).seva_no }) // the Alertify reminder asked for before saving; it never blocks the bill
       setLastSaved(result)
       setBatch(bills || [])
-      // F10 = save and print now; Alt+S = save only; the Save & Print button follows the document's after-save setting
+      // One Save: what happens next (print with a prompt, print straight away, or nothing) is the print option's After Save setting
       if (bills) {
         // one print dialog cannot serve several bills: print each (silently when a print agent is set up), else use the panel's Print buttons
         if (mode === 'print') for (const b of bills) await directPrint(b.seva_id)
+        else if (mode === 'auto') bills.forEach((b, i) => handleAfterSave({ docId: DOC_ID, recordId: b.seva_id, openDialog: i === bills.length - 1 ? setPrintFor : () => {} }))
       } else if (mode === 'print') directPrint(result.seva_id)
       else if (mode !== 'save') handleAfterSave({ docId: DOC_ID, recordId: result.seva_id, openDialog: setPrintFor })
       notifications.show({ message: bills ? `${bills.length} sevas saved successfully!` : 'Data saved successfully!', color: 'teal' })
       setExtraSevas([])
-      setSplitOn(false) // the next bill starts as an ordinary single payment
-      setSplitParts([])
-      setDates(todayDates())
       setAttempted(false)
-      setValues((cur) => {
-        const keep = { ...cur }
-        PER_DEVOTEE_CODES.forEach((c) => delete keep[c])
-        return keep
-      })
       queryClient.invalidateQueries({ queryKey: ['sevas'] })
       queryClient.invalidateQueries({ queryKey: ['seva-next-no'] })
       refetch()
+      // the saved bill stays on screen (read-only) so it can be checked before printing; New starts the next one
+      await viewRecord(result.seva_id)
     } catch (err) {
       notifications.show({ title: 'Save failed', message: errorText(err, 'Save failed'), color: 'red' })
     } finally {
@@ -383,12 +411,32 @@ export default function SevaEntryPage() {
   }
 
   const directPrint = useDirectPrint(DOC_ID, setPrintFor)
+
+  // The Options drop-down lists this screen's print formats (UtlOption); each one acts on its own Print Click, like the legacy ribbon:
+  // D = print straight away, anything else = open the preview / print window on that format.
+  const { data: printFormats = [] } = useQuery({ queryKey: ['print-formats', DOC_ID], queryFn: () => loadFormats(DOC_ID), staleTime: 60_000 })
+  async function printWithFormat(format) {
+    if (!viewId) return notifications.show({ message: 'Open a saved seva first (Find, List or the arrows), then choose a print option', color: 'yellow' })
+    setPrintOption(format?.option_name || null) // the preview window opens on the very format that was clicked (3 Inch, A4, ...)
+    if (!format) return setPrintFor(viewId)
+    try {
+      await rememberFormat(DOC_ID, format.option_name)
+      // keep the cached list in step with the saved choice, so the ribbon's Print button and the next preview start on it too
+      queryClient.setQueryData(['print-formats', DOC_ID], (list) => (Array.isArray(list) ? list.map((f) => ({ ...f, selected: f.option_name === format.option_name, preferred: f.option_name === format.option_name })) : list))
+      if (String(format.click_operation || '').toUpperCase() === 'D' && format.available) {
+        notifications.show({ message: await printNow({ docId: DOC_ID, recordId: viewId, format }), color: 'teal' })
+      } else setPrintFor(viewId)
+    } catch (err) {
+      notifications.show({ title: 'Could not print', message: await printErrorMessage(err), color: 'red' })
+      setPrintFor(viewId)
+    }
+  }
   useDocShortcuts({
-    onSave: () => (!viewId || editing) && onSave('save'),
-    onNew: () => viewId && startNew(),
+    onSave: () => !idle && (!viewId || editing) && onSave('auto'),
+    onNew: () => (viewId || idle) && startNew(),
     onEdit: () => viewId && !editing && startEdit(),
     onPrint: () => lastSaved && setPrintFor(lastSaved.seva_id),
-    onDirectPrint: () => (viewId ? directPrint(viewId) : onSave('print')),
+    onDirectPrint: () => (viewId ? directPrint(viewId) : !idle && onSave('auto')),
   })
 
   // a small panchanga marker on the calendar days that have an event
@@ -445,11 +493,11 @@ export default function SevaEntryPage() {
                 setValue={setValue}
                 setValues={setValues}
                 resetKey={resetKey}
+                seedDefaults={!idle}
                 errors={shownErrors}
                 readOnly={readOnly}
                 onBlurField={onBlurField}
                 rowGroups={ROW_GROUPS}
-                fieldFilters={{ SANNIDHIID: sannidhis }}
                 skip={splitOn ? SPLIT_PAY_CODES : undefined}
               />
               <SplitPaymentPanel
@@ -464,14 +512,11 @@ export default function SevaEntryPage() {
                 refModes={refModes}
                 onMain={(m) => setValues((cur) => ({ ...cur, PAYMENT: m.mode, LEDID: m.led_id, REFNO: m.ref_no || '', ...(String(m.mode).toUpperCase() === 'CHEQUE' ? { CHQNO: m.ref_no || '', CHQDATE: m.chq_date || '', BANKNAME: m.bank_name || '' } : {}) }))}
               />
-              <Checkbox mt="md" label="Regular Devotee" color="kumkum" checked={regular} disabled={readOnly} onChange={(e) => setRegular(e.currentTarget.checked)} />
+              <Checkbox mt="md" label="Regular Devotee" color="kumkum" styles={{ input: { border: '2px solid var(--vt-badge-ink)', cursor: 'pointer' }, label: { fontWeight: 600, cursor: 'pointer' } }} checked={regular} disabled={readOnly} onChange={(e) => setRegular(e.currentTarget.checked)} />
               {!viewId && (
                 <Group gap="sm" align="flex-end" wrap="wrap" mt="md">
                   <Button variant="light" color="kumkum" leftSection={<Users size={16} />} onClick={() => setGroupOpen(true)}>
                     Group Seva
-                  </Button>
-                  <Button variant="light" color="kumkum" leftSection={<Landmark size={16} />} onClick={() => setShortlistOpen(true)}>
-                    My Sannidhis{sannidhis.length ? ` (${sannidhis.length})` : ''}
                   </Button>
                   <Button variant="light" color="kumkum" leftSection={<Search size={16} />} onClick={() => setPickOpen(true)}>
                     Select Sevakartharu
@@ -496,21 +541,10 @@ export default function SevaEntryPage() {
               <Group justify="space-between" align="flex-end" mb="md" wrap="wrap">
                 <div>
                   <Title order={4} mb={2}>Seva dates</Title>
-                  <Text size="xs" c="dimmed">Add every date this seva will be performed. The total is the Seva's rate x number of dates.</Text>
+                  <Text size="xs" c="dimmed">Today is used unless you choose dates with Dates selection. The total is the Seva's rate x number of dates.</Text>
                 </div>
                 {!readOnly && (
                   <Group align="flex-end" gap="xs">
-                    <DateInput
-                      label="Add date"
-                      valueFormat="DD-MMM-YYYY"
-                      value={newDate}
-                      onChange={(v) => { setNewDate(v); setDateError('') }}
-                      onDateChange={changeMonth}
-                      renderDay={renderPanchangaDay}
-                      w={170}
-                      error={dateError || undefined}
-                      description={newDate && panchanga[isoDate(newDate)] ? panchanga[isoDate(newDate)].name : newDate && dayjs(newDate).isBefore(dayjs(), 'day') ? 'This date is in the past' : undefined}
-                    />
                     {values.SVAID && (
                       <NumberInput
                         label="Rate"
@@ -537,17 +571,23 @@ export default function SevaEntryPage() {
                         error={mainAmount > 0 && mainAmount < Number(rate) ? 'Below the Seva price' : undefined}
                       />
                     )}
-                    <Button leftSection={<Plus size={16} />} onClick={addDate} variant="light" color="kumkum">
-                      Add
-                    </Button>
-                    <Button leftSection={<CalendarRange size={16} />} variant="default" onClick={() => setRangeOpen(true)} title="Dates Selection">
+                    <Button leftSection={<CalendarRange size={16} />} variant="light" color="kumkum" onClick={() => setRangeOpen(true)} title="Dates Selection">
                       Dates selection
                     </Button>
                   </Group>
                 )}
               </Group>
               {dates.length === 0 ? (
-                <EmptyState icon={CalendarPlus} title="No dates added yet" hint="Pick a date above and press Add. At least one date is required to save." />
+                <EmptyState icon={CalendarPlus} title="No dates yet" hint="Press Dates selection to choose them; if you pick none, today is used." />
+              ) : !datesPicked && !readOnly ? (
+                // nothing chosen: the bill is for today, so there is no grid to show
+                <Group gap="sm" align="center">
+                  <Badge size="lg" variant="light" color="gold" tt="none" leftSection={<CalendarPlus size={14} />}>
+                    Seva date: {dayjs(dates[0].perform_date).format('DD-MMM-YYYY')}{dayjs(dates[0].perform_date).isSame(dayjs(), 'day') ? ' (today)' : ''}
+                  </Badge>
+                  {panchanga[dates[0].perform_date] && <Badge size="sm" variant="light" color="gold" tt="none">{panchanga[dates[0].perform_date].name}</Badge>}
+                  <Text size="xs" c="dimmed">Use Dates selection to perform this seva on other dates.</Text>
+                </Group>
               ) : (
                 <Table.ScrollContainer minWidth={320}>
                   <Table>
@@ -613,8 +653,8 @@ export default function SevaEntryPage() {
               words={totalAmt}
               saving={saving}
               saveDisabled={readOnly}
-              onSave={() => onSave('save')}
-              onSavePrint={() => onSave('print')}
+              onSave={() => onSave('auto')}
+              hideActions // Save and Save & Print live in the ribbon below
             />
             {lastSaved && batch.length > 1 ? (
               <SavedPanel
@@ -648,14 +688,13 @@ export default function SevaEntryPage() {
         }
       />
 
-      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.seva_id, label: lastSaved.seva_no } : null} onLoad={viewRecord} onNew={startNew} showNew={Boolean(viewId)} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('save')} saving={saving} editing={editing} search={findSevas} alertify={alertify.nav} />
+      <DocNavBar docId={DOC_ID} currentId={viewId} viewLabel={viewNo} lastSaved={lastSaved ? { id: lastSaved.seva_id, label: lastSaved.seva_no } : null} onLoad={viewRecord} onNew={startNew} showNew={Boolean(viewId) && !editing} entryMode={!viewId && !idle} newOnly={idle} cancelEditLabel="Cancel" onCancelEntry={cancelEntry} onDelete={deleteSeva} onClose={() => navigate('/')} onEdit={startEdit} onCancelEdit={cancelEdit} onSave={() => onSave('auto')} onPrint={() => printWithFormat(pickFormat(printFormats))} printFormats={printFormats} onPrintFormat={printWithFormat} saving={saving} editing={editing} search={findSevas} alertify={alertify.nav} />
       <SevaDatesDialog opened={rangeOpen} onClose={() => setRangeOpen(false)} dates={dates} dateText={daysTextFor === JSON.stringify(dates.map((d) => d.perform_date)) ? daysText : ''} onApply={applyDatesDialog} />
-      <SannidhiShortlistModal opened={shortlistOpen} onClose={() => setShortlistOpen(false)} docId={DOC_ID} selected={sannidhis} onSave={setSannidhis} />
       <CopyFromDialog opened={copyOpen} onClose={() => setCopyOpen(false)} docName="Seva Entry" search={findSevas} onLoad={copyFrom} />
       {alertify.modal}
-      <GroupSevaModal opened={groupOpen} onClose={() => setGroupOpen(false)} fields={fieldsPayload()} docDate={isoDate(docDate)} dates={dates} onDone={() => { refetch(); setDates(todayDates()) }} />
+      <GroupSevaModal opened={groupOpen} onClose={() => setGroupOpen(false)} fields={fieldsPayload()} docDate={isoDate(docDate)} dates={dates} onDone={() => { refetch(); setDates(todayDates()); setDatesPicked(false) }} />
       <SevakartharuModal opened={pickOpen} onClose={() => setPickOpen(false)} onPick={applyDevotee} initialName={values.KNAME || ''} />
-      <PrintPickerModal opened={Boolean(printFor)} onClose={() => setPrintFor(null)} docId={DOC_ID} recordId={printFor} title="Seva Receipt" />
+      <PrintPickerModal opened={Boolean(printFor)} onClose={() => { setPrintFor(null); setPrintOption(null) }} docId={DOC_ID} recordId={printFor} title="Seva Receipt" initialOption={printOption} />
     </Stack>
   )
 }

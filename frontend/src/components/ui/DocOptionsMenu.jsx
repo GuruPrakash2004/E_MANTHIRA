@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button, Group, Menu, Modal, Select, Stack, Text, TextInput, Textarea, Tooltip } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronUp, Mail, MessageSquare, Send, X } from 'lucide-react'
+import { ChevronUp, Mail, MessageSquare, Printer, Send, X } from 'lucide-react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import * as docActions from '../../api/endpoints/docActions'
 import useRights from '../../hooks/useRights'
@@ -14,7 +14,7 @@ import { AmendmentDialog, AttachmentsDialog, LabelPrintDialog } from './DocExtra
  * are listed disabled so nothing the legacy menu offers silently disappears. `extra` = entries the screen adds itself
  * (Hall Booking: Receipt Info, Donation for NMM / SLV): [{ name, label, onClick(recordId) }], listed first.
  */
-export default function DocOptionsMenu({ docId, recordId, extra = [] }) {
+export default function DocOptionsMenu({ docId, recordId, extra = [], printFormats = [], onPrintFormat }) {
   const { data: allOptions = [] } = useQuery({ queryKey: ['doc-options', docId], queryFn: () => docActions.getOptions(docId), staleTime: 5 * 60_000 })
   const rights = useRights(docId)
   // mail, SMS and labels are printing-type actions; amendments change the record
@@ -24,27 +24,33 @@ export default function DocOptionsMenu({ docId, recordId, extra = [] }) {
   // legacy toolbar shortcuts: Attachment Ctrl+Shift+A, Ammend Ctrl+Shift+J
   useHotkeys('ctrl+shift+a', (e) => { e.preventDefault(); if (recordId && has('Attachment')) setOpen('Attachment') }, { enableOnFormTags: true }, [recordId, options])
   useHotkeys('ctrl+shift+j', (e) => { e.preventDefault(); if (recordId && has('Amendment')) setOpen('Amendment') }, { enableOnFormTags: true }, [recordId, options])
-  if (options.length === 0 && extra.length === 0) return null
+  if (options.length === 0 && extra.length === 0 && printFormats.length === 0) return null
   return (
     <>
       <Menu position="top-end" withinPortal>
         <Menu.Target>
-          <Tooltip label="Open a saved record first (List, Find or the arrows) - Options act on one record" withArrow disabled={Boolean(recordId)}>
+          <Tooltip label="Open a saved record first (List, Find or the arrows) - Options act on one record" withArrow disabled={Boolean(recordId) || printFormats.length > 0}>
             <span>
-              <Button variant="light" color="gold" c="var(--vt-badge-ink)" rightSection={<ChevronUp size={14} />} disabled={!recordId}>
+              <Button variant="light" color="gold" c="var(--vt-badge-ink)" rightSection={<ChevronUp size={14} />} disabled={!recordId && printFormats.length === 0}>
                 Options
               </Button>
             </span>
           </Tooltip>
         </Menu.Target>
         <Menu.Dropdown>
+          {printFormats.map((fm) => (
+            <Menu.Item key={fm.option_name} leftSection={<Printer size={14} />} disabled={fm.available === false} title={fm.available === false ? 'The report file for this format is missing' : undefined} onClick={() => onPrintFormat?.(fm)}>
+              {fm.option_name}
+            </Menu.Item>
+          ))}
+          {printFormats.length > 0 && (extra.length > 0 || options.length > 0) && <Menu.Divider />}
           {extra.map((o) => (
             <Menu.Item key={o.name} onClick={() => o.onClick(recordId)}>
               {o.label}
             </Menu.Item>
           ))}
           {options.map((o) => (
-            <Menu.Item key={o.name} disabled={!o.supported} onClick={() => setOpen(o.name)} title={o.supported ? undefined : 'Not available in the web app yet'} leftSection={o.name === 'Send EMAIL' ? <Mail size={14} /> : o.name === 'Send SMS' ? <MessageSquare size={14} /> : undefined}>
+            <Menu.Item key={o.name} disabled={!o.supported || !recordId} onClick={() => setOpen(o.name)} title={o.supported ? undefined : 'Not available in the web app yet'} leftSection={o.name === 'Send EMAIL' ? <Mail size={14} /> : o.name === 'Send SMS' ? <MessageSquare size={14} /> : undefined}>
               {o.label}
             </Menu.Item>
           ))}

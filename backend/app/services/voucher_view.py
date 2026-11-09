@@ -33,4 +33,12 @@ def get_voucher(conn: Connection, kind: str, voucher_id: int) -> dict:
     bill_refs = False
     if kind == "journals":
         bill_refs = bool(conn.execute(text("SELECT TOP 1 1 FROM TrnDtlJNRVCHBillDet WHERE JNRVCHID = :i"), {"i": voucher_id}).first())
-    return {"has_bill_refs": bill_refs, "header": dict(hdr), "lines": [{"ac_led_id": l["AcLedID"], "dr_amt": float(l["DrAmt"] or 0), "cr_amt": float(l["CrAmt"] or 0)} for l in lines]}
+    from app.services import bill_adjust
+
+    doc_type = id_c[:-2]  # PMTVCHID -> PMTVCH: the DocType of the voucher's ledger posting
+    acc_id = bill_adjust.own_acc_id(conn, doc_type, voucher_id)
+    adj = bill_adjust.saved_adjustments(conn, acc_id)
+    return {
+        "has_bill_refs": bill_refs, "acc_id": acc_id, "header": dict(hdr),
+        "lines": [{"ac_led_id": l["AcLedID"], "dr_amt": float(l["DrAmt"] or 0), "cr_amt": float(l["CrAmt"] or 0), "adjustments": adj.get(int(l["AcLedID"]), [])} for l in lines],
+    }

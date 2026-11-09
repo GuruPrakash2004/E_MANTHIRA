@@ -183,6 +183,7 @@ class CollectionFilters(BaseModel):
     users: list[str] | None = None
     time_from: str | None = None
     time_to: str | None = None
+    report_type: str | None = None  # Complete Day: "detailed" (default) or "summary" (legacy optDtl / optSmry)
 
 
 class SevaIssueFilters(BaseModel):
@@ -206,30 +207,55 @@ class HallVoucherFilters(DateRangeFilters):
 def run_complete_day(
     body: CollectionFilters, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)
 ):
-    return reports_service.seva_collection(conn, **body.model_dump())
+    return reports_service.seva_collection(conn, **body.model_dump(exclude={"report_type"}))
 
 
 @router.post("/complete-day/pdf")
 def complete_day_pdf(body: CollectionFilters, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
-    """The Complete Day report as the original RptDtlCompDayDtl.rpt prints it (Crystal, through the print service)."""
+    """The Complete Day report as the original .rpt prints it (Crystal, through the print service): RptDtlCompDayDtl.rpt for Detailed,
+    RptDtlCompDaySmry.rpt for Summary, with the Sannidhi / Seva / User and time filters of the screen."""
     from app.print import page_fit, report_job, rpt_bridge
 
     job = report_job.complete_day_job(
-        conn, from_date=body.from_date, to_date=body.to_date, sannidhi_ids=body.sannidhi_ids, seva_ids=body.seva_ids, users=body.users
+        conn, from_date=body.from_date, to_date=body.to_date, sannidhi_ids=body.sannidhi_ids, seva_ids=body.seva_ids, users=body.users,
+        time_from=body.time_from, time_to=body.time_to, summary=(body.report_type or "").lower() == "summary",
     )
     r = rpt_bridge.render(job)
-    pdf, page = page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt, widened_right_pt=r.widened_right_pt)
+    pdf, page = page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt, widened_right_pt=r.widened_right_pt, orig_page_pt=r.orig_page_pt)
     return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": 'inline; filename="complete-day.pdf"'})
+
+
+@router.post("/collection/pdf")
+def collection_pdf(body: CollectionFilters, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """Detailed Collection as the original RptDtlColn.rpt prints it (Crystal, through the print service), with the screen's filters."""
+    from app.print import page_fit, report_job, rpt_bridge
+
+    job = report_job.collection_job(
+        conn, from_date=body.from_date, to_date=body.to_date, sannidhi_ids=body.sannidhi_ids, seva_ids=body.seva_ids, users=body.users,
+    )
+    r = rpt_bridge.render(job)
+    pdf, page = page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt, widened_right_pt=r.widened_right_pt, orig_page_pt=r.orig_page_pt)
+    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": 'inline; filename="detailed-collection.pdf"'})
 
 
 @router.post("/collection")
 def run_collection(body: CollectionFilters, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
-    return reports_service.seva_collection(conn, **body.model_dump())
+    return reports_service.seva_collection(conn, **body.model_dump(exclude={"report_type"}))
 
 
 @router.post("/seva-issue")
 def run_seva_issue(body: SevaIssueFilters, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
     return reports_service.seva_issue(conn, **body.model_dump())
+
+
+@router.post("/donations/pdf")
+def donations_pdf(body: DateRangeFilters, conn: Connection = Depends(get_conn), _: CurrentUser = Depends(get_current_user)):
+    """Kanike / Donation as the original RptKnk.rpt prints it (Crystal, through the print service)."""
+    from app.print import page_fit, report_job, rpt_bridge
+
+    r = rpt_bridge.render(report_job.kanike_job(conn, from_date=body.from_date, to_date=body.to_date))
+    pdf, page = page_fit.fit_pdf(r.pdf, paper_kind=r.paper_kind, bottom_margin_pt=r.bottom_margin_pt, widened_right_pt=r.widened_right_pt, orig_page_pt=r.orig_page_pt)
+    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": 'inline; filename="kanike-donation.pdf"'})
 
 
 @router.post("/donations")

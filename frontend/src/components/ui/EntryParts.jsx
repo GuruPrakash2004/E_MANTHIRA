@@ -86,7 +86,7 @@ export function EntryLayout({ main, side, viewing = false }) {
   )
 }
 
-export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, saveDisabled = false, onSave, onSavePrint, compact = false }) {
+export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, warning, saveLabel = 'Save & Print', saveIcon: SaveIcon = Printer, saving, saveDisabled = false, onSave, onSavePrint, compact = false, hideActions = false }) {
   const rights = useRights() // Save needs the Add right, printing the Print right
   saveDisabled = saveDisabled || !rights.add
   if (!rights.print) {
@@ -128,7 +128,7 @@ export function SummaryCard({ rows = [], totalLabel = 'Total', total, words, war
         </Text>
       )}
       {/* Screens that print get two explicit buttons: Alt+S saves only, F10 saves and prints straight away (shown in the tooltip). */}
-      {onSavePrint ? (
+      {hideActions ? null : onSavePrint ? (
         <Group gap={8} mt={compact ? 6 : 'sm'} wrap="nowrap" grow>
           <Button size={compact ? 'compact-sm' : 'sm'} px="xs" color="gold" c="#2B0909" leftSection={<Save size={16} />} loading={saving} disabled={saveDisabled} onClick={onSave} aria-keyshortcuts="Alt+S" title="Save only, nothing is printed (Alt+S)">
             Save
@@ -237,7 +237,8 @@ function rowText(row, r) {
   return parts.join(' ').toLowerCase()
 }
 
-export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyTitle, emptyHint, docId }) {
+/** `onLoad(id)` (optional): double-click a bill, here or in the "List all records" window, to load it on the screen. */
+export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyTitle, emptyHint, docId, onLoad }) {
   const [listOpen, setListOpen] = useState(false)
   const [q, setQ] = useState('')
   const rights = useRights()
@@ -277,7 +278,7 @@ export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyT
           rightSection={q ? <ActionIcon variant="subtle" color="gray" size={24} aria-label="Clear search" onClick={() => setQ('')}><X size={13} /></ActionIcon> : null}
         />
       )}
-      {listOpen && <ListingGrid docId={docId} opened onClose={() => setListOpen(false)} initialSearch={q} />}
+      {listOpen && <ListingGrid docId={docId} opened onClose={() => setListOpen(false)} initialSearch={q} onOpen={onLoad ? (_, id) => onLoad(id) : undefined} />}
       {rp.dialog}
       {loading ? (
         <Stack gap="xs">
@@ -299,7 +300,7 @@ export function RecentCard({ title, icon: Icon, loading, rows, renderRow, emptyT
             const r = renderRow(row)
             return (
               <motion.div key={r.key} layout={shown.length <= 60 ? 'position' : false} initial={shown.length <= 60 ? { opacity: 0, y: -10 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
-                <Group justify="space-between" wrap="nowrap" gap="xs" className="vt-recent-row">
+                <Group justify="space-between" wrap="nowrap" gap="xs" className="vt-recent-row" title={onLoad ? 'Double-click to load' : undefined} style={onLoad ? { cursor: 'pointer' } : undefined} onDoubleClick={onLoad ? () => onLoad(r.key) : undefined}>
                   <div style={{ minWidth: 0 }}>
                     <Text size="sm" fw={600} className="vt-num">
                       {r.title}

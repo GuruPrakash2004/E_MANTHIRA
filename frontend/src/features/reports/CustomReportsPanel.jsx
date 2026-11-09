@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Card, Checkbox, Grid, Group, Modal, ScrollArea, Select, Stack, Table, Text, TextInput, Textarea, Tooltip } from '@mantine/core'
+import { ActionIcon, Button, Card, Checkbox, Collapse, Grid, Group, Modal, ScrollArea, Select, Stack, Table, Text, TextInput, Textarea, Tooltip } from '@mantine/core'
 import { DatePickerInput } from '../../components/ui/AppDates'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { notifications } from '@mantine/notifications'
-import { Eraser, FileSpreadsheet, KeyRound, ListFilter, Mail, Palette, Play, Save, Search, Trash2, Upload, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Eraser, FileSpreadsheet, KeyRound, ListFilter, Mail, Palette, Play, Save, Search, Trash2, Upload, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import * as reportsApi from '../../api/endpoints/reports'
@@ -39,6 +39,23 @@ export default function CustomReportsPanel() {
   const [selRow, setSelRow] = useState(null)
   const [pickFor, setPickFor] = useState(null)
   const [result, setResult] = useState(null)
+  // the rows table under the buttons can be folded away (Preview / Print / Excel / Email still use the same rows); remembered in this browser
+  const [rowsOpen, setRowsOpen] = useState(() => {
+    try {
+      return localStorage.getItem('vt-custom-rows-open') !== 'n'
+    } catch {
+      return true
+    }
+  })
+  const toggleRows = () =>
+    setRowsOpen((o) => {
+      try {
+        localStorage.setItem('vt-custom-rows-open', o ? 'n' : 'y')
+      } catch {
+        /* private mode: lasts this session */
+      }
+      return !o
+    })
   const [running, setRunning] = useState(false)
   const [emailOpen, setEmailOpen] = useState(false)
   const [rightsOpen, setRightsOpen] = useState(false)
@@ -225,13 +242,19 @@ export default function CustomReportsPanel() {
 
       {result && (
         <Card withBorder p={0} style={{ overflow: 'hidden' }}>
-          <Group justify="space-between" p="sm">
+          <Group justify="space-between" p="sm" wrap="nowrap" onClick={toggleRows} style={{ cursor: 'pointer' }} title={rowsOpen ? 'Hide the rows' : 'Show the rows'}>
             <div>
               <Text fw={700}>{result.title}</Text>
               <Text size="xs" c="dimmed">{[result.period_text, result.filter_text].filter(Boolean).join('  ')}</Text>
             </div>
-            <Text size="sm" c="dimmed">{result.count} record(s)</Text>
+            <Group gap="xs" wrap="nowrap">
+              <Text size="sm" c="dimmed">{result.count} record(s)</Text>
+              <ActionIcon variant="subtle" color="kumkum" aria-label={rowsOpen ? 'Hide the rows' : 'Show the rows'} aria-expanded={rowsOpen}>
+                {rowsOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </ActionIcon>
+            </Group>
           </Group>
+          <Collapse in={rowsOpen}>
           {result.rows.length === 0 ? (
             <EmptyState icon={ListFilter} title="No records" hint="No records match these filters." />
           ) : (
@@ -257,6 +280,7 @@ export default function CustomReportsPanel() {
               </Table>
             </Table.ScrollContainer>
           )}
+          </Collapse>
         </Card>
       )}
 

@@ -1,5 +1,6 @@
 import { useHotkeys } from 'react-hotkeys-hook'
 import useRights from './useRights'
+import { scrollEntryToTop } from '../utils/scrollTop'
 
 /**
  * The legacy vTemple7.exe hot-key set (CLAUDE.md §9) — counter staff only
@@ -45,7 +46,7 @@ export default function useDocShortcuts({
   const altOpts = { enableOnFormTags: true, preventDefault: true }
   const navOpts = { enableOnFormTags: false, preventDefault: true }
 
-  useHotkeys('alt+n', (e) => { e.preventDefault(); onNew?.() }, altOpts, [onNew])
+  useHotkeys('alt+n', (e) => { e.preventDefault(); if (onNew) { onNew(); scrollEntryToTop() } }, altOpts, [onNew])
   useHotkeys('alt+e', (e) => { e.preventDefault(); onEdit?.() }, altOpts, [onEdit])
   useHotkeys('alt+s', (e) => { e.preventDefault(); onSave?.() }, altOpts, [onSave])
   useHotkeys('alt+d', (e) => { e.preventDefault(); onDelete?.() }, altOpts, [onDelete])

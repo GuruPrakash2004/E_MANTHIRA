@@ -36,6 +36,7 @@ class PrintOption:
     direct_printer_name: str | None
     copies: float
     after_save_action: str  # P print | PP preview | DNP do not print
+    click_operation: str = "P"  # Print Click of the format: E email, P preview, D direct print, M multi print, F pdf
 
 
 def _rpt_dir() -> Path:
@@ -79,11 +80,14 @@ def find_rpt(raw: str | None) -> str | None:
 
 
 def list_options(conn: Connection, doc_id: int) -> list[PrintOption]:
+    from app.core import capabilities
+
+    click_col = "ClickOperation" if capabilities.has_col("UtlOption", "ClickOperation") else "'P' AS ClickOperation"
     rows = conn.execute(
         text(
-            """
+            f"""
             SELECT DocID, OptionOrder, OptionName, CrptFileName, SelFormula,
-                   DefaultPrint, DirectPrinterName, NoOfCopies, AfterSaveAction
+                   DefaultPrint, DirectPrinterName, NoOfCopies, AfterSaveAction, {click_col}
             FROM UtlOption
             WHERE DocID = :doc_id AND (InActive IS NULL OR InActive <> 'Y')
             ORDER BY OptionOrder
@@ -108,6 +112,7 @@ def list_options(conn: Connection, doc_id: int) -> list[PrintOption]:
                 direct_printer_name=(r["DirectPrinterName"] or "").strip() or None,
                 copies=float(r["NoOfCopies"] or 1),
                 after_save_action=(r["AfterSaveAction"] or "").strip(),
+                click_operation=((r["ClickOperation"] or "").strip().upper() or "P"),
             )
         )
     return result

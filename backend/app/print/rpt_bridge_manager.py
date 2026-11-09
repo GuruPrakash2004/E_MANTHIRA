@@ -66,6 +66,13 @@ def should_autostart() -> tuple[bool, str]:
 
 
 def _launch(port: int, key: str) -> subprocess.Popen:
+    # the printer chosen in Print Options becomes the Windows default before Crystal opens any report (see service_printer.py)
+    try:
+        from app.print import service_printer
+
+        service_printer.apply()
+    except Exception:  # noqa: BLE001 - never stops the bridge from starting
+        log.exception("could not apply the print service printer")
     cmd = [str(EXE), "--port", str(port), "--env", str(_ENV_FILE), "--settings", str(_RUNTIME_DB), "--rpts", str(_rpt_dir().resolve())]
     env = {**os.environ, "RPT_BRIDGE_KEY": key}
     # the bridge's own lines ([render] timings, errors) go to logs/rptbridge.log; rolled over past 5 MB
@@ -147,9 +154,17 @@ def _reports_to_warm() -> list[str]:
                 names.append(found)
     except Exception as exc:  # noqa: BLE001
         log.info("print warm-up: could not read UtlOption (%s)", exc)
+    # the report-screen files that have no print option (Complete Day: Detailed and Summary) are opened too, otherwise the
+    # first preview of each pays Crystal's whole load time (about 43 s while the PC's default printer is an offline network printer)
+    from app.print import report_job
+
+    for raw in (report_job.COMPLETE_DAY_RPT, report_job.COMPLETE_DAY_SUMMARY_RPT):
+        found = find_rpt(raw)
+        if found and found not in names:
+            names.append(found)
     if not names:
         names = [str(p) for p in sorted(Path(_rpt_dir()).glob("*.rpt"))[:1]]
-    return names[:8]
+    return names[:10]
 
 
 def _warm_once() -> None:

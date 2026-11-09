@@ -54,6 +54,18 @@ def create_expense(
         return svc.create(conn, data=data, fy=fy, user_code=user.user_code)
 
 
+@router.put("/{exp_id}")
+def update_expense(
+    exp_id: int,
+    body: ExpenseCreateRequest,
+    fy: FinancialYear = Depends(get_user_fy),
+    user: CurrentUser = Depends(require_right(svc.DOC_ID, RIGHT_EDIT)),
+):
+    data = svc.ExpenseInput(prefix=body.prefix, expense_date=body.expense_date, fields=body.fields, lines=body.lines)
+    with with_transaction() as conn:
+        return svc.update(conn, exp_id=exp_id, data=data, fy=fy, user_code=user.user_code)
+
+
 @router.post("/{exp_id}/cancel")
 def cancel_expense(exp_id: int, body: CancelRequest, user: CurrentUser = Depends(require_right(svc.DOC_ID, RIGHT_EDIT))):
     with with_transaction() as conn:

@@ -143,6 +143,9 @@ def rules(conn: Connection, doc_id: int) -> dict:
             "balance_col": str(e.get("BalanceColReq") or "N").strip().upper() == "Y",  # voucher grid shows each head's balance
             "first_row_type": (str(e.get("DefFirstRowAmtType") or "DR").strip().upper() or "DR")[:2],  # DR / CR for the first line
         }
+    if capabilities.has_col("UtlTransactions", "BillWiseFeatureReq"):
+        b = conn.execute(text("SELECT BillWiseFeatureReq FROM UtlTransactions WHERE DocID = :d"), {"d": doc_id}).mappings().first() or {}
+        extra["bill_wise"] = str(b.get("BillWiseFeatureReq") or "N").strip().upper() == "Y"  # the Bill wise Adjustment window on party lines
     return {
         **extra,
         "auth_req": yes("AuthReq"),

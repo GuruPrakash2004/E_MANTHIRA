@@ -1,7 +1,8 @@
 import { useEffect, useId } from 'react'
 import { ActionIcon, NumberInput, Select, Table, Text } from '@mantine/core'
-import { useQuery } from '@tanstack/react-query'
-import { Trash2 } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Scale, Trash2 } from 'lucide-react'
+import dayjs from 'dayjs'
 import * as voucherApi from '../../api/endpoints/voucher'
 import { formatINR } from '../../utils/format'
 import AccountHeadSelect from './AccountHeadSelect'
@@ -20,7 +21,13 @@ export const blankLine = (side = 'DR') => ({ ac_led_id: '', dr_amt: 0, cr_amt: 0
 export const newVoucherLines = (first = 'DR') => [blankLine(first), blankLine(opposite(first))]
 export const sideOf = (l) => l.side || (Number(l.dr_amt) ? 'DR' : Number(l.cr_amt) ? 'CR' : 'DR')
 /** Lines loaded from a saved voucher: the side is whichever column holds the amount. */
-export const linesFromSaved = (rows) => rows.map((l) => ({ ac_led_id: String(l.ac_led_id), dr_amt: l.dr_amt, cr_amt: l.cr_amt, side: Number(l.dr_amt) ? 'DR' : 'CR' }))
+export const linesFromSaved = (rows) => rows.map((l) => ({ ac_led_id: String(l.ac_led_id), dr_amt: l.dr_amt, cr_amt: l.cr_amt, side: Number(l.dr_amt) ? 'DR' : 'CR', adjustments: l.adjustments || [] }))
+const PARTY_TYPES = ['C', 'S', 'J'] // legacy showPendVch: bill-wise adjustment is for customers, suppliers and journal parties
+const lineAmount = (l) => Number(l.dr_amt) || Number(l.cr_amt) || 0
+/** Sum of a line's adjustments (used to spot a line whose amount was changed after it was adjusted). */
+export const adjustedTotal = (l) => (l.adjustments || []).reduce((s, a) => s + (Number(a.amount) || 0), 0)
+/** The saved adjustments of a line as short text (legacy vsfVwDet: "Against PURVCH 26PB00001 ..." / "New Ref ..."). */
+export const adjustmentText = (a) => `${a.adj_type === 'N' ? `New Ref ${a.new_ref_no}` : `Against ${a.doc_type} ${a.trn_no}${a.trn_date ? ` (${dayjs(a.trn_date).format('DD/MM/YYYY')})` : ''}`} · ${formatINR(a.amount)} ${a.side === 'CR' ? 'Cr' : 'Dr'}`
 const own = (side) => (side === 'CR' ? 'cr_amt' : 'dr_amt')
 const r2 = (n) => Math.round(n * 100) / 100
 const differenceOf = (lines) => r2(lines.reduce((s, l) => s + (Number(l.dr_amt) || 0) - (Number(l.cr_amt) || 0), 0)) // > 0: debit is ahead
@@ -73,8 +80,33 @@ function BalanceCell({ id }) {
   )
 }
 
-export default function VoucherLinesTable({ docId, lines, setLines, readOnly, balanceCol, firstType = 'DR', totalsLabel = 'Total Dr / Total Cr', attempted }) {
+/** The "Adjust bills" button of a party line (legacy cell button): only customers, suppliers and journal parties have bills. */
+function AdjustButton({ line, onClick }) {
+  const { data } = useQuery({ queryKey: ['account-head', line.ac_led_id], queryFn: () => voucherApi.getAccountHead(line.ac_led_id), enabled: Boolean(line.ac_led_id), staleTime: 10_000 })
+  if (!line.ac_led_id || !data?.found || !PARTY_TYPES.includes(data.led_type)) return null
+  const n = (line.adjustments || []).length
+  return (
+    <ActionIcon variant={n ? 'filled' : 'light'} color="kumkum" size={36} aria-label="Adjust bills" title={n ? `${n} adjustment(s) - click to change` : 'Adjust against pending bills'} disabled={!lineAmount(line)} onClick={onClick}>
+      <Scale size={16} />
+    </ActionIcon>
+  )
+}
+
+export default function VoucherLinesTable({ docId, lines, setLines, readOnly, balanceCol, firstType = 'DR', totalsLabel = 'Total Dr / Total Cr', attempted, billWise = false, onAdjust }) {
   const confirm = useConfirm()
+  const queryClient = useQueryClient()
+  // legacy vsfDet_AfterEdit (amount column): leaving the amount of a party line opens the Bill wise Adjustment window
+  const amountCommitted = async (i, amount) => {
+    if (!billWise || readOnly || !onAdjust || !(Number(amount) > 0)) return
+    const l = lines[i]
+    if (!l?.ac_led_id) return
+    try {
+      const h = await queryClient.fetchQuery({ queryKey: ['account-head', l.ac_led_id], queryFn: () => voucherApi.getAccountHead(l.ac_led_id), staleTime: 10_000 })
+      if (h?.found && PARTY_TYPES.includes(h.led_type) && Math.abs(adjustedTotal(l) - Number(amount)) > 0.005) onAdjust(i)
+    } catch {
+      /* the head lookup failing only means the window does not open by itself */
+    }
+  }
   const uid = useId()
   const showBalance = Boolean(balanceCol) && !readOnly
   const update = (i, patch) => setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
@@ -94,7 +126,7 @@ export default function VoucherLinesTable({ docId, lines, setLines, readOnly, ba
       const side = sideOf(l)
       const own = side === 'CR' ? 'cr_amt' : 'dr_amt'
       const diff = Math.round(Math.abs(sum(ls, 'dr_amt') - sum(ls, 'cr_amt')) * 100) / 100
-      const next = { ...l, ac_led_id: String(head.id), side }
+      const next = { ...l, ac_led_id: String(head.id), side, adjustments: l.ac_led_id === String(head.id) ? l.adjustments : [] }
       if (!(Number(l[own]) > 0) && diff > 0) {
         next[own] = diff // legacy: a head with no amount yet gets the balancing difference
         next.auto = true
@@ -104,7 +136,7 @@ export default function VoucherLinesTable({ docId, lines, setLines, readOnly, ba
     setTimeout(() => document.getElementById(`${uid}-amt-${i}`)?.focus?.(), 60)
   }
 
-  const setSide = (i, side) => setLines((ls) => tallyLines(ls.map((l, idx) => (idx === i ? { ...l, side, auto: false, [side === 'CR' ? 'dr_amt' : 'cr_amt']: 0 } : l)), i))
+  const setSide = (i, side) => setLines((ls) => tallyLines(ls.map((l, idx) => (idx === i ? { ...l, side, auto: false, adjustments: [], [side === 'CR' ? 'dr_amt' : 'cr_amt']: 0 } : l)), i))
   const setAmount = (i, side, v) =>
     setLines((ls) =>
       tallyLines(
@@ -132,6 +164,7 @@ export default function VoucherLinesTable({ docId, lines, setLines, readOnly, ba
             <Table.Th w={150}>Debit</Table.Th>
             <Table.Th w={150}>Credit</Table.Th>
             {showBalance && <Table.Th w={150}>Balance</Table.Th>}
+            {billWise && !readOnly && <Table.Th w={48} aria-label="Adjust bills" />}
             <Table.Th w={48} aria-label="Remove" />
           </Table.Tr>
         </Table.Thead>
@@ -159,8 +192,11 @@ export default function VoucherLinesTable({ docId, lines, setLines, readOnly, ba
                     value={l.ac_led_id}
                     invalid={attempted && !l.ac_led_id}
                     onPick={(h) => pick(i, h)}
-                    onClear={() => update(i, { ac_led_id: '' })}
+                    onClear={() => update(i, { ac_led_id: '', adjustments: [] })}
                   />
+                  {(l.adjustments || []).map((a, k) => (
+                    <Text key={k} size="xs" c="dimmed" mt={2}>{adjustmentText(a)}</Text>
+                  ))}
                 </Table.Td>
                 <Table.Td>
                   <NumberInput
@@ -169,6 +205,7 @@ export default function VoucherLinesTable({ docId, lines, setLines, readOnly, ba
                     disabled={readOnly}
                     value={l.dr_amt}
                     onChange={(v) => setAmount(i, 'DR', v)}
+                    onBlur={(e) => amountCommitted(i, e.currentTarget.value.replace(/,/g, ''))}
                     decimalScale={2}
                     min={0}
                   />
@@ -180,11 +217,13 @@ export default function VoucherLinesTable({ docId, lines, setLines, readOnly, ba
                     disabled={readOnly}
                     value={l.cr_amt}
                     onChange={(v) => setAmount(i, 'CR', v)}
+                    onBlur={(e) => amountCommitted(i, e.currentTarget.value.replace(/,/g, ''))}
                     decimalScale={2}
                     min={0}
                   />
                 </Table.Td>
                 {showBalance && <Table.Td><BalanceCell id={l.ac_led_id} /></Table.Td>}
+                {billWise && !readOnly && <Table.Td><AdjustButton line={l} onClick={() => onAdjust?.(i)} /></Table.Td>}
                 <Table.Td>
                   <ActionIcon
                     color="red"
@@ -211,6 +250,7 @@ export default function VoucherLinesTable({ docId, lines, setLines, readOnly, ba
             <Table.Th className="vt-num">{formatINR(totalDr)}</Table.Th>
             <Table.Th className="vt-num">{formatINR(totalCr)}</Table.Th>
             {showBalance && <Table.Th />}
+            {billWise && !readOnly && <Table.Th />}
             <Table.Th />
           </Table.Tr>
         </Table.Tfoot>
